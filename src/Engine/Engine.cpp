@@ -694,7 +694,7 @@ void Engine::SecondaryInitialization() {
     mouse->Initialize();
 
     pMapStats = new MapStats();
-    pMapStats->Initialize(engine->resources()->eventsData("MapStats.txt"));
+    pMapStats->Initialize(engine->resources()->eventsData("MapStats.txt"), gameVersion());
 
     pMonsterStats = new MonsterStats();
     pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"));

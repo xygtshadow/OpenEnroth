@@ -97,3 +97,15 @@ add_subdirectory(Spells)
 add_subdirectory(Tables)
 add_subdirectory(Time)
 add_subdirectory(TurnEngine)
+
+if(OE_BUILD_TESTS)
+    set(TEST_ENGINE_SOURCES
+            Tests/MapInfo_ut.cpp)
+
+    add_library(test_engine OBJECT ${TEST_ENGINE_SOURCES})
+    target_link_libraries(test_engine PUBLIC testing_unit engine)
+
+    target_check_style(test_engine)
+
+    target_link_libraries(OpenEnroth_GameTest PUBLIC test_engine)
+endif()

@@ -8,6 +8,8 @@
 
 #include "Utility/IndexedArray.h"
 
+#include "Application/Paths/GameVersion.h"
+
 #include "MapEnumFunctions.h"
 #include "MapEnums.h"
 
@@ -52,7 +54,7 @@ struct MapInfo {
 };
 
 struct MapStats {
-    void Initialize(const Blob &mapStats);
+    void Initialize(const Blob &mapStats, GameVersion version);
     MapId GetMapInfo(std::string_view Str2);
     IndexedArray<MapInfo, MAP_FIRST, MAP_LAST> pInfos;
 };
