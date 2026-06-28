@@ -64,3 +64,27 @@ UNIT_TEST(PathResolver, Mm6InstallFailsMm7Validation) {
     std::string missingFile;
     EXPECT_FALSE(validateMm7Path("tmp_pathresolver_cross", &missingFile));
 }
+
+UNIT_TEST(PathResolver, ValidateGamePathRoutesToMm6) {
+    MM_AT_SCOPE_EXIT(std::filesystem::remove_all("tmp_gamepath_mm6"));
+    createInstall("tmp_gamepath_mm6", {
+        "anims/anims1.vid", "anims/anims2.vid",
+        "data/bitmaps.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+
+    std::string missingFile;
+    EXPECT_TRUE(validateGamePath("tmp_gamepath_mm6", GAME_VERSION_MM6, &missingFile));
+    EXPECT_FALSE(validateGamePath("tmp_gamepath_mm6", GAME_VERSION_MM7, &missingFile));
+}
+
+UNIT_TEST(PathResolver, ValidateGamePathRoutesToMm7) {
+    MM_AT_SCOPE_EXIT(std::filesystem::remove_all("tmp_gamepath_mm7"));
+    createInstall("tmp_gamepath_mm7", {
+        "anims/magic7.vid", "anims/might7.vid",
+        "data/bitmaps.lod", "data/events.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+
+    std::string missingFile;
+    EXPECT_TRUE(validateGamePath("tmp_gamepath_mm7", GAME_VERSION_MM7, &missingFile));
+    EXPECT_FALSE(validateGamePath("tmp_gamepath_mm7", GAME_VERSION_MM6, &missingFile));
+}

@@ -4,6 +4,7 @@ set(APPLICATION_PATHS_SOURCES
         PathResolver.cpp)
 
 set(APPLICATION_PATHS_HEADERS
+        GameVersion.h
         PathResolver.h)
 
 add_library(application_paths STATIC ${APPLICATION_PATHS_SOURCES} ${APPLICATION_PATHS_HEADERS})

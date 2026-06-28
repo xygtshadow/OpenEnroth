@@ -1,5 +1,6 @@
 #include "PathResolver.h"
 
+#include <cassert>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -151,6 +152,28 @@ bool validateMm6Path(std::string_view dataPath, std::string *missingFile) {
 
 bool validateMm7Path(std::string_view dataPath, std::string *missingFile) {
     return validatePath(dataPath, mm7ValidateList, missingFile);
+}
+
+std::vector<std::string> resolveGamePaths(Environment *environment, GameVersion version) {
+    switch (version) {
+    case GAME_VERSION_MM6:
+        return resolveMm6Paths(environment);
+    case GAME_VERSION_MM7:
+        return resolveMm7Paths(environment);
+    }
+    assert(false);
+    return {};
+}
+
+bool validateGamePath(std::string_view dataPath, GameVersion version, std::string *missingFile) {
+    switch (version) {
+    case GAME_VERSION_MM6:
+        return validateMm6Path(dataPath, missingFile);
+    case GAME_VERSION_MM7:
+        return validateMm7Path(dataPath, missingFile);
+    }
+    assert(false);
+    return false;
 }
 
 std::string resolveMm7UserPath(Environment *environment) {

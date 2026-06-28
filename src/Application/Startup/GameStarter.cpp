@@ -121,7 +121,7 @@ void GameStarter::initialize() {
         _environment->setenv("ALSOFT_DRIVERS", "null");
 
     // Can validate the resolved data path now.
-    failOnInvalidPath(_options.dataPath, _platform.get());
+    failOnInvalidPath(_options.dataPath, _options.gameVersion, _platform.get());
 
     // Create application.
     _application = std::make_unique<PlatformApplication>(_platform.get());
@@ -228,7 +228,7 @@ void GameStarter::resolveDataPath(Environment *environment, GameStarterOptions *
     if (!options->dataPath.empty()) {
         candidates.push_back(options->dataPath);
     } else {
-        candidates = resolveMm7Paths(environment);
+        candidates = resolveGamePaths(environment, options->gameVersion);
     }
     assert(!candidates.empty());
 
@@ -236,7 +236,7 @@ void GameStarter::resolveDataPath(Environment *environment, GameStarterOptions *
         std::string missingFile;
         if (!std::filesystem::exists(candidates[i])) {
             logger->info("Data path #{} ('{}') doesn't exist.", i + 1, candidates[i]);
-        } else if (!validateMm7Path(candidates[i], &missingFile)) {
+        } else if (!validateGamePath(candidates[i], options->gameVersion, &missingFile)) {
             logger->info("Data path #{} ('{}') is missing file '{}'.", i + 1, candidates[i], missingFile);
         } else {
             logger->info("Data path #{} ('{}') is OK!", i + 1, candidates[i]);
@@ -250,16 +250,18 @@ void GameStarter::resolveDataPath(Environment *environment, GameStarterOptions *
         options->dataPath = candidates.back();
 }
 
-void GameStarter::failOnInvalidPath(std::string_view dataPath, Platform *platform) {
+void GameStarter::failOnInvalidPath(std::string_view dataPath, GameVersion version, Platform *platform) {
     std::string missingFile;
-    if (validateMm7Path(dataPath, &missingFile))
+    if (validateGamePath(dataPath, version, &missingFile))
         return;
 
+    std::string_view gameName = version == GAME_VERSION_MM6 ? "M&M VI" : "M&M VII";
     std::string message = fmt::format(
         "Required file '{}' not found.\n"
         "\n"
-        "You should acquire licensed copy of M&M VII and copy its resources to {}.",
+        "You should acquire licensed copy of {} and copy its resources to {}.",
         missingFile,
+        gameName,
         dataPath
     );
     platform->showMessageBox("CRITICAL ERROR: missing resources", message);

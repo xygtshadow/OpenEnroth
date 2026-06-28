@@ -3,9 +3,12 @@
 #include <string>
 #include <optional>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Library/Logger/LogEnums.h"
 
 struct GameStarterOptions {
+    GameVersion gameVersion = GAME_VERSION_MM7; // Which game to run.
     std::string dataPath; // Path to game data.
     std::string userPath; // Path to user data.
     std::optional<LogLevel> logLevel; // Override log level.
