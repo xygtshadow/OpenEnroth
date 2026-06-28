@@ -122,7 +122,13 @@ void deserialize(const Blob &src, TextureFrameTable *dst) {
 
 void deserialize(const Blob &src, SoundList *dst) {
     std::vector<SoundInfo> sounds;
-    deserialize(src, &sounds, tags::append, tags::each, tags::via<SoundInfo_MM7>);
+    // MM6's dsounds.bin uses 112-byte SoundInfo records; MM7 appended two (always-zero) sound3dId and
+    // decompressed fields for a 120-byte record, so the record layout is version-specific.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        deserialize(src, &sounds, tags::append, tags::each, tags::via<SoundInfo_MM6>);
+    } else {
+        deserialize(src, &sounds, tags::append, tags::each, tags::via<SoundInfo_MM7>);
+    }
 
     assert(!sounds.empty());
 

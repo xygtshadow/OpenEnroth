@@ -18,6 +18,8 @@
 #include "Engine/Objects/ActorEnums.h"
 #include "Engine/Time/Duration.h"
 
+#include "Media/Audio/SoundInfo.h"
+
 #include "Utility/Memory/Blob.h"
 #include "Utility/Streams/BlobInputStream.h"
 
@@ -310,4 +312,59 @@ GAME_TEST(MonsterListMm6, ReconstructDefaultsTintColorToWhite) {
     EXPECT_EQ(dst.tintColor.g, 255);
     EXPECT_EQ(dst.tintColor.b, 255);
     EXPECT_EQ(dst.tintColor.a, 255);
+}
+
+static SoundInfo_MM6 makeMm6Sound(std::string_view name, uint32_t soundId, uint32_t type, uint32_t flags) {
+    SoundInfo_MM6 desc = {};
+    std::copy(name.begin(), name.end(), desc.name.begin());
+    desc.soundId = soundId;
+    desc.type = type;
+    desc.flags = flags;
+    return desc;
+}
+
+static Blob makeMm6SoundBlob(const std::vector<SoundInfo_MM6> &sounds) {
+    std::string bytes;
+    for (const SoundInfo_MM6 &desc : sounds)
+        bytes.append(reinterpret_cast<const char *>(&desc), sizeof(desc));
+    return Blob::fromString(std::move(bytes));
+}
+
+// MM6's dsounds.bin uses 112-byte SoundInfo records; MM7 appended two (always-zero) sound3dId and
+// decompressed fields for 120-byte records. The MM6 deserializer must use the 112-byte stride, or records
+// desync.
+GAME_TEST(SoundListMm6, DeserializeUsesMm6RecordStride) {
+    std::vector<SoundInfo_MM6> sounds = {
+        makeMm6Sound("fireball", 8, 1, 2),
+        makeMm6Sound("openchest", 208, 0, 0),
+    };
+
+    BlobInputStream input(makeMm6SoundBlob(sounds));
+    SoundInfo_MM6 first;
+    SoundInfo_MM6 second;
+    deserialize(input, &first);
+    deserialize(input, &second);
+
+    EXPECT_EQ(std::string(first.name.data()), "fireball");
+    EXPECT_EQ(first.soundId, 8u);
+    EXPECT_EQ(first.flags, 2u);
+    // The second record reads back correctly only if the first was consumed at the 112-byte MM6 stride
+    // (reading it as a 120-byte MM7 record would misalign everything that follows).
+    EXPECT_EQ(std::string(second.name.data()), "openchest");
+    EXPECT_EQ(second.soundId, 208u);
+    EXPECT_EQ(second.type, 0u);
+}
+
+// MM6 sounds carry the same name/id/type/flags as MM7 (only the unused trailing fields differ), so
+// reconstruct must map them across.
+GAME_TEST(SoundListMm6, ReconstructMapsFields) {
+    SoundInfo_MM6 src = makeMm6Sound("fireball", 8, 1, 2);
+
+    SoundInfo dst;
+    reconstruct(src, &dst);
+
+    EXPECT_EQ(dst.name, "fireball");
+    EXPECT_EQ(dst.soundId, static_cast<SoundId>(8));
+    EXPECT_EQ(dst.type, static_cast<SoundType>(1));
+    EXPECT_TRUE(dst.flags & SOUND_FLAG_3D);
 }
