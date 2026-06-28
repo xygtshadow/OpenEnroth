@@ -33,7 +33,13 @@ void deserialize(const Blob &src, PortraitFrameTable *dst) {
 
 void deserialize(const Blob &src, DecorationList *dst) {
     dst->pDecorations.clear();
-    deserialize(src, &dst->pDecorations, tags::append, tags::each, tags::via<DecorationDesc_MM7>);
+    // MM6's ddeclist.bin uses 80-byte DecorationDesc records; MM7 added a 4-byte colored-light field
+    // for an 84-byte record, so the record layout is version-specific.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        deserialize(src, &dst->pDecorations, tags::append, tags::each, tags::via<DecorationDesc_MM6>);
+    } else {
+        deserialize(src, &dst->pDecorations, tags::append, tags::each, tags::via<DecorationDesc_MM7>);
+    }
 
     assert(!dst->pDecorations.empty());
 }

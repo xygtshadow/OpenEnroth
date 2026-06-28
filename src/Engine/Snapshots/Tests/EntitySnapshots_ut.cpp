@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -9,6 +11,8 @@
 #include "Engine/Snapshots/CompositeSnapshots.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/SpriteEnums.h"
+#include "Engine/Objects/DecorationList.h"
+#include "Engine/Objects/DecorationEnums.h"
 #include "Engine/Time/Duration.h"
 
 #include "Utility/Memory/Blob.h"
@@ -91,4 +95,77 @@ GAME_TEST(SpriteFrameTableMm6, ReconstructDerivesAnimationLength) {
     EXPECT_EQ(dst.pSpriteSFrames[0].animationLength, Duration::fromTicks(30 * 8));
     EXPECT_EQ(dst.pSpriteSFrames[1].frameLength, Duration::fromTicks(20 * 8));
     EXPECT_EQ(dst.pSpriteSFrames[2].animationLength, Duration::fromTicks(5 * 8));
+}
+
+static DecorationDesc_MM6 makeMm6Decoration(std::string_view internalName, std::string_view hint, int16_t type,
+                                            uint16_t height, int16_t radius, int16_t lightRadius, uint16_t spriteId,
+                                            uint16_t flags, int16_t soundId) {
+    DecorationDesc_MM6 desc = {};
+    std::copy(internalName.begin(), internalName.end(), desc.internalName.begin());
+    std::copy(hint.begin(), hint.end(), desc.hint.begin());
+    desc.uType = type;
+    desc.uDecorationHeight = height;
+    desc.uRadius = radius;
+    desc.uLightRadius = lightRadius;
+    desc.uSpriteID = spriteId;
+    desc.uFlags = flags;
+    desc.uSoundID = soundId;
+    return desc;
+}
+
+static Blob makeMm6DecorationBlob(const std::vector<DecorationDesc_MM6> &decorations) {
+    std::string bytes;
+    for (const DecorationDesc_MM6 &desc : decorations)
+        bytes.append(reinterpret_cast<const char *>(&desc), sizeof(desc));
+    return Blob::fromString(std::move(bytes));
+}
+
+// MM6's ddeclist.bin uses 80-byte DecorationDesc records (MM7 added a 4-byte colored-light field for
+// 84). The MM6 deserializer must use the 80-byte stride, or records desync.
+GAME_TEST(DecorationListMm6, DeserializeUsesMm6RecordStride) {
+    std::vector<DecorationDesc_MM6> decorations = {
+        makeMm6Decoration("dec01", "trash heap", 1, 256, 8, 0, 100, 0, 0),
+        makeMm6Decoration("torch01", "torch", 2, 512, 16, 512, 200,
+                          static_cast<uint16_t>(DECORATION_DESC_EMITS_FIRE), 10),
+    };
+
+    BlobInputStream input(makeMm6DecorationBlob(decorations));
+    DecorationDesc_MM6 first;
+    DecorationDesc_MM6 second;
+    deserialize(input, &first);
+    deserialize(input, &second);
+
+    EXPECT_EQ(std::string(first.internalName.data()), "dec01");
+    EXPECT_EQ(first.uType, 1);
+    EXPECT_EQ(first.uSpriteID, 100);
+    // The second record reads back correctly only if the first was consumed at the 80-byte MM6 stride
+    // (reading it as an 84-byte MM7 record would misalign everything that follows).
+    EXPECT_EQ(std::string(second.internalName.data()), "torch01");
+    EXPECT_EQ(second.uType, 2);
+    EXPECT_EQ(second.uLightRadius, 512);
+    EXPECT_EQ(second.uSpriteID, 200);
+    EXPECT_EQ(second.uSoundID, 10);
+}
+
+// MM6 decorations have no colored-light field (an MM7 addition), so reconstruct must default it to white.
+GAME_TEST(DecorationListMm6, ReconstructDefaultsColoredLightToWhite) {
+    DecorationDesc_MM6 src = makeMm6Decoration("torch01", "torch", 31, 512, 16, 512, 200,
+                                               static_cast<uint16_t>(DECORATION_DESC_EMITS_FIRE), 10);
+
+    DecorationDesc dst;
+    reconstruct(src, &dst);
+
+    EXPECT_EQ(dst.internalName, "torch01");
+    EXPECT_EQ(dst.hint, "torch");
+    EXPECT_EQ(dst.uType, 31);
+    EXPECT_EQ(dst.uDecorationHeight, 512);
+    EXPECT_EQ(dst.uRadius, 16);
+    EXPECT_EQ(dst.uLightRadius, 512);
+    EXPECT_EQ(dst.uSpriteID, 200);
+    EXPECT_TRUE(dst.uFlags & DECORATION_DESC_EMITS_FIRE);
+    EXPECT_EQ(dst.uSoundID, static_cast<SoundId>(10));
+    EXPECT_EQ(dst.uColoredLight.r, 255);
+    EXPECT_EQ(dst.uColoredLight.g, 255);
+    EXPECT_EQ(dst.uColoredLight.b, 255);
+    EXPECT_EQ(dst.uColoredLight.a, 255);
 }
