@@ -1,13 +1,11 @@
 cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 
 set(APPLICATION_STARTUP_SOURCES
-        PathResolver.cpp
         GameStarter.cpp
         LogStarter.cpp
         FileSystemStarter.cpp)
 
 set(APPLICATION_STARTUP_HEADERS
-        PathResolver.h
         GameStarter.h
         GameStarterOptions.h
         LogStarter.h
@@ -18,6 +16,7 @@ target_check_style(application_startup)
 
 target_link_libraries(application_startup
         PUBLIC
+        application_paths
         engine
         engine_components_control
         engine_components_deterministic

@@ -9,7 +9,17 @@
 #include "Library/FileSystem/Directory/DirectoryFileSystem.h"
 #include "Library/FileSystem/Lowercase/LowercaseFileSystem.h"
 
-static const std::vector<std::string_view> globalValidateList = {
+static const std::vector<std::string_view> mm6ValidateList = {
+    {"anims/anims1.vid"}, // MM6 ships its videos as anims1/anims2, not magic*/might*.
+    {"anims/anims2.vid"},
+    {"data/bitmaps.lod"},
+    {"data/games.lod"},
+    {"data/icons.lod"},
+    {"data/sprites.lod"}, // Note: MM6 has no data/events.lod, unlike MM7.
+    {"sounds/audio.snd"}
+};
+
+static const std::vector<std::string_view> mm7ValidateList = {
     {"anims/magic7.vid"},
     {"anims/might7.vid"},
     {"data/bitmaps.lod"},
@@ -121,11 +131,11 @@ std::vector<std::string> resolveMm8Paths(Environment *environment) {
     return resolvePaths(environment, mm8Config);
 }
 
-bool validateMm7Path(std::string_view dataPath, std::string *missingFile) {
+static bool validatePath(std::string_view dataPath, const std::vector<std::string_view> &validateList, std::string *missingFile) {
     DirectoryFileSystem dirFs(dataPath);
     LowercaseFileSystem lowerFs(&dirFs);
 
-    for (std::string_view entry : globalValidateList) {
+    for (std::string_view entry : validateList) {
         if (!lowerFs.exists(entry)) {
             *missingFile = entry;
             return false;
@@ -133,6 +143,14 @@ bool validateMm7Path(std::string_view dataPath, std::string *missingFile) {
     }
 
     return true;
+}
+
+bool validateMm6Path(std::string_view dataPath, std::string *missingFile) {
+    return validatePath(dataPath, mm6ValidateList, missingFile);
+}
+
+bool validateMm7Path(std::string_view dataPath, std::string *missingFile) {
+    return validatePath(dataPath, mm7ValidateList, missingFile);
 }
 
 std::string resolveMm7UserPath(Environment *environment) {

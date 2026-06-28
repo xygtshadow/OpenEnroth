@@ -41,4 +41,5 @@ target_link_libraries(application
         imgui)
 
 add_subdirectory(GameStates)
+add_subdirectory(Paths)
 add_subdirectory(Startup)

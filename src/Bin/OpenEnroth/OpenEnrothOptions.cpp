@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 
-#include "Application/Startup/PathResolver.h"
+#include "Application/Paths/PathResolver.h"
 
 #include "Library/Cli/CliApp.h"
 #include "Library/Environment/Interface/Environment.h"

@@ -52,7 +52,7 @@
 
 #include "Utility/Exception.h"
 
-#include "PathResolver.h"
+#include "Application/Paths/PathResolver.h"
 
 constexpr std::string_view configName = "openenroth.ini";
 
