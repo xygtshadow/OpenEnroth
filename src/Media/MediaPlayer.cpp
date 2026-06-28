@@ -725,8 +725,16 @@ class Movie : public IMovie {
 };
 
 void MPlayer::Initialize() {
-    might_list.open(dfs->read("anims/might7.vid"));
-    magic_list.open(dfs->read("anims/magic7.vid"));
+    // MM6 ships its intro/logo movies as anims1/anims2.vid; MM7 uses might7/magic7.vid.
+    // LoadMovie searches both archives for any requested clip, so the anims1->might_list /
+    // anims2->magic_list assignment is just the natural ordering and doesn't affect lookup.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        might_list.open(dfs->read("anims/anims1.vid"));
+        magic_list.open(dfs->read("anims/anims2.vid"));
+    } else {
+        might_list.open(dfs->read("anims/might7.vid"));
+        magic_list.open(dfs->read("anims/magic7.vid"));
+    }
 }
 
 void MPlayer::OpenHouseMovie(std::string_view pMovieName, bool bLoop) {
