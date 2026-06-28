@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "Engine/Engine.h"
 #include "Engine/Tables/PortraitFrameTable.h"
 #include "Engine/Tables/IconFrameTable.h"
 #include "Engine/Tables/TextureFrameTable.h"
@@ -75,7 +76,13 @@ void deserialize(const Blob &src, OverlayList *dst) {
 }
 
 void deserialize(const Blob &src, SpriteFrameTable *dst) {
-    deserialize(src, dst, tags::via<SpriteFrameTable_MM7>);
+    // MM6's dsft.bin uses 56-byte sprite-frame records (no per-frame animationLength); MM7 added it
+    // for a 60-byte record, so the table layout is version-specific.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        deserialize(src, dst, tags::via<SpriteFrameTable_MM6>);
+    } else {
+        deserialize(src, dst, tags::via<SpriteFrameTable_MM7>);
+    }
 }
 
 void deserialize(const Blob &src, TextureFrameTable *dst) {

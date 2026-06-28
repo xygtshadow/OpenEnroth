@@ -256,7 +256,7 @@ void reconstruct(const Planei_MM7 &src, Planef *dst) {
     dst->dist = src.dist / 65536.0f;
 }
 
-void reconstruct(const SpriteFrame_MM7 &src, SpriteFrame *dst) {
+void reconstruct(const SpriteFrame_MM6 &src, SpriteFrame *dst) {
     reconstruct(src.spriteName, &dst->spriteName);
     dst->spriteName = ascii::toLower(dst->spriteName);
 
@@ -271,6 +271,12 @@ void reconstruct(const SpriteFrame_MM7 &src, SpriteFrame *dst) {
     dst->glowRadius = src.glowRadius;
     dst->paletteId = src.paletteId;
     dst->frameLength = Duration::fromTicks(src.frameLength * 8);
+    // MM6 sprite frames don't store the total animation length (an MM7 addition). It is derived
+    // per animation group in reconstruct(const SpriteFrameTable_MM6 &, ...); left default here.
+}
+
+void reconstruct(const SpriteFrame_MM7 &src, SpriteFrame *dst) {
+    reconstruct(static_cast<const SpriteFrame_MM6 &>(src), dst);
     dst->animationLength = Duration::fromTicks(src.animationLength * 8);
 }
 

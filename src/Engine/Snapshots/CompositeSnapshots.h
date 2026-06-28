@@ -155,6 +155,16 @@ void reconstruct(const SaveGameLite_MM7 &src, SaveGameLite *dst);
 void deserialize(const Blob &src, SaveGameLite_MM7 *dst);
 
 
+struct SpriteFrameTable_MM6 {
+    uint32_t frameCount;
+    uint32_t eframeCount;
+    std::vector<SpriteFrame_MM6> frames;
+    std::vector<uint16_t> eframes;
+};
+
+void reconstruct(const SpriteFrameTable_MM6 &src, SpriteFrameTable *dst);
+void deserialize(InputStream &src, SpriteFrameTable_MM6 *dst);
+
 struct SpriteFrameTable_MM7 {
     uint32_t frameCount;
     uint32_t eframeCount;
