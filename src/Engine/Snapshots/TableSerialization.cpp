@@ -55,16 +55,32 @@ void deserialize(const Blob &src, IconFrameTable *dst) {
 void deserialize(const Blob &src, MonsterList *dst) {
     std::vector<MonsterDesc> monsters;
 
-    deserialize(src, &monsters, tags::append, tags::each, tags::via<MonsterDesc_MM7>);
+    // MM6's dmonlist.bin uses 148-byte MonsterDesc records; MM7 inserted a 4-byte tintColor field for
+    // 152-byte records, so the record layout is version-specific. MM6 stores 173 monsters (all in use),
+    // while MM7 stores 277 (the last one unused). The engine's MonsterId-indexed storage is sized from
+    // MM7's enum, so MM6's smaller list only fills the leading slots; the rest stay default.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        deserialize(src, &monsters, tags::append, tags::each, tags::via<MonsterDesc_MM6>);
 
-    if (monsters.size() != 277)
-        throw Exception("Invalid monster list size, expected {}, got {}", 277, monsters.size());
-    monsters.pop_back(); // Last one is unused.
+        if (monsters.size() > dst->monsters.size())
+            throw Exception("Invalid monster list size, expected at most {}, got {}", dst->monsters.size(),
+                            monsters.size());
+    } else {
+        deserialize(src, &monsters, tags::append, tags::each, tags::via<MonsterDesc_MM7>);
 
-    assert(monsters.size() == dst->monsters.size());
+        if (monsters.size() != 277)
+            throw Exception("Invalid monster list size, expected {}, got {}", 277, monsters.size());
+        monsters.pop_back(); // Last one is unused.
+
+        assert(monsters.size() == dst->monsters.size());
+    }
+
     dst->monsters.fill(MonsterDesc());
-    for (size_t i = 0; MonsterId index : dst->monsters.indices())
+    for (size_t i = 0; MonsterId index : dst->monsters.indices()) {
+        if (i >= monsters.size())
+            break;
         dst->monsters[index] = monsters[i++];
+    }
 }
 
 void deserialize(const Blob &src, ObjectList *dst) {

@@ -14,6 +14,8 @@
 #include "Engine/Objects/DecorationList.h"
 #include "Engine/Objects/DecorationEnums.h"
 #include "Engine/Objects/ObjectList.h"
+#include "Engine/Objects/Monsters.h"
+#include "Engine/Objects/ActorEnums.h"
 #include "Engine/Time/Duration.h"
 
 #include "Utility/Memory/Blob.h"
@@ -243,4 +245,69 @@ GAME_TEST(ObjectListMm6, ReconstructMapsParticleTrailColor) {
     EXPECT_EQ(dst.uParticleTrailColor.r, 255);
     EXPECT_EQ(dst.uParticleTrailColor.g, 128);
     EXPECT_EQ(dst.uParticleTrailColor.b, 0);
+}
+
+static MonsterDesc_MM6 makeMm6Monster(std::string_view name, uint16_t height, uint16_t radius, uint16_t speed,
+                                      int16_t toHitRadius, uint16_t sound0, std::string_view sprite0) {
+    MonsterDesc_MM6 desc = {};
+    desc.monsterHeight = height;
+    desc.monsterRadius = radius;
+    desc.movementSpeed = speed;
+    desc.toHitRadius = toHitRadius;
+    desc.soundSampleIds[0] = sound0;
+    std::copy(name.begin(), name.end(), desc.internalMonsterName.begin());
+    std::copy(sprite0.begin(), sprite0.end(), desc.spriteNames[0].begin());
+    return desc;
+}
+
+static Blob makeMm6MonsterBlob(const std::vector<MonsterDesc_MM6> &monsters) {
+    std::string bytes;
+    for (const MonsterDesc_MM6 &desc : monsters)
+        bytes.append(reinterpret_cast<const char *>(&desc), sizeof(desc));
+    return Blob::fromString(std::move(bytes));
+}
+
+// MM6's dmonlist.bin uses 148-byte MonsterDesc records; MM7 inserted a 4-byte tintColor field for 152.
+// The MM6 deserializer must use the 148-byte stride, or records desync.
+GAME_TEST(MonsterListMm6, DeserializeUsesMm6RecordStride) {
+    std::vector<MonsterDesc_MM6> monsters = {
+        makeMm6Monster("ArcherA", 173, 161, 140, 40, 1000, "archA"),
+        makeMm6Monster("BatB", 200, 180, 220, 50, 2000, "batB"),
+    };
+
+    BlobInputStream input(makeMm6MonsterBlob(monsters));
+    MonsterDesc_MM6 first;
+    MonsterDesc_MM6 second;
+    deserialize(input, &first);
+    deserialize(input, &second);
+
+    EXPECT_EQ(std::string(first.internalMonsterName.data()), "ArcherA");
+    EXPECT_EQ(first.monsterHeight, 173);
+    EXPECT_EQ(first.soundSampleIds[0], 1000);
+    // The second record reads back correctly only if the first was consumed at the 148-byte MM6 stride
+    // (reading it as a 152-byte MM7 record would misalign everything that follows).
+    EXPECT_EQ(std::string(second.internalMonsterName.data()), "BatB");
+    EXPECT_EQ(second.monsterHeight, 200);
+    EXPECT_EQ(second.movementSpeed, 220);
+    EXPECT_EQ(second.soundSampleIds[0], 2000);
+}
+
+// MM6 monsters have no tint-color field (an MM7 addition), so reconstruct must default it to white.
+GAME_TEST(MonsterListMm6, ReconstructDefaultsTintColorToWhite) {
+    MonsterDesc_MM6 src = makeMm6Monster("ArcherA", 173, 161, 140, 40, 1000, "archA");
+
+    MonsterDesc dst;
+    reconstruct(src, &dst);
+
+    EXPECT_EQ(dst.internalMonsterName, "ArcherA");
+    EXPECT_EQ(dst.monsterHeight, 173);
+    EXPECT_EQ(dst.monsterRadius, 161);
+    EXPECT_EQ(dst.movementSpeed, 140);
+    EXPECT_EQ(dst.toHitRadius, 40);
+    EXPECT_EQ(dst.soundSampleIds[ACTOR_SOUND_FIRST], static_cast<SoundId>(1000));
+    EXPECT_EQ(dst.spriteNames[ANIM_First], "archA");
+    EXPECT_EQ(dst.tintColor.r, 255);
+    EXPECT_EQ(dst.tintColor.g, 255);
+    EXPECT_EQ(dst.tintColor.b, 255);
+    EXPECT_EQ(dst.tintColor.a, 255);
 }
