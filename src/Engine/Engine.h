@@ -6,6 +6,7 @@
 #include <array>
 
 #include "Application/GameConfig.h"
+#include "Application/Paths/GameVersion.h"
 
 #include "Engine/Evt/EvtProgram.h"
 #include "Engine/MapEnums.h"
@@ -64,13 +65,17 @@ struct PersistentVariables {
 
 class Engine {
  public:
-    explicit Engine(std::shared_ptr<GameConfig> config, OverlaySystem &overlaySystem);
+    explicit Engine(std::shared_ptr<GameConfig> config, OverlaySystem &overlaySystem, GameVersion gameVersion);
     virtual ~Engine();
 
     static void LogEngineBuildInfo();
 
     ResourceManager *resources() const {
         return _resourceManager.get();
+    }
+
+    GameVersion gameVersion() const {
+        return _gameVersion;
     }
 
     bool isOverlayOpen() const;
@@ -144,6 +149,7 @@ class Engine {
     std::unique_ptr<LightsStack_MobileLight_> _mobileLights;
 
  private:
+    GameVersion _gameVersion;
     std::unique_ptr<ResourceManager> _resourceManager;
 };
 

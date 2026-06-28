@@ -391,7 +391,7 @@ bool Engine::draw_debug_outlines() {
 }
 
 //----- (0044E4B7) --------------------------------------------------------
-Engine::Engine(std::shared_ptr<GameConfig> config, OverlaySystem &overlaySystem) : _overlaySystem(overlaySystem) {
+Engine::Engine(std::shared_ptr<GameConfig> config, OverlaySystem &overlaySystem, GameVersion gameVersion) : _overlaySystem(overlaySystem), _gameVersion(gameVersion) {
     this->config = config;
     this->bloodsplat_container = EngineIocContainer::ResolveBloodsplatContainer();
     this->decal_builder = EngineIocContainer::ResolveDecalBuilder();
@@ -601,7 +601,7 @@ void FinalInitialization() {
 }
 
 void MM7_LoadLods() {
-    engine->resources()->open();
+    engine->resources()->open(engine->gameVersion());
 
     pIcons_LOD = new LodTextureCache;
     pIcons_LOD->open(dfs->read("data/icons.lod"));

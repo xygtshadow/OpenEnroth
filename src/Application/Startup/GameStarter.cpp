@@ -182,7 +182,7 @@ void GameStarter::initialize() {
     ::mouse = EngineIocContainer::ResolveMouse();
 
     // Init engine.
-    _engine = std::make_unique<Engine>(_config, *_overlaySystem);
+    _engine = std::make_unique<Engine>(_config, *_overlaySystem, _options.gameVersion);
     ::engine = _engine.get();
     _engine->Initialize();
 

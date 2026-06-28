@@ -2,6 +2,8 @@
 
 #include <string_view>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Utility/Memory/Blob.h"
 
 #include "Library/Lod/LodReader.h"
@@ -14,7 +16,7 @@ class ResourceManager {
     ResourceManager();
     ~ResourceManager();
 
-    void open();
+    void open(GameVersion version);
 
     Blob eventsData(std::string_view filename);
 
