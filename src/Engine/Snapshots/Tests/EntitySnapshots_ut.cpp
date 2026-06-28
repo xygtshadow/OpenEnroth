@@ -13,6 +13,7 @@
 #include "Engine/Graphics/SpriteEnums.h"
 #include "Engine/Objects/DecorationList.h"
 #include "Engine/Objects/DecorationEnums.h"
+#include "Engine/Objects/ObjectList.h"
 #include "Engine/Time/Duration.h"
 
 #include "Utility/Memory/Blob.h"
@@ -168,4 +169,78 @@ GAME_TEST(DecorationListMm6, ReconstructDefaultsColoredLightToWhite) {
     EXPECT_EQ(dst.uColoredLight.g, 255);
     EXPECT_EQ(dst.uColoredLight.b, 255);
     EXPECT_EQ(dst.uColoredLight.a, 255);
+}
+
+static ObjectDesc_MM6 makeMm6Object(std::string_view name, int16_t objectId, int16_t radius, int16_t height,
+                                    int16_t flags, uint16_t spriteId, int16_t lifetime, int16_t speed, uint8_t r,
+                                    uint8_t g, uint8_t b) {
+    ObjectDesc_MM6 desc = {};
+    std::copy(name.begin(), name.end(), desc.nameUnused.begin());
+    desc.uObjectID = objectId;
+    desc.uRadius = radius;
+    desc.uHeight = height;
+    desc.uFlags = flags;
+    desc.uSpriteID = spriteId;
+    desc.uLifetime = lifetime;
+    desc.uSpeed = speed;
+    desc.uParticleTrailColorR = r;
+    desc.uParticleTrailColorG = g;
+    desc.uParticleTrailColorB = b;
+    return desc;
+}
+
+static Blob makeMm6ObjectBlob(const std::vector<ObjectDesc_MM6> &objects) {
+    std::string bytes;
+    for (const ObjectDesc_MM6 &desc : objects)
+        bytes.append(reinterpret_cast<const char *>(&desc), sizeof(desc));
+    return Blob::fromString(std::move(bytes));
+}
+
+// MM6's dobjlist.bin uses 52-byte ObjectDesc records; MM7 widened the (unused) packed particle-trail
+// color from 16 to 32 bits and the trailing padding for 56-byte records. The MM6 deserializer must use
+// the 52-byte stride, or records desync.
+GAME_TEST(ObjectListMm6, DeserializeUsesMm6RecordStride) {
+    std::vector<ObjectDesc_MM6> objects = {
+        makeMm6Object("arrow", 1, 2, 3, 0, 100, 0, 500, 0, 0, 0),
+        makeMm6Object("fireball", 5, 6, 7, static_cast<int16_t>(OBJECT_DESC_TRAIL_FIRE), 200, 128, 600, 255, 128, 0),
+    };
+
+    BlobInputStream input(makeMm6ObjectBlob(objects));
+    ObjectDesc_MM6 first;
+    ObjectDesc_MM6 second;
+    deserialize(input, &first);
+    deserialize(input, &second);
+
+    EXPECT_EQ(std::string(first.nameUnused.data()), "arrow");
+    EXPECT_EQ(first.uObjectID, 1);
+    EXPECT_EQ(first.uSpriteID, 100);
+    // The second record reads back correctly only if the first was consumed at the 52-byte MM6 stride
+    // (reading it as a 56-byte MM7 record would misalign everything that follows).
+    EXPECT_EQ(std::string(second.nameUnused.data()), "fireball");
+    EXPECT_EQ(second.uObjectID, 5);
+    EXPECT_EQ(second.uSpriteID, 200);
+    EXPECT_EQ(second.uLifetime, 128);
+    EXPECT_EQ(second.uSpeed, 600);
+    EXPECT_EQ(second.uParticleTrailColorR, 255);
+}
+
+// MM6 carries the same per-channel R/G/B particle-trail color bytes as MM7 (only the unused packed
+// color field differs in width), so reconstruct must build the color from those bytes.
+GAME_TEST(ObjectListMm6, ReconstructMapsParticleTrailColor) {
+    ObjectDesc_MM6 src = makeMm6Object("fireball", 5, 6, 7, static_cast<int16_t>(OBJECT_DESC_TRAIL_FIRE), 200, 128,
+                                       600, 255, 128, 0);
+
+    ObjectDesc dst;
+    reconstruct(src, &dst);
+
+    EXPECT_EQ(dst.uObjectID, static_cast<SpriteId>(5));
+    EXPECT_EQ(dst.uRadius, 6);
+    EXPECT_EQ(dst.uHeight, 7);
+    EXPECT_TRUE(dst.uFlags & OBJECT_DESC_TRAIL_FIRE);
+    EXPECT_EQ(dst.uSpriteID, 200);
+    EXPECT_EQ(dst.uLifetime, Duration::fromTicks(128));
+    EXPECT_EQ(dst.uSpeed, 600);
+    EXPECT_EQ(dst.uParticleTrailColor.r, 255);
+    EXPECT_EQ(dst.uParticleTrailColor.g, 128);
+    EXPECT_EQ(dst.uParticleTrailColor.b, 0);
 }

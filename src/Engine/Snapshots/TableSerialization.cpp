@@ -69,7 +69,13 @@ void deserialize(const Blob &src, MonsterList *dst) {
 
 void deserialize(const Blob &src, ObjectList *dst) {
     dst->pObjects.clear();
-    deserialize(src, &dst->pObjects, tags::append, tags::each, tags::via<ObjectDesc_MM7>);
+    // MM6's dobjlist.bin uses 52-byte ObjectDesc records; MM7 widened the particle-trail color (16->32
+    // bit) and padding for a 56-byte record, so the record layout is version-specific.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        deserialize(src, &dst->pObjects, tags::append, tags::each, tags::via<ObjectDesc_MM6>);
+    } else {
+        deserialize(src, &dst->pObjects, tags::append, tags::each, tags::via<ObjectDesc_MM7>);
+    }
 
     assert(!dst->pObjects.empty());
 }
