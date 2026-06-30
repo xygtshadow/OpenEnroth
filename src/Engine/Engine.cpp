@@ -698,16 +698,19 @@ void Engine::SecondaryInitialization() {
 
     pMonsterStats = new MonsterStats();
     pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"), gameVersion());
-    pMonsterStats->InitializePlacements(engine->resources()->eventsData("placemon.txt"));
+    // placemon.txt (unique-monster names), hostile.txt (inter-monster hostility) and history.txt
+    // (date->event log) are absent from MM6's icons.lod. eventsDataIfPresent yields an empty blob
+    // when missing, and each Initialize below no-ops on empty input (keeping its built-in defaults).
+    pMonsterStats->InitializePlacements(engine->resources()->eventsDataIfPresent("placemon.txt"));
 
     pSpellStats = new SpellStats();
     pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"));
 
     pHostilityTable = new HostilityTable();
-    pHostilityTable->Initialize(engine->resources()->eventsData("hostile.txt"));
+    pHostilityTable->Initialize(engine->resources()->eventsDataIfPresent("hostile.txt"));
 
     pHistoryTable = new HistoryTable();
-    pHistoryTable->Initialize(engine->resources()->eventsData("history.txt"));
+    pHistoryTable->Initialize(engine->resources()->eventsDataIfPresent("history.txt"));
 
     pItemTable = new ItemTable();
     pItemTable->Initialize(engine->resources());

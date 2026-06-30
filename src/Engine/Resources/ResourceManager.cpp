@@ -25,3 +25,9 @@ void ResourceManager::open(GameVersion version) {
 Blob ResourceManager::eventsData(std::string_view filename) {
     return lod::decodeMaybeCompressed(_eventsLodReader.read(filename));
 }
+
+Blob ResourceManager::eventsDataIfPresent(std::string_view filename) {
+    if (!_eventsLodReader.exists(filename))
+        return Blob();
+    return eventsData(filename);
+}
