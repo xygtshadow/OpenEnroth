@@ -190,6 +190,60 @@ GAME_TEST(NPCTableTopicMm7, DropsOneHeaderRow) {
     pNPCTopics[1] = saved1;
 }
 
+// MM6's npcprof.txt is a SET/model difference, not the column-shift first assumed: it lists 77
+// professions (ids 1-77) where MM7 has 58, the sets diverge from id 23 (id 52 = Peasant in MM6 vs
+// Fallen Wizard in MM7), and MM6 also inserts "Random Chance" (col 2) and "Personality" (col 4) columns
+// with no "Dismiss Text". The NpcProfession enum and pProfessions array are MM7-shaped (58 slots), so
+// MM6 ids 59-77 overflow pProfessions (an "array subscript out of range" abort) and the corresponding
+// ids would carry the wrong profession data. MM6 is therefore booted past (pProfessions left at
+// defaults) until a dedicated MM6 profession model is built - same interim treatment as npcnews/spells.
+GAME_TEST(NPCTableProfMm6, BootsPastProfessions) {
+    // MM6 column layout: # | Professions | Random Chance | Cost/w | Personality | Action Text |
+    //                    In Party Benefit | Join Text. Includes id 77 (Child) which overflows the
+    //                    58-slot pProfessions - boot-past must skip the whole table, not just clamp.
+    Blob blob = makeNpcDataBlob({
+        {"", "", "", "", "", "", "", ""},                                                  // Header 1.
+        {"", "NPC", "Random", "Join", "", "", "", ""},                                     // Header 2.
+        {"#", "Professions", "Chance", "Cost/w", "Personality", "Action Text",             // Header 3.
+         "In Party Benefit", "Join Text"},
+        {"", "", "", "", "", "", "", ""},                                                  // Header 4.
+        {"1", "Smith", "10", "200", "Merchant", "", "Unlimited weapon repair.", "I'll join for 200 gold."},
+        {"77", "Child", "10", "0", "Peasant", "", "Nothing useful.", "Can I come too?"},
+    });
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCProfs(blob, GAME_VERSION_MM6));
+
+    // Boot-past leaves the MM7-shaped profession data at its defaults (no MM6 column misread, no overflow).
+    EXPECT_EQ(stats->pProfessions[Smith].uHirePrice, 0u);  // Not the misread "10" (MM6's Random Chance col).
+    EXPECT_TRUE(stats->pProfessions[Smith].pBenefits.empty());
+    EXPECT_TRUE(stats->pProfessions[Smith].pJoinText.empty());
+    EXPECT_EQ(stats->uNumNPCProfessions, 0);               // Left unset (MM7 sets 59 after a full parse).
+}
+
+// Guards the MM7 npcprof parse path through the version-parameter refactor: MM7 columns are
+// # | Professions | Cost/w | Action Text | In Party Benefit | Join Text | Dismiss Text, 4 header rows.
+GAME_TEST(NPCTableProfMm7, ParsesProfessions) {
+    Blob blob = makeNpcDataBlob({
+        {"", "", "", "", "", "", ""},                                                      // Header 1.
+        {"", "NPC", "Join", "", "", "", ""},                                               // Header 2.
+        {"#", "Professions", "Cost/w", "Action Text", "In Party Benefit", "Join Text",     // Header 3.
+         "Dismiss Text"},
+        {"", "", "", "", "", "", ""},                                                      // Header 4.
+        {"1", "Smith", "200", "", "Unlimited weapon repair.", "I'll join for 200 gold.", "Don't dismiss me!"},
+    });
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCProfs(blob, GAME_VERSION_MM7));
+
+    const NPCProfession &smith = stats->pProfessions[Smith];
+    EXPECT_EQ(smith.uHirePrice, 200u);                         // MM7 Cost/w from col 2.
+    EXPECT_EQ(smith.pBenefits, "Unlimited weapon repair.");    // col 4.
+    EXPECT_EQ(smith.pJoinText, "I'll join for 200 gold.");     // col 5.
+    EXPECT_EQ(smith.pDismissText, "Don't dismiss me!");        // col 6.
+    EXPECT_EQ(stats->uNumNPCProfessions, 59);
+}
+
 // Guards the MM7 parse path through the version-parameter refactor: MM7 reads greetingIndex from col 8,
 // the y/n join flag from col 9, and six event columns (A-F) into dialogue 1-6 from cols 10-15.
 GAME_TEST(NPCTableMm7, ParsesMm7Layout) {

@@ -170,7 +170,7 @@ void NPCStats::Initialize(ResourceManager *resourceManager, GameVersion version)
     InitializeNPCTopics(resourceManager->eventsData("npctopic.txt"), version);
     InitializeNPCDist(resourceManager->eventsDataIfPresent("npcdist.txt"));
     InitializeNPCNames(resourceManager->eventsData("npcnames.txt"));
-    InitializeNPCProfs(resourceManager->eventsData("npcprof.txt"));
+    InitializeNPCProfs(resourceManager->eventsData("npcprof.txt"), version);
 }
 
 void NPCStats::InitializeNPCNames(const Blob &npcNames) {
@@ -187,7 +187,22 @@ void NPCStats::InitializeNPCNames(const Blob &npcNames) {
     }
 }
 
-void NPCStats::InitializeNPCProfs(const Blob &npcProfs) {
+void NPCStats::InitializeNPCProfs(const Blob &npcProfs, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's npcprof.txt is a SET/model difference from MM7's, not just a column variant: it lists 77
+        // professions where MM7 has 58, the sets diverge from id 23 (id 52 = Peasant in MM6 vs Fallen
+        // Wizard in MM7), and MM6 also inserts a "Random Chance" column (col 2) and a "Personality" column
+        // (col 4) and has no "Dismiss Text". The NpcProfession enum and pProfessions array are MM7-shaped
+        // (58 slots), so MM6 ids 59-77 overflow pProfessions and the corresponding ids would carry the
+        // wrong profession data. Modelling MM6's profession set is a separate task (see
+        // docs/pending/mm6-npcprof-model.md); for now MM6's profession info is deliberately left
+        // unpopulated so engine bring-up can proceed.
+        logger->warning("MM6 npcprof.txt parsing is not implemented yet - NPC profession info (hire prices, "
+                        "join/benefit text) will be empty. MM6's 77-profession set differs from MM7's and "
+                        "needs a dedicated NpcProfession mapping.");
+        return;
+    }
+
     // npcprof.txt table structure: profession id | profession name (localized, not used) | hire price |
     //                              action text (localized) | benefit description (localized) |
     //                              join text (localized) | dismiss text (localized).
