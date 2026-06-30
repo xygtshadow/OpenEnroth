@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <string>
 
+#include "Application/Paths/GameVersion.h"
+
+#include "Engine/Engine.h"
 #include "Engine/OurMath.h"
 #include "Engine/Objects/DecorationList.h"
 #include "Engine/Graphics/PaletteManager.h"
@@ -31,6 +34,21 @@ void Sprite::Release() {
 void SpriteFrameTable::ResetLoadedFlags() {
     for (SpriteFrame &spriteFrame : pSpriteSFrames)
         spriteFrame.flags &= ~SPRITE_FRAME_LOADED;
+}
+
+// Loads one directional frame of an object/overlay sprite, tolerating absence for MM6.
+//
+// MM6 stores fewer directional frames for some objects and projectiles than MM7's 8-octant model
+// expects (e.g. arrow sprites `arra`/`frara` have only frames 0 and 4), so the per-octant name the
+// engine builds can be absent from the MM6 sprites LOD. Warn and leave the frame empty for MM6 instead
+// of asserting, so engine bring-up can proceed; keep the strict assert for MM7 to catch real regressions.
+static Sprite *loadSpriteFrame(const std::string &spriteName) {
+    Sprite *sprite = pSprites_LOD->loadSprite(spriteName);
+    if (!sprite && engine->gameVersion() == GAME_VERSION_MM6)
+        logger->warning("Sprite {} not loaded!", spriteName);
+    else
+        assert(sprite);
+    return sprite;
 }
 
 //----- (0044D513) --------------------------------------------------------
@@ -72,9 +90,7 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                                     spriteName = pSpriteSFrames[iter_uSpriteID].textureName + "0";
                                     break;
                             }
-                            Sprite *sprite = pSprites_LOD->loadSprite(spriteName);
-                            // pSpriteSFrames[iter_uSpriteID].pHwSpriteIDs[i]=v12;
-                            assert(sprite);
+                            Sprite *sprite = loadSpriteFrame(spriteName);
                             pSpriteSFrames[iter_uSpriteID].sprites[i] = sprite;
                         }
 
@@ -104,9 +120,7 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                                     spriteName = pSpriteSFrames[iter_uSpriteID].textureName + "1";
                                     break;
                             }
-                            Sprite *sprite = pSprites_LOD->loadSprite(spriteName);
-                            // pSpriteSFrames[iter_uSpriteID].pHwSpriteIDs[i]=v12;
-                            assert(sprite);
+                            Sprite *sprite = loadSpriteFrame(spriteName);
                             pSpriteSFrames[iter_uSpriteID].sprites[i] = sprite;
                         }
                     } else {
@@ -145,9 +159,7 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                                 }
                             }
 
-                            Sprite *sprite = pSprites_LOD->loadSprite(spriteName);
-                            // pSpriteSFrames[iter_uSpriteID].pHwSpriteIDs[i]=v12;
-                            assert(sprite);
+                            Sprite *sprite = loadSpriteFrame(spriteName);
                             pSpriteSFrames[iter_uSpriteID].sprites[i] = sprite;
                         }
                     }
