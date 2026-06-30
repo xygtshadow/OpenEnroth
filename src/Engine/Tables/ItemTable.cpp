@@ -234,8 +234,11 @@ void ItemTable::LoadRandomItems(const Blob &rnditems) {
 
 //----- (00456D84) --------------------------------------------------------
 void ItemTable::Initialize(ResourceManager *resourceManager) {
-    LoadPotions(resourceManager->eventsData("potion.txt"));
-    LoadPotionNotes(resourceManager->eventsData("potnotes.txt"));
+    // potion.txt / potnotes.txt (potion-mixing matrices) are absent from MM6's icons.lod.
+    // eventsDataIfPresent yields an empty blob when missing; LoadPotions/LoadPotionNotes no-op on it
+    // (empty input splits to zero rows), leaving the matrices at their defaults.
+    LoadPotions(resourceManager->eventsDataIfPresent("potion.txt"));
+    LoadPotionNotes(resourceManager->eventsDataIfPresent("potnotes.txt"));
     LoadStandardEnchantments(resourceManager->eventsData("stditems.txt"));
     LoadSpecialEnchantments(resourceManager->eventsData("spcitems.txt"));
     LoadItems(resourceManager->eventsData("items.txt"));
