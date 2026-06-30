@@ -20,7 +20,7 @@ class Blob;
 struct ItemTable {
     void Initialize(ResourceManager *resourceManager, GameVersion version);
     void LoadStandardEnchantments(const Blob &stditems, GameVersion version);
-    void LoadSpecialEnchantments(const Blob &spcitems);
+    void LoadSpecialEnchantments(const Blob &spcitems, GameVersion version);
     void LoadItems(const Blob &items);
     void LoadRandomItems(const Blob &rnditems);
     void LoadPotions(const Blob &potions);

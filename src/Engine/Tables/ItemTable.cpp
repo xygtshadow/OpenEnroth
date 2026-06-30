@@ -66,10 +66,19 @@ void ItemTable::LoadStandardEnchantments(const Blob &stditems, GameVersion versi
     }
 }
 
-void ItemTable::LoadSpecialEnchantments(const Blob &spcitems) {
+void ItemTable::LoadSpecialEnchantments(const Blob &spcitems, GameVersion version) {
     // spcitems.txt table structure: description (localized) | suffix/prefix (localized) | chance by item type... | gold value | enchantment level.
     for (auto [line, i] : split(spcitems.str()).by("\r\n").drop(4).skip("").zip(specialEnchantments.indices())) {
         std::array<std::string_view, 17> tokens = split(line).by('\t');
+
+        // MM6 lists fewer special enchantments than MM7 (59 vs 72), and MM6's set is a positional prefix
+        // of MM7's, so the ids line up. But because MM6's list is shorter than the MM7-shaped enum, the
+        // zip would otherwise overrun the data into the trailing sum/legend section and parse its empty
+        // "Value" cell as a number ('' is not a number). Every real enchantment has a non-empty "Name Add"
+        // (suffix) column, while the first section row leaves it empty, so it marks the end of MM6's data.
+        if (version == GAME_VERSION_MM6 && tokens[1].empty())
+            break;
+
         specialEnchantments[i].description = removeQuotes(tokens[0]);
         specialEnchantments[i].itemSuffixOrPrefix = removeQuotes(tokens[1]);
 
@@ -251,7 +260,7 @@ void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version
     LoadPotions(resourceManager->eventsDataIfPresent("potion.txt"));
     LoadPotionNotes(resourceManager->eventsDataIfPresent("potnotes.txt"));
     LoadStandardEnchantments(resourceManager->eventsData("stditems.txt"), version);
-    LoadSpecialEnchantments(resourceManager->eventsData("spcitems.txt"));
+    LoadSpecialEnchantments(resourceManager->eventsData("spcitems.txt"), version);
     LoadItems(resourceManager->eventsData("items.txt"));
     LoadRandomItems(resourceManager->eventsData("rnditems.txt"));
 

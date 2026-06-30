@@ -13,10 +13,10 @@
 
 #include "Utility/Memory/Blob.h"
 
-// Joins cells with '\t' and rows with '\r\n' to mimic the on-disk stditems.txt table format that
-// ItemTable::LoadStandardEnchantments parses (it drops the first 4 header rows, then splits the rest
-// by "\r\n" and skips empty lines).
-static Blob makeStdItemsBlob(const std::vector<std::vector<std::string>> &rows) {
+// Joins cells with '\t' and rows with '\r\n' to mimic the on-disk stditems.txt / spcitems.txt table
+// format that ItemTable parses (it drops the first 4 header rows, then splits the rest by "\r\n" and
+// skips empty lines).
+static Blob makeTableBlob(const std::vector<std::vector<std::string>> &rows) {
     std::string bytes;
     for (const std::vector<std::string> &row : rows) {
         for (size_t i = 0; i < row.size(); i++) {
@@ -42,7 +42,7 @@ static std::vector<std::string> bonusRow(std::string name, std::string suffix, i
 // range. Parsing MM6 with the MM7-shaped 24-attribute layout throws ("'' is not a number") because
 // the section-2 header rows land where the 24-row loop still expects numeric chance cells.
 GAME_TEST(StdItemsMm6, ParsesMm6Layout) {
-    Blob blob = makeStdItemsBlob({
+    Blob blob = makeTableBlob({
         {"Standard Bonuses by Group"},
         {""},
         {"Bonus Stat", "Of Name", "Arm", "Shld", "Helm", "Belt", "Cape", "Gaunt", "Boot", "Ring", "Amul"},
@@ -147,7 +147,7 @@ GAME_TEST(StdItemsMm7, ParsesMm7Layout) {
         {"", "5", "10", "17"},
         {"", "6", "15", "25"},
     };
-    Blob blob = makeStdItemsBlob(rows);
+    Blob blob = makeTableBlob(rows);
 
     ItemTable table;
     table.LoadStandardEnchantments(blob, GAME_VERSION_MM7);
@@ -162,4 +162,78 @@ GAME_TEST(StdItemsMm7, ParsesMm7Layout) {
 
     EXPECT_EQ(table.standardEnchantmentRangeByTreasureLevel[ITEM_TREASURE_LEVEL_6].front(), 15);
     EXPECT_EQ(table.standardEnchantmentRangeByTreasureLevel[ITEM_TREASURE_LEVEL_6].back(), 25);
+}
+
+// One spcitems "Special Bonuses by Group" row: description, suffix, the 12 per-item-type chances
+// (W1, W2, Miss, Arm, Shld, Helm, Belt, Cape, Gaunt, Boot, Ring, Amul), gold value, level letter, text.
+static std::vector<std::string> spcRow(std::string description, std::string suffix, std::string value, std::string level) {
+    return {std::move(description), std::move(suffix),
+            "0", "0", "0", "10", "10", "10", "0", "10", "0", "0", "10", "10",
+            std::move(value), std::move(level), "text"};
+}
+
+// MM6's spcitems.txt lists fewer special enchantments than MM7 (59 vs 72) and its set is a positional
+// prefix of MM7's. Because the engine's ItemEnchantment enum is MM7-shaped (72 entries), the parser's
+// zip would otherwise run past MM6's shorter data into the trailing sum/legend section and parse the
+// section's empty "Value" cell ("'' is not a number"). The MM6 branch stops at the first row with an
+// empty suffix ("Name Add"), which marks the section boundary.
+GAME_TEST(SpcItemsMm6, StopsAtShorterSet) {
+    Blob blob = makeTableBlob({
+        {"Special Bonuses by Group"},
+        {""},
+        {"Bonus Stat", "Name Add", "W1", "W2", "Miss", "Arm", "Shld", "Helm", "Belt", "Cape", "Gaunt", "Boot", "Ring", "Amul", "Value", "Lvl", "Description"},
+        {""},
+        spcRow("Plus 10 to all Resistances.", "of Protection", "1000", "B"),
+        spcRow("Plus 10 to all Seven Statistics.", "of The Gods", "3000", "D"),
+        spcRow("Increased Value.", "Antique", "X 10", "B"),
+        {""},
+        {"", "", "437", "437", "447", "307", "272", "282", "232", "282", "217", "182", "347", "347"}, // Sum row: empty suffix marks the boundary.
+        {""},
+        {"Treasure Level", "If treasure Level = 3 add all A and B"}, // Legend rows that must never be parsed as data.
+        {"A= 3 to 4", "If treasure Level = 4 add all A and B and C"},
+    });
+
+    ItemTable table;
+    table.LoadSpecialEnchantments(blob, GAME_VERSION_MM6);
+
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].itemSuffixOrPrefix, "of Protection");
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].description, "Plus 10 to all Resistances.");
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].valueAdd, 1000);
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].valueMul, 1);
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].enchantmentLevel, 1); // "B".
+
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(2)].itemSuffixOrPrefix, "of The Gods");
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(2)].enchantmentLevel, 3); // "D".
+
+    // "X 10" is a value multiplier, not an additive value.
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].itemSuffixOrPrefix, "Antique");
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].valueMul, 10);
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].valueAdd, 0);
+
+    // The shorter MM6 set stops before the trailing section: the 4th slot stays empty, and the sum
+    // row's empty "Value" cell is never parsed.
+    EXPECT_TRUE(table.specialEnchantments[static_cast<ItemEnchantment>(4)].itemSuffixOrPrefix.empty());
+}
+
+// Guards the MM7 parse path through the version-parameter refactor: MM7's data row count matches the
+// enum size, so the zip stops at the data end with no section overrun and the same rows parse.
+GAME_TEST(SpcItemsMm7, ParsesFullSet) {
+    Blob blob = makeTableBlob({
+        {"Special Bonuses by Group"},
+        {""},
+        {"Bonus Stat", "Name Add", "W1", "W2", "Miss", "Arm", "Shld", "Helm", "Belt", "Cape", "Gaunt", "Boot", "Ring", "Amul", "Value", "Lvl", "Description"},
+        {""},
+        spcRow("Plus 10 to all Resistances.", "of Protection", "1000", "B"),
+        spcRow("Plus 10 to all Seven Statistics.", "of The Gods", "3000", "D"),
+        spcRow("Increased Value.", "Antique", "X 10", "B"),
+    });
+
+    ItemTable table;
+    table.LoadSpecialEnchantments(blob, GAME_VERSION_MM7);
+
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].itemSuffixOrPrefix, "of Protection");
+    EXPECT_EQ(table.specialEnchantments[ITEM_ENCHANTMENT_OF_PROTECTION].valueAdd, 1000);
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(2)].itemSuffixOrPrefix, "of The Gods");
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(2)].enchantmentLevel, 3); // "D".
+    EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].valueMul, 10);
 }
