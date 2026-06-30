@@ -100,7 +100,8 @@ add_subdirectory(TurnEngine)
 
 if(OE_BUILD_TESTS)
     set(TEST_ENGINE_SOURCES
-            Tests/MapInfo_ut.cpp)
+            Tests/MapInfo_ut.cpp
+            Tests/Monsters_ut.cpp)
 
     add_library(test_engine OBJECT ${TEST_ENGINE_SOURCES})
     target_link_libraries(test_engine PUBLIC testing_unit engine)

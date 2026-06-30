@@ -7,6 +7,8 @@
 
 #include "Utility/IndexedArray.h"
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Library/Color/Color.h"
 
 #include "Engine/Spells/SpellEnums.h"
@@ -83,7 +85,7 @@ struct MonsterInfo {
 };
 
 struct MonsterStats {
-    void Initialize(const Blob &monsters);
+    void Initialize(const Blob &monsters, GameVersion version);
     void InitializePlacements(const Blob &placements);
     MonsterId FindMonsterByInternalName(std::string_view internalName);
 

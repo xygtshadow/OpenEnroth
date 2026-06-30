@@ -697,7 +697,7 @@ void Engine::SecondaryInitialization() {
     pMapStats->Initialize(engine->resources()->eventsData("MapStats.txt"), gameVersion());
 
     pMonsterStats = new MonsterStats();
-    pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"));
+    pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"), gameVersion());
     pMonsterStats->InitializePlacements(engine->resources()->eventsData("placemon.txt"));
 
     pSpellStats = new SpellStats();

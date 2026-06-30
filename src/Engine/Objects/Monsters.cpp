@@ -251,7 +251,7 @@ void MonsterStats::InitializePlacements(const Blob &placements) {
 
 // TODO(captainurist): move to MonsterTable?
 //----- (0045501E) --------------------------------------------------------
-void MonsterStats::Initialize(const Blob &monsters) {
+void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
     // monsters.txt table structure: id | name (localized) | internal name | level | hp | ac | exp | treasure |
     //                               blood splat | flying | movement | ai | hostility | speed | recovery |
     //                               attack prefs | special attack | a1 type | a1 dmg | a1 missile |
@@ -514,8 +514,9 @@ void MonsterStats::Initialize(const Blob &monsters) {
         MonsterId id = static_cast<MonsterId>(fromString<int>(tokens[0]));
         MonsterInfo &info = infos[id];
         info.id = id;
-        info.name = removeQuotes(tokens[1]);
-        info.internalName = removeQuotes(tokens[2]);
+
+        // Columns 0 and 3-25 share the same layout in MM6 and MM7. The Name/Picture columns (1/2)
+        // are swapped in MM6, and everything from column 26 onward differs (see the version branch).
         info.level = fromString<int>(tokens[3]);
         info.hp = parseThousand(tokens[4]);
         info.ac = fromString<int>(tokens[5]);
@@ -541,19 +542,51 @@ void MonsterStats::Initialize(const Blob &monsters) {
         info.attack2MissileType = ParseMissleAttackType(tokens[23]);
         info.spell1UseChance = fromString<int>(tokens[24]);
         parseSpellEntry(tokens[25], info.spell1Id, info.spell1SkillMastery);
-        info.spell2UseChance = fromString<int>(tokens[26]);
-        parseSpellEntry(tokens[27], info.spell2Id, info.spell2SkillMastery);
-        info.resFire     = parseResistance(tokens[28]);
-        info.resAir      = parseResistance(tokens[29]);
-        info.resWater    = parseResistance(tokens[30]);
-        info.resEarth    = parseResistance(tokens[31]);
-        info.resMind     = parseResistance(tokens[32]);
-        info.resSpirit   = parseResistance(tokens[33]);
-        info.resBody     = parseResistance(tokens[34]);
-        info.resLight    = parseResistance(tokens[35]);
-        info.resDark     = parseResistance(tokens[36]);
-        info.resPhysical = parseResistance(tokens[37]);
-        parseSpecialAbility(tokens[38], info);
+
+        if (version == GAME_VERSION_MM6) {
+            // MM6 monsters.txt: Name/Picture are swapped relative to MM7, there is a single spell
+            // attack (no spell2), and only 6 resistances (Fire/Elec/Cold/Pois/Phys/Mag), with the
+            // Special-ability column at index 32 (vs 38 in MM7).
+            info.internalName = removeQuotes(tokens[1]); // MM6 col 1 is "Picture" (the lookup key).
+            info.name = removeQuotes(tokens[2]); // MM6 col 2 is the display "Name".
+
+            info.spell2UseChance = 0;
+            info.spell2Id = SPELL_NONE;
+            info.spell2SkillMastery = CombinedSkillValue::none();
+
+            info.resFire     = parseResistance(tokens[26]);
+            info.resAir      = parseResistance(tokens[27]); // MM6 "Elec".
+            info.resWater    = parseResistance(tokens[28]); // MM6 "Cold".
+            info.resEarth    = parseResistance(tokens[29]); // MM6 "Pois".
+            info.resPhysical = parseResistance(tokens[30]); // MM6 "Phys".
+            // MM6 has a single non-elemental "Magic" resistance; MM7 split it into Mind/Spirit/Body
+            // (plus Light/Dark, which MM6 lacks). Apply Magic to all three; leave Light/Dark at 0.
+            uint8_t resMagic = parseResistance(tokens[31]);
+            info.resMind   = resMagic;
+            info.resSpirit = resMagic;
+            info.resBody   = resMagic;
+            info.resLight  = 0;
+            info.resDark   = 0;
+
+            parseSpecialAbility(tokens[32], info);
+        } else {
+            info.name = removeQuotes(tokens[1]);
+            info.internalName = removeQuotes(tokens[2]);
+
+            info.spell2UseChance = fromString<int>(tokens[26]);
+            parseSpellEntry(tokens[27], info.spell2Id, info.spell2SkillMastery);
+            info.resFire     = parseResistance(tokens[28]);
+            info.resAir      = parseResistance(tokens[29]);
+            info.resWater    = parseResistance(tokens[30]);
+            info.resEarth    = parseResistance(tokens[31]);
+            info.resMind     = parseResistance(tokens[32]);
+            info.resSpirit   = parseResistance(tokens[33]);
+            info.resBody     = parseResistance(tokens[34]);
+            info.resLight    = parseResistance(tokens[35]);
+            info.resDark     = parseResistance(tokens[36]);
+            info.resPhysical = parseResistance(tokens[37]);
+            parseSpecialAbility(tokens[38], info);
+        }
     }
 }
 
