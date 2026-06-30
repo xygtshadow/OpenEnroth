@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Engine/Data/SpecialEnchantmentData.h"
 #include "Engine/Data/StandardEnchantmentData.h"
 #include "Engine/Data/ItemData.h"
@@ -16,8 +18,8 @@ class ResourceManager;
 class Blob;
 
 struct ItemTable {
-    void Initialize(ResourceManager *resourceManager);
-    void LoadStandardEnchantments(const Blob &stditems);
+    void Initialize(ResourceManager *resourceManager, GameVersion version);
+    void LoadStandardEnchantments(const Blob &stditems, GameVersion version);
     void LoadSpecialEnchantments(const Blob &spcitems);
     void LoadItems(const Blob &items);
     void LoadRandomItems(const Blob &rnditems);

@@ -713,7 +713,7 @@ void Engine::SecondaryInitialization() {
     pHistoryTable->Initialize(engine->resources()->eventsDataIfPresent("history.txt"));
 
     pItemTable = new ItemTable();
-    pItemTable->Initialize(engine->resources());
+    pItemTable->Initialize(engine->resources(), gameVersion());
 
     initializeHouses(engine->resources()->eventsData("2dEvents.txt"));
 

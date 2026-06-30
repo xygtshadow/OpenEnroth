@@ -30,13 +30,24 @@
 #include "Utility/String/Transformations.h"
 #include "Utility/String/Split.h"
 
-void ItemTable::LoadStandardEnchantments(const Blob &stditems) {
+void ItemTable::LoadStandardEnchantments(const Blob &stditems, GameVersion version) {
     // stditems.txt has two sections.
     std::vector<std::string_view> lines = split(stditems.str()).by("\r\n").drop(4).skip("");
 
+    // MM6 defines only 14 standard bonuses (Might..Poison Resistance) where MM7 has 24 (which also add
+    // Mind/Body resistances and the 8 skill bonuses). MM6's three extra elemental resistances map onto
+    // the MM7 Attribute enum exactly the way the monster parser remaps them - Elec->Air, Cold->Water,
+    // Poison->Earth (see Monsters.cpp) - so MM6's 14 bonuses are a clean prefix of the enchantable range:
+    // [ATTRIBUTE_MIGHT, ATTRIBUTE_RESIST_EARTH]. The remaining attributes are left at their (zero-chance)
+    // defaults, so they're never rolled during item generation. The section layout is otherwise identical
+    // (sum row + 2 sub-headers between the two sections), so the "+3" offset below holds for both games.
+    Segment<Attribute> enchantableAttributes = version == GAME_VERSION_MM6
+        ? Segment(ATTRIBUTE_MIGHT, ATTRIBUTE_RESIST_EARTH)
+        : allEnchantableAttributes();
+
     // #1 Standard Bonuses by Group: attribute name (localized) | suffix (localized) | chance by item type....
     standardEnchantmentChanceSumByItemType.fill(0);
-    for (auto [line, i] : view(lines).zip(allEnchantableAttributes())) {
+    for (auto [line, i] : view(lines).zip(enchantableAttributes)) {
         std::array<std::string_view, 11> tokens = split(line).by('\t');
         standardEnchantments[i].attributeName = removeQuotes(tokens[0]);
         standardEnchantments[i].itemSuffix = removeQuotes(tokens[1]);
@@ -49,7 +60,7 @@ void ItemTable::LoadStandardEnchantments(const Blob &stditems) {
     }
 
     // #2 Bonus range for Standard by Level: (empty) | treasure level | min | max.
-    for (auto [line, i] : view(lines).drop(allEnchantableAttributes().size() + 3).zip(standardEnchantmentRangeByTreasureLevel.indices())) {
+    for (auto [line, i] : view(lines).drop(enchantableAttributes.size() + 3).zip(standardEnchantmentRangeByTreasureLevel.indices())) {
         std::array<std::string_view, 4> rangeTokens = split(line).by('\t');
         standardEnchantmentRangeByTreasureLevel[i] = Segment(fromString<int>(rangeTokens[2]), fromString<int>(rangeTokens[3]));
     }
@@ -233,13 +244,13 @@ void ItemTable::LoadRandomItems(const Blob &rnditems) {
 }
 
 //----- (00456D84) --------------------------------------------------------
-void ItemTable::Initialize(ResourceManager *resourceManager) {
+void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version) {
     // potion.txt / potnotes.txt (potion-mixing matrices) are absent from MM6's icons.lod.
     // eventsDataIfPresent yields an empty blob when missing; LoadPotions/LoadPotionNotes no-op on it
     // (empty input splits to zero rows), leaving the matrices at their defaults.
     LoadPotions(resourceManager->eventsDataIfPresent("potion.txt"));
     LoadPotionNotes(resourceManager->eventsDataIfPresent("potnotes.txt"));
-    LoadStandardEnchantments(resourceManager->eventsData("stditems.txt"));
+    LoadStandardEnchantments(resourceManager->eventsData("stditems.txt"), version);
     LoadSpecialEnchantments(resourceManager->eventsData("spcitems.txt"));
     LoadItems(resourceManager->eventsData("items.txt"));
     LoadRandomItems(resourceManager->eventsData("rnditems.txt"));
