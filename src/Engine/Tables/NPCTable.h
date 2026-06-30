@@ -89,8 +89,8 @@ struct NPCStats {
     void Initialize(ResourceManager *resourceManager, GameVersion version);
     void InitializeNPCNames(const Blob &npcNames);
     void InitializeNPCProfs(const Blob &npcProfs);
-    void InitializeNPCText(const Blob &npcText);
-    void InitializeNPCTopics(const Blob &npcTopics);
+    void InitializeNPCText(const Blob &npcText, GameVersion version);
+    void InitializeNPCTopics(const Blob &npcTopics, GameVersion version);
     void InitializeNPCDist(const Blob &npcDist);
     void InitializeNPCData(const Blob &npcData, GameVersion version);
     void InitializeNPCGreets(const Blob &npcGreets);

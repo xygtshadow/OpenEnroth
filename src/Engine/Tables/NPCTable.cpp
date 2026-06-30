@@ -26,19 +26,24 @@ int NPCStats::dword_AE336C_LastMispronouncedNameFirstLetter = -1;
 int NPCStats::dword_AE3370_LastMispronouncedNameResult = -1;
 
 //----- (00476977) --------------------------------------------------------
-void NPCStats::InitializeNPCText(const Blob &npcText) {
+void NPCStats::InitializeNPCText(const Blob &npcText, GameVersion version) {
     // npctext.txt table structure: index | text (localized) | dev notes | npc name (localized, not used).
-    for (std::string_view line : split(npcText.str()).by("\r\n").drop(1).skip("")) {
+    // MM6 has two header rows ("Text Number From NPC Events.Doc" then "# Text Notes") where MM7 has one;
+    // the columns otherwise correspond, so only the header count differs.
+    int headerRows = version == GAME_VERSION_MM6 ? 2 : 1;
+    for (std::string_view line : split(npcText.str()).by("\r\n").drop(headerRows).skip("")) {
         std::array<std::string_view, 2> tokens = split(line).by('\t');
         int i = fromString<int>(tokens[0]) - 1; // File indices are 1-based, array is 0-based.
         pNPCTopics[i].pText = removeQuotes(tokens[1]);
     }
 }
 
-void NPCStats::InitializeNPCTopics(const Blob &npcTopics) {
+void NPCStats::InitializeNPCTopics(const Blob &npcTopics, GameVersion version) {
     // npctopic.txt table structure: index | topic (localized) | ??? (not used) | dev notes | text index (not used) |
     //                               npc name (not localized, not used) | npc index (not used).
-    for (std::string_view line : split(npcTopics.str()).by("\r\n").drop(1).skip("")) {
+    // MM6 has two header rows ("Text Number From NPC Events.Doc ... Notes" then "# Topic") where MM7 has one.
+    int headerRows = version == GAME_VERSION_MM6 ? 2 : 1;
+    for (std::string_view line : split(npcTopics.str()).by("\r\n").drop(headerRows).skip("")) {
         std::array<std::string_view, 2> tokens = split(line).by('\t');
         int i = fromString<int>(tokens[0]);
         pNPCTopics[i].pTopic = removeQuotes(tokens[1]);
@@ -161,8 +166,8 @@ void NPCStats::Initialize(ResourceManager *resourceManager, GameVersion version)
     InitializeNPCGreets(resourceManager->eventsDataIfPresent("npcgreet.txt"));
     InitializeNPCGroups(resourceManager->eventsDataIfPresent("npcgroup.txt"));
     InitializeNPCNews(resourceManager->eventsData("npcnews.txt"), version);
-    InitializeNPCText(resourceManager->eventsData("npctext.txt"));
-    InitializeNPCTopics(resourceManager->eventsData("npctopic.txt"));
+    InitializeNPCText(resourceManager->eventsData("npctext.txt"), version);
+    InitializeNPCTopics(resourceManager->eventsData("npctopic.txt"), version);
     InitializeNPCDist(resourceManager->eventsDataIfPresent("npcdist.txt"));
     InitializeNPCNames(resourceManager->eventsData("npcnames.txt"));
     InitializeNPCProfs(resourceManager->eventsData("npcprof.txt"));

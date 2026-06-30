@@ -107,6 +107,89 @@ GAME_TEST(NPCTableNewsMm7, ParsesCatchPhrases) {
     EXPECT_EQ(stats->pCatchPhrases[1], "Good luck in the contest!");
 }
 
+// MM6's npctext.txt has TWO header rows ("Text Number From NPC Events.Doc" then "# Text Notes") where
+// MM7 has ONE. The columns otherwise correspond (index | text), so the only difference is the header
+// count: parsing MM6 with MM7's single .drop(1) leaves the "# Text Notes" row as data and throws ("'#'
+// is not a number"). InitializeNPCText writes pNPCTopics[index - 1].pText.
+GAME_TEST(NPCTableTextMm6, DropsTwoHeaderRows) {
+    Blob blob = makeNpcDataBlob({
+        {"Text Number From NPC Events.Doc", "", ""},     // Header 1.
+        {"#", "Text", "Notes"},                          // Header 2.
+        {"1", "Here, take this money.", ""},
+        {"2", "You got your gold!", ""},
+    });
+
+    NPCTopic saved0 = pNPCTopics[0];
+    NPCTopic saved1 = pNPCTopics[1];
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCText(blob, GAME_VERSION_MM6));
+
+    EXPECT_EQ(pNPCTopics[0].pText, "Here, take this money.");  // index 1 -> slot 0.
+    EXPECT_EQ(pNPCTopics[1].pText, "You got your gold!");      // index 2 -> slot 1.
+
+    pNPCTopics[0] = saved0;
+    pNPCTopics[1] = saved1;
+}
+
+// Guards the MM7 npctext parse path through the version-parameter refactor: single header row.
+GAME_TEST(NPCTableTextMm7, DropsOneHeaderRow) {
+    Blob blob = makeNpcDataBlob({
+        {"#", "Text", "Notes", "Owner"},                 // Single header row.
+        {"1", "Emerald Island is southeast of Erathia.", "", ""},
+    });
+
+    NPCTopic saved0 = pNPCTopics[0];
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCText(blob, GAME_VERSION_MM7));
+
+    EXPECT_EQ(pNPCTopics[0].pText, "Emerald Island is southeast of Erathia.");
+
+    pNPCTopics[0] = saved0;
+}
+
+// MM6's npctopic.txt likewise has TWO header rows ("Text Number From NPC Events.Doc ... Notes" then
+// "# Topic") where MM7 has ONE. Columns correspond (index | topic); InitializeNPCTopics writes
+// pNPCTopics[index].pTopic (0-based, no -1). MM6 with .drop(1) throws on the "# Topic" row.
+GAME_TEST(NPCTableTopicMm6, DropsTwoHeaderRows) {
+    Blob blob = makeNpcDataBlob({
+        {"Text Number From NPC Events.Doc", "", "Notes"},  // Header 1.
+        {"#", "Topic", ""},                                // Header 2.
+        {"1", "The Letter", ""},
+        {"3", "Goblinwatch", ""},
+    });
+
+    NPCTopic saved1 = pNPCTopics[1];
+    NPCTopic saved3 = pNPCTopics[3];
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCTopics(blob, GAME_VERSION_MM6));
+
+    EXPECT_EQ(pNPCTopics[1].pTopic, "The Letter");    // index 1 -> slot 1.
+    EXPECT_EQ(pNPCTopics[3].pTopic, "Goblinwatch");   // index 3 -> slot 3.
+
+    pNPCTopics[1] = saved1;
+    pNPCTopics[3] = saved3;
+}
+
+// Guards the MM7 npctopic parse path through the version-parameter refactor: single header row.
+GAME_TEST(NPCTableTopicMm7, DropsOneHeaderRow) {
+    Blob blob = makeNpcDataBlob({
+        {"#", "Topic", "Requires", "Notes", "Text #", "Owner(s)", "Owner #"},  // Single header row.
+        {"1", "Castle Harmondale", "0", "Praise", "6", "Lord Markham", "1"},
+    });
+
+    NPCTopic saved1 = pNPCTopics[1];
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCTopics(blob, GAME_VERSION_MM7));
+
+    EXPECT_EQ(pNPCTopics[1].pTopic, "Castle Harmondale");
+
+    pNPCTopics[1] = saved1;
+}
+
 // Guards the MM7 parse path through the version-parameter refactor: MM7 reads greetingIndex from col 8,
 // the y/n join flag from col 9, and six event columns (A-F) into dialogue 1-6 from cols 10-15.
 GAME_TEST(NPCTableMm7, ParsesMm7Layout) {
