@@ -715,7 +715,7 @@ void Engine::SecondaryInitialization() {
     pItemTable = new ItemTable();
     pItemTable->Initialize(engine->resources(), gameVersion());
 
-    initializeHouses(engine->resources()->eventsData("2dEvents.txt"));
+    initializeHouses(engine->resources()->eventsData("2dEvents.txt"), gameVersion());
 
     //pPaletteManager->SetMistColor(128, 128, 128);
     //pPaletteManager->RecalculateAll();

@@ -3,9 +3,11 @@
 #include <array>
 #include <map>
 #include <string>
+#include <string_view>
 
 #include "Engine/Data/HouseEnums.h"
 
+#include "Library/Logger/Logger.h"
 #include "Library/Serialization/Serialization.h"
 
 #include "Utility/MapAccess.h"
@@ -16,7 +18,7 @@
 
 IndexedArray<HouseData, HOUSE_FIRST, HOUSE_LAST> houseTable;
 
-void initializeHouses(const Blob &houses) {
+void initializeHouses(const Blob &houses, GameVersion version) {
     // 2devents.txt table structure (column names are the headers from the data file):
     //  0: "#"                  - house id
     //  1: "#"                  - per-type sequence number, resets at each new Type         (not used)
@@ -70,6 +72,23 @@ void initializeHouses(const Blob &houses) {
         {"Mercenary Guild", HOUSE_TYPE_TOWN_HALL}, // This is MM6 only. TODO(captainurist): Is this right and not Merc Guild (18)?
     };
 
+    // MM6's 2dEvents.txt keeps the same 24-column layout as MM7, but stores free-form text in several
+    // columns the engine reads as numbers: the shop-stock columns A/C (13/15) describe stock as
+    // level+category text (e.g. "L1 Weap", "L2 Misc"), and the auxiliary Picture/exit columns (8, 20-22)
+    // carry editor annotations (e.g. "2 story poor house", "Throne", "Need Key"). For MM6 we tolerate a
+    // non-numeric value and leave the field at its default; MM7 stays strict so genuine regressions still
+    // throw. MM6's shop inventory ultimately couples to the deferred item model (docs/pending/mm6-item-model.md);
+    // see docs/pending/mm6-2devents-houses.md.
+    auto parseNum = [version](std::string_view token, auto fallback) {
+        decltype(fallback) value = fallback;
+        if (tryDeserialize(token, &value))
+            return value;
+        if (version == GAME_VERSION_MM6)
+            return fallback; // Tolerate MM6's descriptive text in numeric columns.
+        return fromString<decltype(fallback)>(token); // MM7: rethrow the original "not a number" error.
+    };
+
+    int skippedMm6Houses = 0;
     for (std::string_view line : split(houses.str()).by("\r\n").drop(2).skip("")) {
         // Some lines have only ~12 cols, and some cols are empty, so need both resize & replace.
         std::array<std::string_view, 24> tokens = split(line).by('\t').replace("", "0").resize(24, "0");
@@ -77,24 +96,42 @@ void initializeHouses(const Blob &houses) {
         // TODO(captainurist): We don't check if int is in range. A better way would be to deal away with enums
         //                     entirely, and just use typed ids. Do this once we iron out the details of how #mm6
         //                     enums will be handled by the engine. Also apply to other table parsers.
-        HouseId houseId = static_cast<HouseId>(fromString<int>(tokens[0]));
+        int rawHouseId = fromString<int>(tokens[0]);
+
+        // MM6 defines 557 houses (ids 1-557) where the engine's HouseId enum / houseTable is MM7-shaped
+        // (HOUSE_FIRST..HOUSE_LAST = 1..525). MM6 ids 1-525 line up positionally with MM7's building slots
+        // (both tables start with the weapon shops and follow the same shop/guild structure), but MM6's
+        // trailing 32 entries (526-557: extra residences, tents, wagons) have no MM7 slot and would index
+        // out of range. Skip them for MM6 so bring-up proceeds; the full MM6 house set is deferred.
+        if (version == GAME_VERSION_MM6 &&
+            (rawHouseId < static_cast<int>(HOUSE_FIRST) || rawHouseId > static_cast<int>(HOUSE_LAST))) {
+            ++skippedMm6Houses;
+            continue;
+        }
+
+        HouseId houseId = static_cast<HouseId>(rawHouseId);
         houseTable[houseId].uType = valueOr(houseTypeMap, tokens[2], HOUSE_TYPE_MERCENARY_GUILD);
-        houseTable[houseId].uAnimationID = fromString<int>(tokens[4]);
+        houseTable[houseId].uAnimationID = parseNum(tokens[4], 0);
         houseTable[houseId].name = removeQuotes(tokens[5]);
         houseTable[houseId].pProprieterName = removeQuotes(tokens[6]);
         houseTable[houseId].pProprieterTitle = removeQuotes(tokens[7]);
-        houseTable[houseId].field_14 = fromString<int>(tokens[8]);
-        houseTable[houseId]._state = fromString<int>(tokens[9]);
-        houseTable[houseId]._rep = fromString<int>(tokens[10]);
-        houseTable[houseId]._per = fromString<int>(tokens[11]);
-        houseTable[houseId].fPriceMultiplier = fromString<float>(tokens[12]);
-        houseTable[houseId].flt_24 = fromString<float>(tokens[13]);
-        houseTable[houseId].generation_interval_days = fromString<int>(tokens[15]);
-        houseTable[houseId].uOpenTime = fromString<int>(tokens[18]);
-        houseTable[houseId].uCloseTime = fromString<int>(tokens[19]);
-        houseTable[houseId].uExitPicID = fromString<int>(tokens[20]);
-        houseTable[houseId].uExitMapID = static_cast<MapId>(fromString<int>(tokens[21]));
-        houseTable[houseId]._quest_bit = static_cast<QuestBit>(fromString<int>(tokens[22]));
+        houseTable[houseId].field_14 = parseNum(tokens[8], 0);
+        houseTable[houseId]._state = parseNum(tokens[9], 0);
+        houseTable[houseId]._rep = parseNum(tokens[10], 0);
+        houseTable[houseId]._per = parseNum(tokens[11], 0);
+        houseTable[houseId].fPriceMultiplier = parseNum(tokens[12], 0.0f);
+        houseTable[houseId].flt_24 = parseNum(tokens[13], 0.0f);
+        houseTable[houseId].generation_interval_days = parseNum(tokens[15], 0);
+        houseTable[houseId].uOpenTime = parseNum(tokens[18], 0);
+        houseTable[houseId].uCloseTime = parseNum(tokens[19], 0);
+        houseTable[houseId].uExitPicID = parseNum(tokens[20], 0);
+        houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));
+        houseTable[houseId]._quest_bit = static_cast<QuestBit>(parseNum(tokens[22], 0));
         houseTable[houseId].pEnterText = removeQuotes(tokens[23]);
     }
+
+    if (skippedMm6Houses > 0)
+        logger->warning("Skipped {} MM6 houses with ids outside the MM7-shaped HouseId range (1-{}); MM6's extra "
+                        "residences/tents/wagons and its text-based shop stock need a version-aware house model.",
+                        skippedMm6Houses, static_cast<int>(HOUSE_LAST));
 }
