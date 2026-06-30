@@ -21,8 +21,8 @@ struct ItemTable {
     void Initialize(ResourceManager *resourceManager, GameVersion version);
     void LoadStandardEnchantments(const Blob &stditems, GameVersion version);
     void LoadSpecialEnchantments(const Blob &spcitems, GameVersion version);
-    void LoadItems(const Blob &items);
-    void LoadRandomItems(const Blob &rnditems);
+    void LoadItems(const Blob &items, GameVersion version);
+    void LoadRandomItems(const Blob &rnditems, GameVersion version);
     void LoadPotions(const Blob &potions);
     void LoadPotionNotes(const Blob &notes);
     void LoadItemSizes();

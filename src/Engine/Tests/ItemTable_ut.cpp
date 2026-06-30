@@ -237,3 +237,27 @@ GAME_TEST(SpcItemsMm7, ParsesFullSet) {
     EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(2)].enchantmentLevel, 3); // "D".
     EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].valueMul, 10);
 }
+
+// MM6's items.txt / rnditems.txt are a different item-ID SET from MM7's (581 items, ids 0-580, vs MM7's
+// 799 ids 1-799). The engine's ItemId enum is MM7-shaped, so MM6 ids (id 0, and the differing range)
+// index outside the `items` array -> "array subscript out of range". Until a version-aware item model
+// exists (docs/pending/mm6-item-model.md), the MM6 branch defers: it must not throw and must leave item
+// data unpopulated. The id-0 row below would crash if parsed, so reaching the assertions proves the skip.
+GAME_TEST(ItemsMm6, LoadDefers) {
+    Blob items = makeTableBlob({
+        {"header1"},
+        {"header2"},
+        {"0", "lsword1", "Longsword", "50", "Weapon", "Sword", "3d3", "0", "8", "1", "Longsword", "1", "4", "499", "8", "An MM6 item with out-of-range id."},
+    });
+    Blob rnditems = makeTableBlob({
+        {"header1"}, {"header2"}, {"header3"}, {"header4"},
+        {"0", "ring1", "5", "5", "5", "5", "5", "5"},
+    });
+
+    ItemTable table;
+    table.LoadItems(items, GAME_VERSION_MM6);          // Must not throw despite the out-of-range id.
+    table.LoadRandomItems(rnditems, GAME_VERSION_MM6); // Must not throw either.
+
+    // Nothing populated - item data stays at defaults.
+    EXPECT_TRUE(table.items[ITEM_CRUDE_LONGSWORD].name.empty());
+}

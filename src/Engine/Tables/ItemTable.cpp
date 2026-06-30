@@ -106,7 +106,19 @@ void ItemTable::LoadSpecialEnchantments(const Blob &spcitems, GameVersion versio
     }
 }
 
-void ItemTable::LoadItems(const Blob &itemsBlob) {
+void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's items.txt is a different item SET from MM7's (581 items, ids 0-580, vs MM7's 799 ids
+        // 1-799), and the engine's ItemId enum is MM7-shaped: MM6 id N does not denote MM7 item N, and
+        // MM6's id 0 (and its id range) fall outside the MM7 `items` array -> "array subscript out of
+        // range". Correctly modelling MM6's items needs a version-aware item space (see
+        // docs/pending/mm6-item-model.md); for now MM6 item data is deliberately left unpopulated so
+        // engine bring-up can proceed.
+        logger->warning("MM6 items.txt parsing is not implemented yet - item data will be empty. "
+                        "The MM6 item set differs from MM7 and needs a version-aware item model.");
+        return;
+    }
+
     // items.txt table structure: index | icon | name (localized) | value | type | skill | damage | mod | material | ...
 
     static const std::map<std::string, ItemType, ascii::NoCaseLess> equipStatMap = { // TODO(captainurist): #enum use enum serialization
@@ -222,7 +234,14 @@ void ItemTable::LoadItems(const Blob &itemsBlob) {
     }
 }
 
-void ItemTable::LoadRandomItems(const Blob &rnditems) {
+void ItemTable::LoadRandomItems(const Blob &rnditems, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // rnditems.txt indexes the same MM6 item-ID space as items.txt, so it has the same SET/range
+        // mismatch against the MM7-shaped `items` array (see LoadItems / docs/pending/mm6-item-model.md).
+        // Deferred together with items.txt; the random-item chances are left at their defaults for MM6.
+        return;
+    }
+
     // rnditems.txt has two sections.
     std::vector<std::string_view> lines = split(rnditems.str()).by("\r\n").drop(4).skip("");
     constexpr size_t section1Size = 618;
@@ -261,8 +280,8 @@ void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version
     LoadPotionNotes(resourceManager->eventsDataIfPresent("potnotes.txt"));
     LoadStandardEnchantments(resourceManager->eventsData("stditems.txt"), version);
     LoadSpecialEnchantments(resourceManager->eventsData("spcitems.txt"), version);
-    LoadItems(resourceManager->eventsData("items.txt"));
-    LoadRandomItems(resourceManager->eventsData("rnditems.txt"));
+    LoadItems(resourceManager->eventsData("items.txt"), version);
+    LoadRandomItems(resourceManager->eventsData("rnditems.txt"), version);
 
     Item::PopulateSpecialBonusMap();
     Item::PopulateArtifactBonusMap();
