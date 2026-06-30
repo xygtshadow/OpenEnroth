@@ -95,7 +95,7 @@ struct NPCStats {
     void InitializeNPCData(const Blob &npcData, GameVersion version);
     void InitializeNPCGreets(const Blob &npcGreets);
     void InitializeNPCGroups(const Blob &npcGroups);
-    void InitializeNPCNews(const Blob &npcNews);
+    void InitializeNPCNews(const Blob &npcNews, GameVersion version);
     void InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid,
                                   HouseId uLocation2D, MapId uMapId);
     /**

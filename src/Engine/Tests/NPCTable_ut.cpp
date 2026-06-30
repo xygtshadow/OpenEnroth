@@ -67,6 +67,46 @@ GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
     EXPECT_EQ(npc2.dialogue_1_evt_id, 8u);
 }
 
+// MM6's npcnews.txt is a different feature from MM7's: it is per-map "Regional News" (279 rows of
+// index | Map | Topic | News Text) preceded by TWO header rows ("Regional News" then "# Map Topic News
+// Text"), whereas MM7 is a 52-entry NPC catch-phrase list (index | text | notes) with a single header.
+// Parsing MM6 with the MM7 layout throws ("'#' is not a number") because the parser drops only one
+// header row, so tokens[0] lands on the literal '#'; even past that, the 279 indices would overflow
+// pCatchPhrases (size 52) and tokens[1] is a numeric Map id, not phrase text. MM6 is therefore booted
+// past (left unpopulated) until a dedicated regional-news model is built - same interim treatment as
+// spells.txt / items.txt.
+GAME_TEST(NPCTableNewsMm6, BootsPastRegionalNews) {
+    Blob blob = makeNpcDataBlob({
+        {"Regional News", "", "", ""},               // Header 1.
+        {"#", "Map", "Topic", "News Text"},          // Header 2.
+        {"1", "40", "Goblinwatch", "The keep on the hill is now home to a pack of goblins."},
+        {"2", "40", "Baa Temple", "A new Temple dedicated to Baa lies west of here."},
+    });
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCNews(blob, GAME_VERSION_MM6));
+
+    // Boot-past leaves the MM7-shaped catch-phrase array at its defaults.
+    EXPECT_TRUE(stats->pCatchPhrases[0].empty());
+    EXPECT_TRUE(stats->pCatchPhrases[1].empty());
+}
+
+// Guards the MM7 npcnews parse path through the version-parameter refactor: single header row, then
+// index | text | notes, stored as pCatchPhrases[index] = text.
+GAME_TEST(NPCTableNewsMm7, ParsesCatchPhrases) {
+    Blob blob = makeNpcDataBlob({
+        {"News # ", "Text", "Notes"},                    // Single header row.
+        {"0", "Group 0.", "Default change me text"},
+        {"1", "Good luck in the contest!", "Peasant"},
+    });
+
+    auto stats = std::make_unique<NPCStats>();
+    EXPECT_NO_THROW(stats->InitializeNPCNews(blob, GAME_VERSION_MM7));
+
+    EXPECT_EQ(stats->pCatchPhrases[0], "Group 0.");
+    EXPECT_EQ(stats->pCatchPhrases[1], "Good luck in the contest!");
+}
+
 // Guards the MM7 parse path through the version-parameter refactor: MM7 reads greetingIndex from col 8,
 // the y/n join flag from col 9, and six event columns (A-F) into dialogue 1-6 from cols 10-15.
 GAME_TEST(NPCTableMm7, ParsesMm7Layout) {

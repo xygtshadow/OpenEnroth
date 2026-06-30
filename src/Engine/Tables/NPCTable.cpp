@@ -12,6 +12,7 @@
 #include "Engine/Resources/ResourceManager.h"
 #include "Engine/Random/Random.h"
 
+#include "Library/Logger/Logger.h"
 #include "Library/Serialization/Serialization.h"
 
 #include "Utility/Memory/Blob.h"
@@ -128,7 +129,21 @@ void NPCStats::InitializeNPCGroups(const Blob &npcGroups) {
     }
 }
 
-void NPCStats::InitializeNPCNews(const Blob &npcNews) {
+void NPCStats::InitializeNPCNews(const Blob &npcNews, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's npcnews.txt is a different feature from MM7's: it is per-map "Regional News" (279 rows of
+        // index | Map | Topic | News Text) under two header rows, whereas MM7 is a 52-entry NPC catch-phrase
+        // list (index | text | notes) under a single header. The two sets do not correspond - MM6's indices
+        // run to 279 (would overflow pCatchPhrases, size 52) and its tokens[1] is a numeric Map id, not phrase
+        // text (so the MM7 parse would also throw on the '#' of the second header row). Modelling MM6's
+        // regional-news feature is a separate task (see docs/pending/mm6-npcnews-model.md); for now MM6's
+        // catch phrases are deliberately left unpopulated so engine bring-up can proceed.
+        logger->warning("MM6 npcnews.txt parsing is not implemented yet - NPC catch phrases will be empty. "
+                        "MM6's Regional News is a different feature from MM7's catch-phrase list and needs a "
+                        "dedicated model.");
+        return;
+    }
+
     // npcnews.txt table structure: index | text (localized) | dev notes.
     for (std::string_view line : split(npcNews.str()).by("\r\n").drop(1).skip("")) {
         std::array<std::string_view, 2> tokens = split(line).by('\t');
@@ -145,7 +160,7 @@ void NPCStats::Initialize(ResourceManager *resourceManager, GameVersion version)
     // yields an empty blob when missing, and each Initialize below no-ops on empty input.
     InitializeNPCGreets(resourceManager->eventsDataIfPresent("npcgreet.txt"));
     InitializeNPCGroups(resourceManager->eventsDataIfPresent("npcgroup.txt"));
-    InitializeNPCNews(resourceManager->eventsData("npcnews.txt"));
+    InitializeNPCNews(resourceManager->eventsData("npcnews.txt"), version);
     InitializeNPCText(resourceManager->eventsData("npctext.txt"));
     InitializeNPCTopics(resourceManager->eventsData("npctopic.txt"));
     InitializeNPCDist(resourceManager->eventsDataIfPresent("npcdist.txt"));
