@@ -704,7 +704,7 @@ void Engine::SecondaryInitialization() {
     pMonsterStats->InitializePlacements(engine->resources()->eventsDataIfPresent("placemon.txt"));
 
     pSpellStats = new SpellStats();
-    pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"));
+    pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"), gameVersion());
 
     pHostilityTable = new HostilityTable();
     pHostilityTable->Initialize(engine->resources()->eventsDataIfPresent("hostile.txt"));

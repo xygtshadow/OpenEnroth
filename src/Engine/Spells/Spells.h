@@ -4,6 +4,8 @@
 #include <array>
 #include <string>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Engine/Objects/ItemEnums.h"
 #include "Engine/Objects/CharacterEnums.h"
 #include "Engine/Objects/SpriteEnums.h"
@@ -32,7 +34,7 @@ struct SpellStats {
     /**
      * @offset 0x45384A
      */
-    void Initialize(const Blob &spells);
+    void Initialize(const Blob &spells, GameVersion version);
 
     IndexedArray<SpellInfo, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> pInfos;
 };

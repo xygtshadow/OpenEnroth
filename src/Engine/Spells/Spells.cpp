@@ -16,6 +16,7 @@
 #include "Engine/TurnEngine/TurnEngine.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 
+#include "Library/Logger/Logger.h"
 #include "Library/Serialization/Serialization.h"
 
 #include "Media/Audio/AudioPlayer.h"
@@ -482,7 +483,20 @@ bool SpellBuff::Apply(Time expire_time, Mastery uSkillMastery,
     return true;
 }
 
-void SpellStats::Initialize(const Blob &spells) {
+void SpellStats::Initialize(const Blob &spells, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's spells.txt is present but its spell SET differs from MM7's: both have 99 spells in the
+        // same 9 school blocks, but 51/99 id positions are a different spell and 29 MM6 spells have no
+        // MM7 equivalent. The engine's SpellId enum is MM7-shaped, so token[0] does NOT identify the
+        // same spell across games - parsing MM6 with the MM7 layout would assign names to the wrong
+        // spells (and the MM6 '#'/column layout would throw outright). Modelling MM6's spell set is a
+        // separate, larger task (see docs/pending/mm6-spell-model.md); for now MM6 spell info is
+        // deliberately left unpopulated so engine bring-up can proceed.
+        logger->warning("MM6 spells.txt parsing is not implemented yet - spell names/descriptions will be empty. "
+                        "The MM6 spell set differs from MM7 and needs a dedicated SpellId mapping.");
+        return;
+    }
+
     static const std::map<std::string, DamageType, ascii::NoCaseLess> spellSchoolMaps = { // TODO(captainurist): #enum, use enum serialization
         {"fire", DAMAGE_FIRE},
         {"air", DAMAGE_AIR},

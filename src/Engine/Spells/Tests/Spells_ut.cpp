@@ -1,9 +1,56 @@
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "Testing/Game/GameTest.h"
+
+#include "Application/Paths/GameVersion.h"
 
 #include "Engine/Random/Random.h"
 #include "Engine/Spells/Spells.h"
+#include "Engine/Spells/SpellEnums.h"
 
 #include "Library/Random/MersenneTwisterRandomEngine.h"
+
+#include "Utility/Memory/Blob.h"
+
+// Joins cells with '\t' and rows with '\r\n' to mimic the on-disk spells.txt table format that
+// SpellStats::Initialize parses.
+static Blob makeSpellsBlob(const std::vector<std::vector<std::string>> &rows) {
+    std::string bytes;
+    for (const std::vector<std::string> &row : rows) {
+        for (size_t i = 0; i < row.size(); i++) {
+            if (i != 0)
+                bytes += '\t';
+            bytes += row[i];
+        }
+        bytes += "\r\n";
+    }
+    return Blob::fromString(std::move(bytes));
+}
+
+// MM6's spells.txt is present but its spell SET differs from MM7's (51/99 id positions are a different
+// spell; 29 MM6 spells have no MM7 equivalent), so token[0] does not map to the MM7-shaped SpellId
+// enum. MM6 spell info is therefore deliberately deferred for now: Initialize(version=MM6) must not
+// throw (a naive MM7-layout parse hits the MM6 '#' header row and throws "'#' is not a number") and
+// must leave pInfos unpopulated.
+GAME_TEST(SpellsMm6, InitializeDefers) {
+    SpellStats stats;
+    Blob blob = makeSpellsBlob({
+        {""}, // MM6 has TWO leading blank rows (MM7 has one)...
+        {""},
+        // ...then the '#' column header (MM6 layout: extra A/X/M cols, no Grand Master / Stats)...
+        {"#", "Fire Spells", "", "Res", "Short Name", "A", "X", "M", "Spell Description", "Normal",
+         "Expert", "Master"},
+        // ...then data. MM6 id 2 is "Flame Arrow", a spell that does not exist in MM7.
+        {"2", "2", "Flame Arrow", "Fire", "Flame Arrow", "2", "1", "0", "desc", "norm", "exp", "mast"},
+    });
+
+    stats.Initialize(blob, GAME_VERSION_MM6);
+
+    // Deferred: no MM6 spell names land on (the wrong) MM7 SpellId slots.
+    EXPECT_TRUE(stats.pInfos[SPELL_FIRE_FIRE_BOLT].name.empty());
+}
 
 // Tests for spell damage formulas from MM7 v1.1. Issue: #2055.
 
