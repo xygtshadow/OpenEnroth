@@ -103,6 +103,7 @@ if(OE_BUILD_TESTS)
             Tests/HouseTable_ut.cpp
             Tests/ItemTable_ut.cpp
             Tests/MapInfo_ut.cpp
+            Tests/MessageScrollTable_ut.cpp
             Tests/Monsters_ut.cpp
             Tests/NPCTable_ut.cpp
             Tests/ResourceManager_ut.cpp)
