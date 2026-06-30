@@ -67,10 +67,19 @@ void NPCStats::setNPCNamesOnLoad() {
 }
 
 //----- (00476CB5) --------------------------------------------------------
-void NPCStats::InitializeNPCData(const Blob &npcData) {
-    // npcdata.txt table structure: index | name (localized) | portrait id | groups (not used) | house | profession |
-    //                              greeting index | can join (y/n) | event ids 1-6 | dev notes |
-    //                              map id (optional, not used).
+void NPCStats::InitializeNPCData(const Blob &npcData, GameVersion version) {
+    // npcdata.txt table layout differs between MM7 and MM6:
+    //
+    //  MM7 (17 cols): index | name | portrait | group A/B/C (3-5) | 2D location (6) | profession (7) |
+    //                 greeting index (8) | can join y/n (9) | event ids A-F (10-15) | notes (16).
+    //  MM6 (14 cols): index | name | portrait | state/fame/rep (3-5) | 2D location (6) | profession (7) |
+    //                 join 0/1 (8) | news 0/1 (9) | event ids A-C (10-12) | notes (13).
+    //
+    // 2D location (6) and profession (7) line up in both, as do event ids A/B/C -> dialogue 1/2/3 (10-12).
+    // MM6 has no greeting-index column, its join flag is the numeric col 8 (MM7's join is the y/n col 9),
+    // and from col 13 on it is free-form text (the "Notes" column), so MM7's numeric reads of cols 13-15
+    // would throw on MM6 data. Branch the version-specific columns below.
+    bool isMm6 = version == GAME_VERSION_MM6;
     for (std::string_view line : split(npcData.str()).by("\r\n").drop(2).skip("").take(500)) {
         std::array<std::string_view, 16> tokens = split(line).by('\t');
         int i = fromString<int>(tokens[0]); // File indices are 1-based.
@@ -79,14 +88,19 @@ void NPCStats::InitializeNPCData(const Blob &npcData) {
         pOriginalNPCData[i].portraitId = fromString<int>(tokens[2]);
         pOriginalNPCData[i].house = static_cast<HouseId>(fromString<int>(tokens[6]));
         pOriginalNPCData[i].profession = static_cast<NpcProfession>(fromString<int>(tokens[7]));
-        pOriginalNPCData[i].greetingIndex = fromString<int>(tokens[8]);
-        pOriginalNPCData[i].canJoin = tokens[9][0] == 'y' ? 1 : 0;
         pOriginalNPCData[i].dialogue_1_evt_id = fromString<int>(tokens[10]);
         pOriginalNPCData[i].dialogue_2_evt_id = fromString<int>(tokens[11]);
         pOriginalNPCData[i].dialogue_3_evt_id = fromString<int>(tokens[12]);
-        pOriginalNPCData[i].dialogue_4_evt_id = fromString<int>(tokens[13]);
-        pOriginalNPCData[i].dialogue_5_evt_id = fromString<int>(tokens[14]);
-        pOriginalNPCData[i].dialogue_6_evt_id = fromString<int>(tokens[15]);
+        if (isMm6) {
+            // No greeting-index column; join is the numeric col 8 (0/1); no event D/E/F columns.
+            pOriginalNPCData[i].canJoin = fromString<int>(tokens[8]) != 0;
+        } else {
+            pOriginalNPCData[i].greetingIndex = fromString<int>(tokens[8]);
+            pOriginalNPCData[i].canJoin = tokens[9][0] == 'y' ? 1 : 0;
+            pOriginalNPCData[i].dialogue_4_evt_id = fromString<int>(tokens[13]);
+            pOriginalNPCData[i].dialogue_5_evt_id = fromString<int>(tokens[14]);
+            pOriginalNPCData[i].dialogue_6_evt_id = fromString<int>(tokens[15]);
+        }
     }
     uNumNewNPCs = 501;
 }
@@ -124,15 +138,17 @@ void NPCStats::InitializeNPCNews(const Blob &npcNews) {
 }
 
 //----- (0047702F) --------------------------------------------------------
-void NPCStats::Initialize(ResourceManager *resourceManager) {
+void NPCStats::Initialize(ResourceManager *resourceManager, GameVersion version) {
     pOriginalNPCData.fill(NPCData());
-    InitializeNPCData(resourceManager->eventsData("npcdata.txt"));
-    InitializeNPCGreets(resourceManager->eventsData("npcgreet.txt"));
-    InitializeNPCGroups(resourceManager->eventsData("npcgroup.txt"));
+    InitializeNPCData(resourceManager->eventsData("npcdata.txt"), version);
+    // npcgreet.txt, npcgroup.txt and npcdist.txt are absent from MM6's icons.lod. eventsDataIfPresent
+    // yields an empty blob when missing, and each Initialize below no-ops on empty input.
+    InitializeNPCGreets(resourceManager->eventsDataIfPresent("npcgreet.txt"));
+    InitializeNPCGroups(resourceManager->eventsDataIfPresent("npcgroup.txt"));
     InitializeNPCNews(resourceManager->eventsData("npcnews.txt"));
     InitializeNPCText(resourceManager->eventsData("npctext.txt"));
     InitializeNPCTopics(resourceManager->eventsData("npctopic.txt"));
-    InitializeNPCDist(resourceManager->eventsData("npcdist.txt"));
+    InitializeNPCDist(resourceManager->eventsDataIfPresent("npcdist.txt"));
     InitializeNPCNames(resourceManager->eventsData("npcnames.txt"));
     InitializeNPCProfs(resourceManager->eventsData("npcprof.txt"));
 }

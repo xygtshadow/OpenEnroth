@@ -104,6 +104,7 @@ if(OE_BUILD_TESTS)
             Tests/ItemTable_ut.cpp
             Tests/MapInfo_ut.cpp
             Tests/Monsters_ut.cpp
+            Tests/NPCTable_ut.cpp
             Tests/ResourceManager_ut.cpp)
 
     add_library(test_engine OBJECT ${TEST_ENGINE_SOURCES})

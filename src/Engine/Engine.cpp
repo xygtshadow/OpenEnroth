@@ -739,7 +739,7 @@ void Engine::SecondaryInitialization() {
     spell_fx_renedrer->LoadAnimations();
 
     pNPCStats = new NPCStats();
-    pNPCStats->Initialize(engine->resources());
+    pNPCStats->Initialize(engine->resources(), gameVersion());
 
     initializeQuests(engine->resources()->eventsData("quests.txt"));
     initializeAutonotes(engine->resources()->eventsData("autonote.txt"));

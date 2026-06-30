@@ -4,6 +4,8 @@
 #include <array>
 #include <vector>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Engine/Data/HouseEnums.h"
 #include "Engine/Objects/NPCEnums.h"
 #include "Engine/Objects/CharacterEnums.h"
@@ -84,13 +86,13 @@ struct NPCGreeting {
 };
 
 struct NPCStats {
-    void Initialize(ResourceManager *resourceManager);
+    void Initialize(ResourceManager *resourceManager, GameVersion version);
     void InitializeNPCNames(const Blob &npcNames);
     void InitializeNPCProfs(const Blob &npcProfs);
     void InitializeNPCText(const Blob &npcText);
     void InitializeNPCTopics(const Blob &npcTopics);
     void InitializeNPCDist(const Blob &npcDist);
-    void InitializeNPCData(const Blob &npcData);
+    void InitializeNPCData(const Blob &npcData, GameVersion version);
     void InitializeNPCGreets(const Blob &npcGreets);
     void InitializeNPCGroups(const Blob &npcGroups);
     void InitializeNPCNews(const Blob &npcNews);
