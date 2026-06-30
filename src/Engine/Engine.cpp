@@ -749,7 +749,7 @@ void Engine::SecondaryInitialization() {
     initializeMessageScrolls(engine->resources()->eventsData("scroll.txt"), gameVersion());
     initializeChests();
 
-    engine->_globalEventMap = EvtProgram::load(engine->resources()->eventsData("global.evt"));
+    engine->_globalEventMap = EvtProgram::load(engine->resources()->eventsData("global.evt"), gameVersion());
 
     pBitmaps_LOD->reserveLoadedTextures();
     pSprites_LOD->reserveLoadedSprites();
@@ -1440,7 +1440,7 @@ void loadMapEventsAndStrings(MapId mapid) {
 
     initLevelStrings(engine->resources()->eventsData(fmt::format("{}.str", mapNameWithoutExt)));
 
-    engine->_localEventMap = EvtProgram::load(engine->resources()->eventsData(fmt::format("{}.evt", mapNameWithoutExt)));
+    engine->_localEventMap = EvtProgram::load(engine->resources()->eventsData(fmt::format("{}.evt", mapNameWithoutExt)), engine->gameVersion());
 }
 
 bool _44100D_should_alter_right_panel() {

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 
+#include "Application/Paths/GameVersion.h"
 #include "Engine/Evt/EvtInstruction.h"
 
 class Blob;
@@ -15,7 +16,7 @@ struct EventTrigger {
 
 class EvtProgram {
  public:
-    static EvtProgram load(const Blob &rawData);
+    static EvtProgram load(const Blob &rawData, GameVersion version);
 
     void add(int eventId, EvtInstruction ir);
     void clear();

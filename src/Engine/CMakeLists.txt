@@ -100,6 +100,7 @@ add_subdirectory(TurnEngine)
 
 if(OE_BUILD_TESTS)
     set(TEST_ENGINE_SOURCES
+            Tests/EvtProgram_ut.cpp
             Tests/HouseTable_ut.cpp
             Tests/ItemTable_ut.cpp
             Tests/MapInfo_ut.cpp
