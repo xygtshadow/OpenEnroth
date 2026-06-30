@@ -60,6 +60,11 @@ void MapStats::Initialize(const Blob &mapStats, GameVersion version) {
 
     for (std::string_view line : split(mapStats.str()).by("\r\n").drop(3).skip("")) {
         std::array<std::string_view, 30> tokens = split(line).by('\t');
+        // MM6 mapstats.txt pads the tail of the table with all-blank rows (tab-only cells). They are
+        // not literally empty, so the skip("") above does not drop them; a blank map id is meaningless
+        // in either version, so skip such rows instead of feeding "" to fromString<int>.
+        if (trim(tokens[0]).empty())
+            continue;
         MapId mapId = static_cast<MapId>(fromString<int>(tokens[0]));
         MapInfo &info = pInfos[mapId];
         info.name = removeQuotes(tokens[1]);

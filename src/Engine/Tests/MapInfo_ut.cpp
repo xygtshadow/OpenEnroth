@@ -84,6 +84,35 @@ GAME_TEST(MapStatsMm6, ParsesMm6ColumnLayout) {
     EXPECT_EQ(paradise.musicId, static_cast<MusicId>(16));
 }
 
+// MM6 mapstats.txt pads the tail of the table with all-blank rows (tab-only cells). Because those
+// rows are not literally empty, the "\r\n".skip("") filter does not drop them, so the parser used to
+// crash on them with "'' is not a number" (an empty map-id cell hitting fromString<int>). The parser
+// must skip rows whose map-id cell is blank and keep going.
+GAME_TEST(MapStatsMm6, SkipsBlankSeparatorRows) {
+    std::vector<std::string> blankRow(27, ""); // 27 tab-joined empty cells, mimicking the real padding.
+    Blob blob = makeMapStatsBlob({
+        {"header1"},
+        {"header2"},
+        {"header3"},
+        {"1", "Sweet Water", "OutA1.Odm", "0", "0", "224", "8", "9", "6", "40", "50", "50", "0",
+         "Demon", "Devil Spawn", "3", " 2-4", "DemonFly", "Devil Captain", "3", " 2-4",
+         "0", "0", "1", " 1-4", "5", "Peter"},
+        blankRow,
+        {"2", "Paradise Valley", "OutA2.Odm", "0", "0", "168", "7", "8", "6", "20", "40", "30", "30",
+         "DragonCover", "Red Dragon", "3", " 1-3", "Hydra", "Hydra", "3", " 2-4",
+         "Titan", "Titan", "3", " 1-3", "16", "Peter"},
+        blankRow,
+        blankRow,
+    });
+
+    MapStats stats;
+    stats.Initialize(blob, GAME_VERSION_MM6); // Must not throw on the blank rows.
+
+    // Both real rows still parse; the blank rows between/after them are skipped.
+    EXPECT_EQ(stats.pInfos[MAP_EMERALD_ISLAND].name, "Sweet Water"); // id 1.
+    EXPECT_EQ(stats.pInfos[MAP_HARMONDALE].name, "Paradise Valley"); // id 2.
+}
+
 // Guards the MM7 parse path through the version-parameter refactor: the same parser must still read
 // MM7's column layout (Per/Alert/Steal columns, per-monster Pic at 16/20/24, music at 28, EAX at 29).
 GAME_TEST(MapStatsMm7, ParsesMm7ColumnLayout) {
