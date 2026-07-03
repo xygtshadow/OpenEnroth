@@ -4198,6 +4198,12 @@ void Spawn_Light_Elemental(int spell_power, Mastery caster_skill_mastery, Durati
     }
 }
 
+static std::string encounterMonsterName(std::string_view baseName, char tier) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return fmt::format("{}{}", baseName, tier); // MM6 monsters.txt internal names have no space before the tier letter, e.g. "GoblinA".
+    return fmt::format("{} {}", baseName, tier); // MM7 ones do, e.g. "Dragonfly A".
+}
+
 //----- (0044F57C) --------------------------------------------------------
 void SpawnEncounter(MapInfo *pMapInfo, SpawnPoint *spawn, int monsterCatMod, int countOverride, int aggro) {
     assert(spawn->type == OBJECT_Actor);
@@ -4229,31 +4235,31 @@ void SpawnEncounter(MapInfo *pMapInfo, SpawnPoint *spawn, int monsterCatMod, int
             baseInternalName = pMapInfo->encounter3MonsterInternalName;
             break;
         case 3:
-            baseInternalName = pMapInfo->encounter1MonsterInternalName + " A";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter1MonsterInternalName, 'A');
             break;
         case 4:
-            baseInternalName = pMapInfo->encounter2MonsterInternalName + " A";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter2MonsterInternalName, 'A');
             break;
         case 5:
-            baseInternalName = pMapInfo->encounter3MonsterInternalName + " A";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter3MonsterInternalName, 'A');
             break;
         case 6:
-            baseInternalName = pMapInfo->encounter1MonsterInternalName + " B";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter1MonsterInternalName, 'B');
             break;
         case 7:
-            baseInternalName = pMapInfo->encounter2MonsterInternalName + " B";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter2MonsterInternalName, 'B');
             break;
         case 8:
-            baseInternalName = pMapInfo->encounter3MonsterInternalName + " B";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter3MonsterInternalName, 'B');
             break;
         case 9:
-            baseInternalName = pMapInfo->encounter1MonsterInternalName + " C";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter1MonsterInternalName, 'C');
             break;
         case 10:
-            baseInternalName = pMapInfo->encounter2MonsterInternalName + " C";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter2MonsterInternalName, 'C');
             break;
         case 11:
-            baseInternalName = pMapInfo->encounter3MonsterInternalName + " C";
+            baseInternalName = encounterMonsterName(pMapInfo->encounter3MonsterInternalName, 'C');
             break;
         default:
             return;
@@ -4276,10 +4282,6 @@ void SpawnEncounter(MapInfo *pMapInfo, SpawnPoint *spawn, int monsterCatMod, int
     // spawning loop
     std::string fullInternalName = baseInternalName;
     for (int i = 0; i < NumToSpawn; ++i) {
-        Actor *pMonster = AllocateActor();
-        if (!pMonster)
-            continue;
-
         // random monster levels ABC
         if (monsterCategoryOddsSet) {
             int catRandom = grng->random(100);
@@ -4294,15 +4296,22 @@ void SpawnEncounter(MapInfo *pMapInfo, SpawnPoint *spawn, int monsterCatMod, int
             }
 
             if (finalCat == 1) {
-                fullInternalName = baseInternalName + " A";
+                fullInternalName = encounterMonsterName(baseInternalName, 'A');
             } else if (finalCat == 2) {
-                fullInternalName = baseInternalName + " B";
+                fullInternalName = encounterMonsterName(baseInternalName, 'B');
             } else {
-                fullInternalName = baseInternalName + " C";
+                fullInternalName = encounterMonsterName(baseInternalName, 'C');
             }
         }
 
         MonsterId monsterDescID = pMonsterList->GetMonsterIDByName(fullInternalName);
+        if (monsterDescID == MONSTER_INVALID)
+            continue; // Name lookup failed & logged an error, don't crash trying to spawn.
+
+        Actor *pMonster = AllocateActor();
+        if (!pMonster)
+            continue;
+
         MonsterDesc* monsterDesc = &pMonsterList->monsters[monsterDescID];
         MonsterId monster = pMonsterStats->FindMonsterByInternalName(fullInternalName);
 
