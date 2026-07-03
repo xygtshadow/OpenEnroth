@@ -107,19 +107,15 @@ void ItemTable::LoadSpecialEnchantments(const Blob &spcitems, GameVersion versio
 }
 
 void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
-    if (version == GAME_VERSION_MM6) {
-        // MM6's items.txt is a different item SET from MM7's (581 items, ids 0-580, vs MM7's 799 ids
-        // 1-799), and the engine's ItemId enum is MM7-shaped: MM6 id N does not denote MM7 item N, and
-        // MM6's id 0 (and its id range) fall outside the MM7 `items` array -> "array subscript out of
-        // range". Correctly modelling MM6's items needs a version-aware item space (see
-        // docs/pending/mm6-item-model.md); for now MM6 item data is deliberately left unpopulated so
-        // engine bring-up can proceed.
-        logger->warning("MM6 items.txt parsing is not implemented yet - item data will be empty. "
-                        "The MM6 item set differs from MM7 and needs a version-aware item model.");
-        return;
-    }
-
     // items.txt table structure: index | icon | name (localized) | value | type | skill | damage | mod | material | ...
+    //
+    // MM6's items.txt is the same table with a different item SET (581 rows, ids 1-580 - MM6 id N does
+    // not denote MM7's item N!) and four layout differences: a tabs-only ruler line precedes the header
+    // row, blank placeholder rows sit at ids 0/299/399, and the VarA/VarB enchantment columns are absent,
+    // shifting the paperdoll/description tail left by two. MM6's ids fit inside the MM7-shaped `items`
+    // array, so they are parsed directly into it: in an MM6 session ItemId(N) means MM6's item N, and
+    // engine code built around MM7's named ItemId constants (potion ranges, artifact ranges, quest item
+    // patches) does not apply - see docs/pending/mm6-item-model.md for these id-semantics leftovers.
 
     static const std::map<std::string, ItemType, ascii::NoCaseLess> equipStatMap = { // TODO(captainurist): #enum use enum serialization
         {"weapon", ITEM_TYPE_SINGLE_HANDED},
@@ -169,20 +165,26 @@ void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
         {"special", RARITY_SPECIAL},
     };
 
-    for (std::string_view line : split(itemsBlob.str()).by("\r\n").drop(2).skip("")) {
+    // MM6's leading ruler line means three rows precede the data instead of MM7's two.
+    for (std::string_view line : split(itemsBlob.str()).by("\r\n").drop(version == GAME_VERSION_MM6 ? 3 : 2).skip("")) {
         std::array<std::string_view, 17> tokens = split(line).by('\t');
+        if (version == GAME_VERSION_MM6 && tokens[1].empty())
+            continue; // Blank placeholder row (ids 0/299/399) - no data to parse.
         ItemId item_counter = ItemId(fromString<int>(tokens[0]));
         items[item_counter].iconName = removeQuotes(tokens[1]);
         items[item_counter].name = removeQuotes(tokens[2]);
         items[item_counter].baseValue = fromString<int>(tokens[3]);
         items[item_counter].type = valueOr(equipStatMap, tokens[4], ITEM_TYPE_NONE);
         items[item_counter].skill = valueOr(equipSkillMap, tokens[5], SKILL_MISC);
+        // Non-dice Mod1 payloads: "S<n>" spell scrolls/books, "M<n>" message scrolls, and (MM6 only)
+        // "P<n>" potions. These carry a content id, not damage - see docs/pending/mm6-item-model.md
+        // for the MM6 scroll/potion id binding leftover.
         std::array<std::string_view, 2> diceRollTokens = split(tokens[6]).by('d');
         char damagePrefix = tolower(diceRollTokens[0][0]);
         if (!diceRollTokens[1].empty()) {
             items[item_counter].damageDice = fromString<int>(diceRollTokens[0]);
             items[item_counter].damageRoll = fromString<int>(diceRollTokens[1]);
-        } else if (damagePrefix != 's' && damagePrefix != 'm') {
+        } else if (damagePrefix != 's' && damagePrefix != 'm' && damagePrefix != 'p') {
             items[item_counter].damageDice = fromString<int>(diceRollTokens[0]);
             items[item_counter].damageRoll = 1;
         } else {
@@ -202,6 +204,18 @@ void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
 
         items[item_counter].specialEnchantment = ITEM_ENCHANTMENT_NULL;
         items[item_counter].standardEnchantment = {};
+
+        if (version == GAME_VERSION_MM6) {
+            // MM6 has no VarA/VarB enchantment columns (and no "special"-material items either, only
+            // artifacts and relics), so the paperdoll/description tail sits two columns to the left.
+            // Column 12 is the inventory "Shape" id, unused - sizes come from icons in LoadItemSizes.
+            items[item_counter].standardEnchantmentStrength = 0;
+            items[item_counter].paperdollAnchorOffset.x = fromString<int>(tokens[13]);
+            items[item_counter].paperdollAnchorOffset.y = fromString<int>(tokens[14]);
+            items[item_counter].description = removeQuotes(tokens[15]);
+            continue;
+        }
+
         if (items[item_counter].rarity == RARITY_SPECIAL) {
             for (Attribute ii : allEnchantableAttributes()) {
                 if (ascii::noCaseEquals(tokens[12], standardEnchantments[ii].itemSuffix)) { // TODO(captainurist): #unicode this is not ascii
@@ -236,9 +250,32 @@ void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
 
 void ItemTable::LoadRandomItems(const Blob &rnditems, GameVersion version) {
     if (version == GAME_VERSION_MM6) {
-        // rnditems.txt indexes the same MM6 item-ID space as items.txt, so it has the same SET/range
-        // mismatch against the MM7-shaped `items` array (see LoadItems / docs/pending/mm6-item-model.md).
-        // Deferred together with items.txt; the random-item chances are left at their defaults for MM6.
+        // MM6's rnditems.txt indexes the same MM6 item-id space as its items.txt (per-item chances for
+        // ids 1-400) and, unlike MM7's fixed 618-row section, ends the per-item section with a sum row
+        // before the bonus-chance section. So the MM6 parse is data-driven: per-item rows are the ones
+        // with a numeric id, and the three bonus-chance rows are recognized by their labels.
+        const auto parseChanceCells = [](const std::array<std::string_view, 8> &tokens, auto &chances) {
+            for (ItemTreasureLevel level : chances.indices())
+                chances[level] = fromString<int>(tokens[2 + std::to_underlying(level) - std::to_underlying(ITEM_TREASURE_LEVEL_FIRST_RANDOM)]);
+        };
+
+        for (std::string_view line : split(rnditems.str()).by("\r\n").drop(4).skip("")) {
+            std::array<std::string_view, 8> tokens = split(line).by('\t');
+            if (!tokens[0].empty() && isdigit(static_cast<unsigned char>(tokens[0][0]))) {
+                parseChanceCells(tokens, items[ItemId(fromString<int>(tokens[0]))].uChanceByTreasureLvl);
+            } else if (ascii::noCaseEquals(tokens[1], "Standard")) {
+                parseChanceCells(tokens, standardEnchantmentChanceForEquipment);
+            } else if (ascii::noCaseEquals(tokens[1], "Special")) {
+                parseChanceCells(tokens, specialEnchantmentChanceForEquipment);
+            } else if (ascii::noCaseEquals(tokens[1], "Special %")) {
+                parseChanceCells(tokens, specialEnchantmentChanceForWeapons);
+            } // Anything else is the sum row, a section header or a legend note - not data.
+        }
+
+        itemChanceSumByTreasureLevel.fill(0);
+        for (ItemTreasureLevel i : itemChanceSumByTreasureLevel.indices())
+            for (ItemId j : items.indices())
+                itemChanceSumByTreasureLevel[i] += items[j].uChanceByTreasureLvl[i];
         return;
     }
 
@@ -407,8 +444,8 @@ void ItemTable::generateItem(ItemTreasureLevel treasureLevel, RandomItemType uTr
 
         // Otherwise try to spawn any random item.
         if (itemChanceSumByTreasureLevel[treasureLevel] == 0) {
-            // No spawn chance data at all for this treasure level - happens under MM6, where items.txt
-            // parsing is not implemented yet (see LoadItems). Leave the item empty.
+            // No spawn chance data at all for this treasure level - rnditems.txt didn't load or lists
+            // no items at this level. Leave the item empty.
             logger->warning("Item data is not loaded - cannot generate a random treasure level {} item.",
                             std::to_underlying(treasureLevel));
             return;

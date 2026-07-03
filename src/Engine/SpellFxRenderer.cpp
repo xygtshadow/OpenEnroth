@@ -1098,6 +1098,12 @@ void SpellFxRenderer::SetPlayerBuffAnim(SpellId uSpellID,
     }
 
     pBuffAnim->uSpellIconID = pIconsFrameTable->animationId(iconName);
+    if (pBuffAnim->uSpellIconID == -1) {
+        // MM6's dift.bin carries no spell/buff HUD icon animations, so there's nothing to play -
+        // skip rendering instead of indexing the frame table with -1.
+        pBuffAnim->bRender = false;
+        return;
+    }
     if (pBuffAnim->bRender)
         pBuffAnim->uSpellAnimTime = pIconsFrameTable->animationLength(pBuffAnim->uSpellIconID);
 }

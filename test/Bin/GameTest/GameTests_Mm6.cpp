@@ -22,6 +22,7 @@
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/SpriteObject.h"
+#include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/NPCTable.h"
 
 #include "GUI/GUIWindow.h"
@@ -139,11 +140,27 @@ GAME_TEST(Mm6, KillAndLootPeasant) {
 
     // Looting the corpse with the interact key rolls the peasant's 3D6 gold dice. Loot from a bit further
     // out: a corpse right at the party's feet projects below the game viewport and isn't pickable, just
-    // like in the original.
-    teleportNextTo(pActors[peasantId].pos, 350);
-    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
-    game.tick(2);
-    int goldFound = pParty->GetGold() - goldBefore;
+    // like in the original. The peasant flees mid-fight and can die with scenery or bystanders in the
+    // way, so try several approach sides and distances until the pick lands on the corpse.
+    int goldFound = 0;
+    Vec3f corpsePos = pActors[peasantId].pos;
+    for (Vec3f offset : {Vec3f(-350, 0, 0), Vec3f(350, 0, 0), Vec3f(0, -350, 0), Vec3f(0, 350, 0),
+                         Vec3f(-250, 0, 0), Vec3f(250, 0, 0), Vec3f(0, -250, 0), Vec3f(0, 250, 0)}) {
+        Vec3f pos = corpsePos + offset;
+        int yawDegrees = TrigLUT.atan2(corpsePos.x - pos.x, corpsePos.y - pos.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+        game.tick(1);
+        game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+        game.tick(2);
+        if (current_screen_type != SCREEN_GAME) { // Picked a live bystander instead - dismiss its dialogue and retry.
+            game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+            game.tick(2);
+            continue;
+        }
+        goldFound = pParty->GetGold() - goldBefore;
+        if (goldFound)
+            break;
+    }
     EXPECT_GE(goldFound, 3);
     EXPECT_LE(goldFound, 18);
 }
@@ -415,6 +432,49 @@ GAME_TEST(Mm6, RiddlePasswordPrompt) {
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
     EXPECT_LE((pParty->pos - platePos).length(), 256.0f); // Not teleported into the wrong-answer trap.
     EXPECT_EQ(engine->_persistentVariables.mapVars[6], 1);
+    game.tick(5);
+}
+
+GAME_TEST(Mm6, QuestItemPickup) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6 item data is loaded: the Fly spell scroll is items.txt row 220, and the rnditems.txt
+    // random-generation chances are populated.
+    EXPECT_EQ(pItemTable->items[ItemId(220)].name, "Fly");
+    EXPECT_EQ(pItemTable->items[ItemId(220)].iconName, "scroll4");
+    EXPECT_EQ(pItemTable->items[ItemId(220)].type, ITEM_TYPE_SPELL_SCROLL);
+    EXPECT_EQ(pItemTable->items[ItemId(220)].baseValue, 300);
+    EXPECT_GT(pItemTable->itemChanceSumByTreasureLevel[ITEM_TREASURE_LEVEL_1], 0);
+
+    // New Sorpigal's free Fly scroll: local event 225 is an ungated Add(ItemInHands, 220) pickup
+    // hanging on a clickable outdoor model face.
+    const BLVFace *scrollFace = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 225 && face.Clickable()) {
+                scrollFace = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(scrollFace, nullptr);
+
+    // Stand in front of the scroll, facing it.
+    Vec3f scrollCenter = scrollFace->boundingBox.center();
+    Vec3f pos = scrollCenter + scrollFace->facePlane.normal * 130;
+    pos.z = scrollFace->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(scrollCenter.x - pos.x, scrollCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+
+    // Interacting fires the event and the scroll lands in the party's hands (on the cursor).
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(220));
     game.tick(5);
 }
 

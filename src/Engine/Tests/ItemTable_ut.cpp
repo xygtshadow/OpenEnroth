@@ -238,26 +238,74 @@ GAME_TEST(SpcItemsMm7, ParsesFullSet) {
     EXPECT_EQ(table.specialEnchantments[static_cast<ItemEnchantment>(3)].valueMul, 10);
 }
 
-// MM6's items.txt / rnditems.txt are a different item-ID SET from MM7's (581 items, ids 0-580, vs MM7's
-// 799 ids 1-799). The engine's ItemId enum is MM7-shaped, so MM6 ids (id 0, and the differing range)
-// index outside the `items` array -> "array subscript out of range". Until a version-aware item model
-// exists (docs/pending/mm6-item-model.md), the MM6 branch defers: it must not throw and must leave item
-// data unpopulated. The id-0 row below would crash if parsed, so reaching the assertions proves the skip.
-GAME_TEST(ItemsMm6, LoadDefers) {
+// MM6's items.txt is the same table as MM7's with four layout differences: a tabs-only ruler line
+// precedes the header (three rows before the data instead of MM7's two), blank placeholder rows sit at
+// ids 0/299/399, the VarA/VarB enchantment columns are absent (so the paperdoll/description tail is
+// shifted left by two), and the id range is 1-580. MM6 ids fit inside the MM7-shaped `items` array and
+// are parsed directly into it: in an MM6 session, ItemId(N) denotes MM6's item N (see
+// docs/pending/mm6-item-model.md for the id-semantics leftovers this implies).
+GAME_TEST(ItemsMm6, ParsesMm6Layout) {
     Blob items = makeTableBlob({
-        {"header1"},
-        {"header2"},
-        {"0", "lsword1", "Longsword", "50", "Weapon", "Sword", "3d3", "0", "8", "1", "Longsword", "1", "4", "499", "8", "An MM6 item with out-of-range id."},
-    });
-    Blob rnditems = makeTableBlob({
-        {"header1"}, {"header2"}, {"header3"}, {"header4"},
-        {"0", "ring1", "5", "5", "5", "5", "5", "5"},
+        {"", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, // Tabs-only ruler line.
+        {"Item #", "Pic File", "Name", "Value", "Equip Stat", "Skill Group", "Mod1", "Mod2", "material", "ID/Rep/St", "Not identified name", "Sprite Index", "Shape", "Equip X", "Equip Y", "Notes"},
+        {"0", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, // Blank id-0 placeholder row.
+        {"1", "lsword1", "Longsword", "50", "Weapon", "Sword", "3d3", "0", "8", "1", "Longsword", "1", "4", "499", "8", "A longsword."},
+        {"2", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, // Blank separator row (ids 299/399 in the real data).
+        {"3", "scroll4", "Fly", "300", "Sscroll", "Misc", "0", "0", "2", "1", "Spell Scroll", "0", "1", "0", "0", "The Fly spell."},
+        {"4", "ldagger3", "Mordred", "20000", "Weapon", "Dagger", "2d3", "8", "Artifact", "15", "Artifact", "6", "0", "10", "20", "An artifact."},
+        {"5", "memcryst", "Memory Crystal", "0", "N / A", "Misc", "0", "0", "", "0", "Memory Crystal", "0", "0", "0", "0", "A quest item."},
     });
 
     ItemTable table;
-    table.LoadItems(items, GAME_VERSION_MM6);          // Must not throw despite the out-of-range id.
-    table.LoadRandomItems(rnditems, GAME_VERSION_MM6); // Must not throw either.
+    table.LoadItems(items, GAME_VERSION_MM6);
 
-    // Nothing populated - item data stays at defaults.
-    EXPECT_TRUE(table.items[ITEM_CRUDE_LONGSWORD].name.empty());
+    EXPECT_EQ(table.items[ItemId(1)].name, "Longsword");
+    EXPECT_EQ(table.items[ItemId(1)].iconName, "lsword1");
+    EXPECT_EQ(table.items[ItemId(1)].baseValue, 50);
+    EXPECT_EQ(table.items[ItemId(1)].type, ITEM_TYPE_SINGLE_HANDED);
+    EXPECT_EQ(table.items[ItemId(1)].skill, SKILL_SWORD);
+    EXPECT_EQ(table.items[ItemId(1)].damageDice, 3);
+    EXPECT_EQ(table.items[ItemId(1)].damageRoll, 3);
+    EXPECT_EQ(table.items[ItemId(1)].unidentifiedName, "Longsword");
+    // The tail follows the MM6 column layout (no VarA/VarB): paperdoll anchor from columns 13-14,
+    // description from column 15.
+    EXPECT_EQ(table.items[ItemId(1)].paperdollAnchorOffset.x, 499);
+    EXPECT_EQ(table.items[ItemId(1)].paperdollAnchorOffset.y, 8);
+    EXPECT_EQ(table.items[ItemId(1)].description, "A longsword.");
+
+    EXPECT_TRUE(table.items[ItemId(2)].name.empty()); // Blank separator rows are skipped.
+    EXPECT_EQ(table.items[ItemId(3)].type, ITEM_TYPE_SPELL_SCROLL);
+    EXPECT_EQ(table.items[ItemId(4)].rarity, RARITY_ARTIFACT);
+    EXPECT_EQ(table.items[ItemId(5)].type, ITEM_TYPE_NONE); // "N / A" - quest items and other non-equipment.
+}
+
+// MM6's rnditems.txt lists per-item chances for ids 1-400 and, unlike MM7's fixed 618-row section, ends
+// the per-item section with a sum row before the bonus-chance section, so the MM6 parse is data-driven:
+// the per-item section ends at the first row without a numeric id, and the three bonus-chance rows are
+// recognized by their labels.
+GAME_TEST(RndItemsMm6, ParsesMm6Layout) {
+    Blob rnditems = makeTableBlob({
+        {"Random Item Generation By Treasure Level 1 - 6"},
+        {"", "", "Chance By Level"},
+        {"Item #", "Pic File", "1", "2", "3", "4", "5", "6"},
+        {"0", "", "", "", "", "", "", ""}, // Blank id-0 placeholder row.
+        {"1", "Longsword1", "5", "5", "2", "0", "0", "0"},
+        {"2", "Longsword2", "0", "10", "5", "2", "0", "0"},
+        {"", "", "5", "15", "7", "2", "0", "0"}, // Sum row - ends the per-item section (MM7 has no such row).
+        {"Bonus chance by level %", "", "1", "2", "3", "4", "5", "6"},
+        {"", "Standard", "0", "40", "40", "40", "40", "75"},
+        {"", "Special", "0", "0", "10", "15", "20", "25"},
+        {"Weapons", "Special %", "0", "0", "10", "20", "30", "50"},
+        {"", "(note weapons have no chance for standard just chance for special)"},
+    });
+
+    ItemTable table;
+    table.LoadRandomItems(rnditems, GAME_VERSION_MM6);
+
+    EXPECT_EQ(table.items[ItemId(1)].uChanceByTreasureLvl[ITEM_TREASURE_LEVEL_1], 5);
+    EXPECT_EQ(table.items[ItemId(2)].uChanceByTreasureLvl[ITEM_TREASURE_LEVEL_2], 10);
+    EXPECT_EQ(table.itemChanceSumByTreasureLevel[ITEM_TREASURE_LEVEL_2], 15);
+    EXPECT_EQ(table.standardEnchantmentChanceForEquipment[ITEM_TREASURE_LEVEL_6], 75);
+    EXPECT_EQ(table.specialEnchantmentChanceForEquipment[ITEM_TREASURE_LEVEL_3], 10);
+    EXPECT_EQ(table.specialEnchantmentChanceForWeapons[ITEM_TREASURE_LEVEL_6], 50);
 }
