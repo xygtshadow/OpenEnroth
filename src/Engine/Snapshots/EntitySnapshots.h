@@ -242,7 +242,7 @@ void snapshot(const NPCData &src, NPCData_MM7 *dst);
 void reconstruct(const NPCData_MM7 &src, NPCData *dst);
 
 
-struct Item_MM7 {
+struct Item_MM6 {
     int32_t itemId;
     int32_t standardEnchantmentOrPotionPower; // Potion power for potions, attribute index + 1 for standard enchantments.
     int32_t standardEnchantmentStrength;
@@ -253,11 +253,17 @@ struct Item_MM7 {
     uint8_t maxCharges;
     uint8_t lichJarCharacterIndex; // Only for full lich jars. 1-based index of the character whose essence it stored in it.
     uint8_t _pad;
+};
+static_assert(sizeof(Item_MM6) == 0x1C);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(Item_MM6)
+
+struct Item_MM7 : Item_MM6 {
     int64_t enchantmentExpirationTime;
 };
 static_assert(sizeof(Item_MM7) == 0x24);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(Item_MM7)
 
+void reconstruct(const Item_MM6 &src, Item_MM7 *dst);
 void snapshot(const Item &src, Item_MM7 *dst, ContextTag<ItemSlot> slot);
 void reconstruct(const Item_MM7 &src, Item *dst);
 
@@ -713,6 +719,59 @@ static_assert(sizeof(MonsterInfo_MM7) == 0x58);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(MonsterInfo_MM7)
 
 
+// MM6 in-map monster info, a compact ancestor of MonsterInfo_MM7: single spell attack, six resistances,
+// no special ability block. Layout matches MMExtension's MM6 MonsterInfo & was verified against MM6
+// games.lod ddm/dlv actor records cross-referenced with MM6 monsters.txt.
+struct MonsterInfo_MM6 {
+    Pointer_MM7 name;
+    Pointer_MM7 picture;
+    uint8_t id;
+    uint8_t level;
+    uint8_t treasureDropChance;
+    uint8_t goldDiceRolls;
+    uint8_t goldDiceSides;
+    uint8_t treasureLevel;
+    uint8_t treasureType;
+    uint8_t flying;
+    uint8_t movementType; // Same coding as MM7, verified Short=0/Med=1/Long=2.
+    uint8_t aiType; // Same coding as MM7, verified Suicidal=0/Wimp=1/Aggress=3.
+    uint8_t hostilityType; // Same 0-4 range as MM7.
+    uint8_t preferredTargetClass; // Not in monsters.txt & not used in OE, meaning unclear.
+    uint8_t specialAttackType; // Same coding as MM7, verified DrainSP=22.
+    uint8_t specialAttackLevel; // The "xN" multiplier of the monsters.txt Bonus column, 1 when unused.
+    uint8_t attack1Type; // MM6 damage type coding: Phys=0, Magic=1, Fire=2, Elec=3, Cold=4, Poison=5, Energy=6.
+    uint8_t attack1DamageDiceRolls;
+    uint8_t attack1DamageDiceSides;
+    uint8_t attack1DamageBonus;
+    uint8_t attack1MissileType; // MM6 missile coding, attack1Type + 1 for elemental bolts, verified Energy=7.
+    uint8_t attack2Chance;
+    uint8_t attack2Type;
+    uint8_t attack2DamageDiceRolls;
+    uint8_t attack2DamageDiceSides;
+    uint8_t attack2DamageBonus;
+    uint8_t attack2MissileType;
+    uint8_t spell1UseChance;
+    uint8_t spell1Id; // MM6 spell numbering (9 schools of 11, Elec/Cold/Poison in the Air/Water/Earth slots).
+    uint8_t spell1SkillMastery; // Same packing as the low byte of the MM7 joined skill format, verified "M,14"=0x8E.
+    uint8_t resFire;
+    uint8_t resElec;
+    uint8_t resCold;
+    uint8_t resPoison;
+    uint8_t resPhysical;
+    uint8_t resMagic;
+    uint8_t numCharactersAttackedPerSpecialAbility; // The monsters.txt Pref column.
+    std::array<char, 5> _pad;
+    int32_t hp;
+    int32_t ac;
+    int32_t exp;
+    int32_t baseSpeed;
+    int32_t recoveryTime;
+    int32_t field_44; // Always 0 in MM6 data.
+};
+static_assert(sizeof(MonsterInfo_MM6) == 0x48);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(MonsterInfo_MM6)
+
+
 struct MonsterDesc_MM6 {
     uint16_t monsterHeight;
     uint16_t monsterRadius;
@@ -809,6 +868,50 @@ struct Actor_MM7 {
 static_assert(sizeof(Actor_MM7) == 0x344);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(Actor_MM7)
 
+// MM6 in-map monster ("MapMonster" in MMExtension terms). Same shape as Actor_MM7 except for the compact
+// MonsterInfo_MM6, 14 buff slots instead of 1+21, and no carried item structs (only carriedItemId).
+// Layout verified against MM6 games.lod ddm/dlv actor records cross-referenced with MM6 monsters.txt.
+struct Actor_MM6 {
+    std::array<char, 32> name;
+    int16_t npcId;
+    int16_t field_22;
+    uint32_t attributes;
+    int16_t hp;
+    std::array<char, 2> _pad;
+    MonsterInfo_MM6 monsterInfo;
+    int16_t field_74; // "RangeAttack" in MMExtension terms, always 0 in MM6 data.
+    int16_t monsterId; // Always 0 in fresh MM6 maps - the monster id lives in monsterInfo.id instead.
+    uint16_t radius;
+    uint16_t height;
+    uint16_t moveSpeed;
+    Vec3s pos;
+    Vec3s velocity;
+    uint16_t yawAngle;
+    uint16_t pitchAngle;
+    int16_t sectorId;
+    uint16_t currentActionLength;
+    Vec3s initialPosition;
+    Vec3s guardingPosition;
+    uint16_t tetherDistance;
+    int16_t aiState;
+    uint16_t currentActionAnimation;
+    uint16_t carriedItemId;
+    std::array<char, 2> _pad2;
+    uint32_t currentActionTime;
+    std::array<uint16_t, 8> spriteIds; // All 0 in fresh MM6 maps, the engine rederives them from tables on load.
+    std::array<uint16_t, 4> soundSampleIds;
+    std::array<SpellBuff_MM7, 14> buffs; // MM6 buff indices differ from MM7's, first slot holds garbage in MM6 data.
+    uint32_t group;
+    uint32_t hostilityGroup; // "Ally" in MMExtension terms.
+    std::array<ActorJob_MM7, 8> scheduledJobs;
+    uint32_t summonerId;
+    uint32_t lastCharacterIdToHit;
+    std::array<char, 16> field_214; // Always 0 in MM6 data.
+};
+static_assert(sizeof(Actor_MM6) == 0x224);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(Actor_MM6)
+
+void reconstruct(const Actor_MM6 &src, Actor_MM7 *dst);
 void snapshot(const Actor &src, Actor_MM7 *dst);
 void reconstruct(const Actor_MM7 &src, Actor *dst);
 
@@ -986,6 +1089,34 @@ struct SpriteObject_MM7 {
 static_assert(sizeof(SpriteObject_MM7) == 0x70);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(SpriteObject_MM7)
 
+// MM6 in-map sprite object. Same shape as SpriteObject_MM7 except for the compact Item_MM6 and the missing
+// field_60_distance_related_prolly_lod / spellCasterAbility bytes. The spell block fields are always 0 in
+// fresh MM6 maps, so their exact order is unverified (assumed to match MM7).
+struct SpriteObject_MM6 {
+    uint16_t spriteId;
+    uint16_t objectDescId;
+    Vec3i position;
+    Vec3s velocity;
+    uint16_t yawAngle;
+    uint16_t uSoundID;
+    uint16_t uAttributes;
+    int16_t uSectorID;
+    uint16_t uTimeSinceCreated;
+    int16_t tempLifetime;
+    int16_t field_22_glow_radius_multiplier;
+    Item_MM6 containing_item;
+    int32_t uSpellID;
+    int32_t spell_level;
+    int32_t spell_skill;
+    int32_t field_54;
+    int32_t spell_caster_pid;
+    int32_t spell_target_pid;
+    Vec3i initialPosition;
+};
+static_assert(sizeof(SpriteObject_MM6) == 0x64);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(SpriteObject_MM6)
+
+void reconstruct(const SpriteObject_MM6 &src, SpriteObject_MM7 *dst);
 void snapshot(const SpriteObject &src, SpriteObject_MM7 *dst);
 void reconstruct(const SpriteObject_MM7 &src, SpriteObject *dst);
 
@@ -1029,6 +1160,15 @@ void reconstruct(const DecorationDesc_MM6 &src, DecorationDesc *dst);
 void reconstruct(const DecorationDesc_MM7 &src, DecorationDesc *dst);
 
 
+struct Chest_MM6 {
+    uint16_t chestTypeId;
+    uint16_t flags;
+    std::array<Item_MM6, 140> items;
+    std::array<int16_t, 140> inventoryMatrix;
+};
+static_assert(sizeof(Chest_MM6) == 4204);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(Chest_MM6)
+
 struct Chest_MM7 {
     uint16_t chestTypeId; // Index into chest table to get chest size & texture, in mm7 that's a value in [0, 7].
     uint16_t flags;
@@ -1038,6 +1178,7 @@ struct Chest_MM7 {
 static_assert(sizeof(Chest_MM7) == 5324);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(Chest_MM7)
 
+void reconstruct(const Chest_MM6 &src, Chest_MM7 *dst);
 void snapshot(const Chest &src, Chest_MM7 *dst);
 void reconstruct(const Chest_MM7 &src, Chest *dst, ContextTag<int> chestId);
 void snapshot(const ChestInventory &src, Chest_MM7 *dst);

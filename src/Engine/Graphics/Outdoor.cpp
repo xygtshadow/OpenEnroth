@@ -785,6 +785,11 @@ void OutdoorLocation::PrepareActorsDrawList() {
             billScale.y *= spell_fx_renderer->_4A806F_get_mass_distortion_value(&pActors[i]);
         }
 
+        // Octant frames can legitimately be missing from MM6 data (see loadSpriteFrame in Sprites.cpp),
+        // in which case the actor is simply not drawn from this angle.
+        if (!frame->sprites[Sprite_Octant])
+            continue;
+
         if (render->AddBillboardIfVisible(frame->sprites[Sprite_Octant], frame->paletteId, posMod, billScale, flags, Pid(OBJECT_Actor, i), pActors[i].sectorId)) {
             ++uNumSpritesDrawnThisFrame;
             pActors[i].attributes |= ACTOR_VISIBLE;

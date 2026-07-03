@@ -679,11 +679,6 @@ void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLoca
         totalFaces += model.numFaces;
 
     if (*version == GAME_VERSION_MM6) {
-        // MM6 record sizes, derived from oute3.ddm. The structs are not modelled yet, see below.
-        constexpr size_t mm6ActorSize = 548;
-        constexpr size_t mm6SpriteObjectSize = 100;
-        constexpr size_t mm6ChestSize = 4204; // 4-byte header + 140 items of 28 bytes + 140 uint16_t indices.
-
         // MM6 ddm layout: 8-byte header, reveal bitmaps, then actors / sprite objects / chests, then event
         // variables & location time. Face attributes & decoration flags are MM7 additions - synthesize them
         // from the odm data instead.
@@ -702,20 +697,17 @@ void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLoca
         for (const LevelDecoration_MM7 &decoration : ctx->decorations)
             dst->decorationFlags.push_back(decoration.uFlags);
 
-        uint32_t actorCount, spriteObjectCount, chestCount;
+        uint32_t actorCount;
         deserialize(src, &actorCount);
-        src.skipOrFail(actorCount * mm6ActorSize);
+        deserialize(src, &dst->actors, tags::presized(actorCount), tags::each, tags::via<Actor_MM6>);
+
+        uint32_t spriteObjectCount;
         deserialize(src, &spriteObjectCount);
-        src.skipOrFail(spriteObjectCount * mm6SpriteObjectSize);
+        deserialize(src, &dst->spriteObjects, tags::presized(spriteObjectCount), tags::each, tags::via<SpriteObject_MM6>);
+
+        uint32_t chestCount;
         deserialize(src, &chestCount);
-        src.skipOrFail(chestCount * mm6ChestSize);
-        dst->actors.clear();
-        dst->spriteObjects.clear();
-        dst->chests.clear();
-        if (actorCount || spriteObjectCount || chestCount)
-            logger->warning("MM6 map actors, sprite objects & chests are not implemented yet - the map will be empty. "
-                            "MM6's on-disk actor ({} bytes), sprite object ({} bytes) and chest ({} bytes) records differ "
-                            "from MM7's and need dedicated models.", mm6ActorSize, mm6SpriteObjectSize, mm6ChestSize);
+        deserialize(src, &dst->chests, tags::presized(chestCount), tags::each, tags::via<Chest_MM6>);
 
         deserialize(src, &dst->eventVariables);
         deserialize(src, &dst->locationTime);

@@ -406,6 +406,14 @@ void ItemTable::generateItem(ItemTreasureLevel treasureLevel, RandomItemType uTr
         }
 
         // Otherwise try to spawn any random item.
+        if (itemChanceSumByTreasureLevel[treasureLevel] == 0) {
+            // No spawn chance data at all for this treasure level - happens under MM6, where items.txt
+            // parsing is not implemented yet (see LoadItems). Leave the item empty.
+            logger->warning("Item data is not loaded - cannot generate a random treasure level {} item.",
+                            std::to_underlying(treasureLevel));
+            return;
+        }
+
         int randomWeight = grng->random(this->itemChanceSumByTreasureLevel[treasureLevel]) + 1;
         for (ItemId itemId : allSpawnableItems()) {
             weightSum += items[itemId].uChanceByTreasureLvl[treasureLevel];

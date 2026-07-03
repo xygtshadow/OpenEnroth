@@ -450,6 +450,11 @@ void reconstruct(const SpellBuff_MM7 &src, SpellBuff *dst) {
     dst->isGM = src.isGM;
 }
 
+void reconstruct(const Item_MM6 &src, Item_MM7 *dst) {
+    static_cast<Item_MM6 &>(*dst) = src;
+    dst->enchantmentExpirationTime = 0; // Temporary enchantments are an MM7 addition.
+}
+
 void snapshot(const Item &src, Item_MM7 *dst, ContextTag<ItemSlot> slot) {
     memzero(dst);
 
@@ -1317,6 +1322,124 @@ void reconstruct(const ActorJob_MM7 &src, ActorJob *dst) {
     dst->uMonth = src.month;
 }
 
+// MM6 damage type coding is Phys=0, Magic=1, Fire=2, Elec=3, Cold=4, Poison=5, Energy=6, with Elec/Cold/Poison
+// being MM7's Air/Water/Earth.
+static uint8_t reconstructMm6DamageType(uint8_t type) {
+    switch (type) {
+    case 0: return std::to_underlying(DAMAGE_PHYSICAL);
+    case 1: return std::to_underlying(DAMAGE_MAGIC);
+    case 2: return std::to_underlying(DAMAGE_FIRE);
+    case 3: return std::to_underlying(DAMAGE_AIR);
+    case 4: return std::to_underlying(DAMAGE_WATER);
+    case 5: return std::to_underlying(DAMAGE_EARTH);
+    case 6: return std::to_underlying(DAMAGE_ENERGY);
+    default: return std::to_underlying(DAMAGE_PHYSICAL);
+    }
+}
+
+// MM6 missile coding is None=0, Arrow=1, then elemental bolts at damage type + 1. MM6 Magic missiles (2) and
+// codes past Energy (Rock/Dagger/FireAr in the txt) have no MM7 equivalent and are dropped, mirroring what
+// the monsters.txt parser does with them.
+static uint8_t reconstructMm6MissileType(uint8_t missile) {
+    switch (missile) {
+    case 1: return std::to_underlying(MONSTER_PROJECTILE_ARROW);
+    case 3: return std::to_underlying(MONSTER_PROJECTILE_FIRE_BOLT);
+    case 4: return std::to_underlying(MONSTER_PROJECTILE_AIR_BOLT);
+    case 5: return std::to_underlying(MONSTER_PROJECTILE_WATER_BOLT);
+    case 6: return std::to_underlying(MONSTER_PROJECTILE_EARTH_BOLT);
+    case 7: return std::to_underlying(MONSTER_PROJECTILE_ENERGY_BOLT);
+    default: return std::to_underlying(MONSTER_PROJECTILE_NONE);
+    }
+}
+
+static void reconstruct(const MonsterInfo_MM6 &src, MonsterInfo_MM7 *dst) {
+    *dst = {};
+    dst->level = src.level;
+    dst->treasureDropChance = src.treasureDropChance;
+    dst->goldDiceRolls = src.goldDiceRolls;
+    dst->goldDiceSides = src.goldDiceSides;
+    dst->treasureLevel = src.treasureLevel;
+    dst->treasureType = src.treasureType;
+    dst->flying = src.flying;
+    dst->movementType = src.movementType;
+    dst->aiType = src.aiType;
+    dst->hostilityType = src.hostilityType;
+    dst->specialAttackType = src.specialAttackType;
+    dst->specialAttackLevel = src.specialAttackLevel;
+    dst->attack1Type = reconstructMm6DamageType(src.attack1Type);
+    dst->attack1DamageDiceRolls = src.attack1DamageDiceRolls;
+    dst->attack1DamageDiceSides = src.attack1DamageDiceSides;
+    dst->attack1DamageBonus = src.attack1DamageBonus;
+    dst->attack1MissileType = reconstructMm6MissileType(src.attack1MissileType);
+    dst->attack2Chance = src.attack2Chance;
+    dst->attack2Type = reconstructMm6DamageType(src.attack2Type);
+    dst->attack2DamageDiceRolls = src.attack2DamageDiceRolls;
+    dst->attack2DamageDiceSides = src.attack2DamageDiceSides;
+    dst->attack2DamageBonus = src.attack2DamageBonus;
+    dst->attack2MissileType = reconstructMm6MissileType(src.attack2MissileType);
+    // MM6 spell ids share MM7's school slots, so this is correct for spells that exist in both games.
+    // MM6-only spells will need a dedicated mapping once monster spellcasting is looked at.
+    dst->spell1UseChance = src.spell1UseChance;
+    dst->spell1Id = src.spell1Id;
+    dst->spell1SkillMastery = src.spell1SkillMastery; // Same packing as the MM7 joined skill format.
+    // The single non-elemental MM6 Magic resistance maps to Mind/Spirit/Body, and Light/Dark are MM7
+    // additions, mirroring the monsters.txt parser.
+    dst->resFire = src.resFire;
+    dst->resAir = src.resElec;
+    dst->resWater = src.resCold;
+    dst->resEarth = src.resPoison;
+    dst->resMind = src.resMagic;
+    dst->resSpirit = src.resMagic;
+    dst->resBody = src.resMagic;
+    dst->resPhysical = src.resPhysical;
+    dst->numCharactersAttackedPerSpecialAbility = src.numCharactersAttackedPerSpecialAbility;
+    dst->id = src.id;
+    dst->hp = src.hp;
+    dst->ac = src.ac;
+    dst->exp = src.exp;
+    dst->baseSpeed = src.baseSpeed;
+    dst->recoveryTime = src.recoveryTime;
+}
+
+void reconstruct(const Actor_MM6 &src, Actor_MM7 *dst) {
+    *dst = {};
+    dst->name = src.name;
+    dst->npcId = src.npcId;
+    dst->field_22 = src.field_22;
+    dst->attributes = src.attributes;
+    dst->hp = src.hp;
+    reconstruct(src.monsterInfo, &dst->monsterInfo);
+    dst->field_84 = src.field_74;
+    // Fresh MM6 maps leave the top-level monster id at 0, the real id lives in the embedded monster info.
+    dst->monsterId = src.monsterId ? src.monsterId : src.monsterInfo.id;
+    dst->radius = src.radius;
+    dst->height = src.height;
+    dst->moveSpeed = src.moveSpeed;
+    dst->pos = src.pos;
+    dst->velocity = src.velocity;
+    dst->yawAngle = src.yawAngle;
+    dst->pitchAngle = src.pitchAngle;
+    dst->sectorId = src.sectorId;
+    dst->currentActionLength = src.currentActionLength;
+    dst->initialPosition = src.initialPosition;
+    dst->guardingPosition = src.guardingPosition;
+    dst->tetherDistance = src.tetherDistance;
+    dst->aiState = src.aiState;
+    dst->currentActionAnimation = src.currentActionAnimation;
+    dst->carriedItemId = src.carriedItemId;
+    dst->currentActionTime = src.currentActionTime;
+    dst->spriteIds = src.spriteIds;
+    dst->soundSampleIds = src.soundSampleIds;
+    // Buffs are dropped: MM6 buff slot indices differ from MM7's, and MM6 map files hold no active buffs
+    // anyway (the first slot contains uninitialized editor garbage). Items are dropped too - MM6 actors
+    // don't carry item structs, only carriedItemId. Both are zeroed by the value-initialization above.
+    dst->group = src.group;
+    dst->hostilityGroup = src.hostilityGroup;
+    dst->scheduledJobs = src.scheduledJobs;
+    dst->summonerId = src.summonerId;
+    dst->lastCharacterIdToHit = src.lastCharacterIdToHit;
+}
+
 void snapshot(const Actor &src, Actor_MM7 *dst) {
     memzero(dst);
 
@@ -1614,6 +1737,29 @@ void reconstruct(const SpawnPoint_MM7 &src, SpawnPoint *dst) {
     dst->group = src.group;
 }
 
+void reconstruct(const SpriteObject_MM6 &src, SpriteObject_MM7 *dst) {
+    *dst = {};
+    dst->spriteId = src.spriteId;
+    dst->objectDescId = src.objectDescId;
+    dst->position = src.position;
+    dst->velocity = src.velocity;
+    dst->yawAngle = src.yawAngle;
+    dst->uSoundID = src.uSoundID;
+    dst->uAttributes = src.uAttributes;
+    dst->uSectorID = src.uSectorID;
+    dst->uTimeSinceCreated = src.uTimeSinceCreated;
+    dst->tempLifetime = src.tempLifetime;
+    dst->field_22_glow_radius_multiplier = src.field_22_glow_radius_multiplier;
+    reconstruct(src.containing_item, &dst->containing_item);
+    dst->uSpellID = src.uSpellID;
+    dst->spell_level = src.spell_level;
+    dst->spell_skill = src.spell_skill;
+    dst->field_54 = src.field_54;
+    dst->spell_caster_pid = src.spell_caster_pid;
+    dst->spell_target_pid = src.spell_target_pid;
+    dst->initialPosition = src.initialPosition;
+}
+
 void snapshot(const SpriteObject &src, SpriteObject_MM7 *dst) {
     memzero(dst);
 
@@ -1688,6 +1834,14 @@ void reconstruct(const DecorationDesc_MM7 &src, DecorationDesc *dst) {
     dst->uColoredLight.g = src.uColoredLightGreen;
     dst->uColoredLight.b = src.uColoredLightBlue;
     dst->uColoredLight.a = 255;
+}
+
+void reconstruct(const Chest_MM6 &src, Chest_MM7 *dst) {
+    dst->chestTypeId = src.chestTypeId;
+    dst->flags = src.flags;
+    for (size_t i = 0; i < src.items.size(); i++)
+        reconstruct(src.items[i], &dst->items[i]);
+    dst->inventoryMatrix = src.inventoryMatrix;
 }
 
 void snapshot(const Chest &src, Chest_MM7 *dst) {

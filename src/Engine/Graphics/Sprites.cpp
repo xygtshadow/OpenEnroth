@@ -150,13 +150,12 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                                         break;
                                 }
                             } else {
-                                // some names already passed through with codes attached
-                                if (pSpriteSFrames[iter_uSpriteID].textureName.size() < 7) {
-                                    spriteName = fmt::format("{}{}", pSpriteSFrames[iter_uSpriteID].textureName, i);
-                                } else {
+                                // Names of 7+ chars usually already have the octant code attached, but MM6 also has
+                                // 7-char monster sprite names without one (e.g. "pmansta" stored as "pmansta0".."pmansta4"
+                                // in sprites.lod), so probe with the code appended and fall back to the raw name.
+                                spriteName = fmt::format("{}{}", pSpriteSFrames[iter_uSpriteID].textureName, i);
+                                if (pSpriteSFrames[iter_uSpriteID].textureName.size() >= 7 && !pSprites_LOD->loadSprite(spriteName))
                                     spriteName = pSpriteSFrames[iter_uSpriteID].textureName;
-                                    // assert(false);
-                                }
                             }
 
                             Sprite *sprite = loadSpriteFrame(spriteName);
