@@ -103,7 +103,8 @@ void GUIProgressBar::Draw() {
         pParty->updateCharactersAndHirelingsEmotions();
 
         render->DrawQuad2D(progressbar_dungeon, {80, 122});
-        render->DrawQuad2D(pIconsFrameTable->animationFrame(turnHourIconId, 0_ticks), {100, 146});
+        if (turnHourIconId != -1) // MM6 data doesn't have the hourglass icon animation.
+            render->DrawQuad2D(pIconsFrameTable->animationFrame(turnHourIconId, 0_ticks), {100, 146});
         render->FillRect(Recti(174, 164, floorf((double)(113 * uProgressCurrent) / (double)uProgressMax + 0.5f), 16), colorTable.Red);
     } else {
         if (loading_bg) {

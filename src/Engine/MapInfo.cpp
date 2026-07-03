@@ -14,6 +14,14 @@
 
 MapStats *pMapStats;
 
+bool isMapOutdoor(MapId mapid) {
+    return mapid != MAP_INVALID && pMapStats->pInfos[mapid].fileName.ends_with(".odm");
+}
+
+bool isMapIndoor(MapId mapid) {
+    return mapid != MAP_INVALID && pMapStats->pInfos[mapid].fileName.ends_with(".blv");
+}
+
 void MapStats::Initialize(const Blob &mapStats, GameVersion version) {
     // mapstats.txt table structure: map id | name (localized) | file name | ... |
     //                               map designer (set only in mm6, not used) | dev notes | parent map (not used).

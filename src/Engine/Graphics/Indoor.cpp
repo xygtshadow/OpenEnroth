@@ -270,7 +270,7 @@ void IndoorLocation::Load(std::string_view filename, int num_days_played, int re
     bLoaded = true;
 
     IndoorLocation_MM7 location;
-    deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(blv_filename)), &location); // read throws if file doesn't exist.
+    deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(blv_filename)), &location, tags::context(engine->gameVersion())); // read throws if file doesn't exist.
     reconstruct(location, this);
 
     std::string dlv_filename = fmt::format("{}.dlv", filename.substr(0, filename.size() - 4));
@@ -280,7 +280,9 @@ void IndoorLocation::Load(std::string_view filename, int num_days_played, int re
     IndoorDelta_MM7 delta;
     if (Blob blob = lod::decodeMaybeCompressed(pMapDeltas.at(dlv_filename))) {
         try {
-            deserialize(blob, &delta, tags::context(location));
+            // Save deltas are always serialized in MM7 format, so the parse here stays pinned to MM7.
+            // MM6 dlvs from a new game template will fail this parse and go through the respawn path below.
+            deserialize(blob, &delta, tags::context(location), tags::context(GAME_VERSION_MM7));
 
             // Level was changed externally and we have a save there? Don't crash, just respawn.
             if (delta.header.totalFacesCount > 0 && delta.header.decorationCount > 0 &&
@@ -305,12 +307,12 @@ void IndoorLocation::Load(std::string_view filename, int num_days_played, int re
     assert(respawnInitial + respawnTimed <= 1);
 
     if (respawnInitial) {
-        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(dlv_filename)), &delta, tags::context(location));
+        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(dlv_filename)), &delta, tags::context(location), tags::context(engine->gameVersion()));
         *indoor_was_respawned = true;
     } else if (respawnTimed) {
         auto header = delta.header;
         auto visibleOutlines = delta.visibleOutlines;
-        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(dlv_filename)), &delta, tags::context(location));
+        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(dlv_filename)), &delta, tags::context(location), tags::context(engine->gameVersion()));
         delta.header = header;
         delta.visibleOutlines = visibleOutlines;
         *indoor_was_respawned = true;

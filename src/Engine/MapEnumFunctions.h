@@ -4,17 +4,17 @@
 
 /**
  * Is map an outdoor map?
+ *
+ * Classified by the map's file extension in mapstats.txt. Map id ranges can't be used here
+ * because they differ between games - e.g. map #7 is Celeste (indoor) in MM7, but an outdoor
+ * map in MM6.
  */
-inline bool isMapOutdoor(MapId mapid) {
-    return mapid >= MAP_EMERALD_ISLAND && mapid <= MAP_SHOALS && mapid != MAP_PIT && mapid != MAP_CELESTE;
-}
+bool isMapOutdoor(MapId mapid);
 
 /**
  * Is map an indoor map?
  */
-inline bool isMapIndoor(MapId mapid) {
-    return (mapid >= MAP_DRAGON_CAVES && mapid <= MAP_ARENA) || mapid == MAP_PIT || mapid == MAP_CELESTE;
-}
+bool isMapIndoor(MapId mapid);
 
 /**
  * Is map an outdoor underwater map (requires wetsuit etc.)?

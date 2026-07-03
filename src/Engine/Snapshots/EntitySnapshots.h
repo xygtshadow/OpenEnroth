@@ -184,6 +184,31 @@ struct BLVFace_MM7 {
 static_assert(sizeof(BLVFace_MM7) == 0x60);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(BLVFace_MM7)
 
+struct BLVFace_MM6 {
+    Planei_MM7 facePlaneOld;
+    int32_t zCalc1;
+    int32_t zCalc2;
+    int32_t zCalc3;
+    uint32_t attributes;
+    Pointer_MM7 vertexIDs;
+    Pointer_MM7 xInterceptDisplacements;
+    Pointer_MM7 yInterceptDisplacements;
+    Pointer_MM7 zInterceptDisplacements;
+    Pointer_MM7 vertexUIds;
+    Pointer_MM7 vertexVIds;
+    uint16_t faceExtraId;
+    uint16_t bitmapId;
+    uint16_t sectorId;
+    int16_t backSectorId;
+    BBoxs_MM7 bounding;
+    uint8_t polygonType;
+    uint8_t numVertices;
+    int16_t _pad;
+};
+static_assert(sizeof(BLVFace_MM6) == 0x50);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(BLVFace_MM6)
+
+void reconstruct(const BLVFace_MM6 &src, BLVFace_MM7 *dst);
 void reconstruct(const BLVFace_MM7 &src, BLVFace *dst);
 
 
@@ -1207,6 +1232,7 @@ struct BLVLight_MM7 {
 static_assert(sizeof(BLVLight_MM7) == 16);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(BLVLight_MM7)
 
+void reconstruct(const BLVLight_MM6 &src, BLVLight_MM7 *dst);
 void reconstruct(const BLVLight_MM7 &src, BLVLight *dst);
 
 

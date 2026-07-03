@@ -10,6 +10,7 @@
 #include "Engine/mm7_data.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
@@ -136,6 +137,43 @@ GAME_TEST(Mm6, KillAndLootPeasant) {
     int goldFound = pParty->GetGold() - goldBefore;
     EXPECT_GE(goldFound, 3);
     EXPECT_LE(goldFound, 18);
+}
+
+GAME_TEST(Mm6, EnterGoblinwatch) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Goblinwatch is New Sorpigal's dungeon, an indoor map.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+
+    // The blv geometry should have been loaded: d01.blv carries 2287 vertices, 2291 faces, 59 sectors
+    // and 200 door records.
+    EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_INDOOR);
+    EXPECT_EQ(pIndoor->vertices.size(), 2287u);
+    EXPECT_EQ(pIndoor->faces.size(), 2291u);
+    EXPECT_EQ(pIndoor->sectors.size(), 59u);
+    EXPECT_EQ(pIndoor->doors.size(), 200u);
+
+    // And the party should be inside the dungeon, in a valid sector.
+    EXPECT_NE(pIndoor->GetSector(pParty->pos.x, pParty->pos.y, pParty->pos.z), 0);
+
+    // First entry respawns the location: monsters are generated from the blv's 66 spawn points
+    // (rats / goblins / bloodsuckers per mapstats.txt), and d01.dlv's 20 chest records are loaded.
+    EXPECT_GE(pActors.size(), 66u);
+    EXPECT_TRUE(std::ranges::all_of(pActors, [](const Actor &actor) {
+        int monsterId = std::to_underlying(actor.monsterId);
+        return (monsterId >= 13 && monsterId <= 15)      // Bloodsucker A-C.
+            || (monsterId >= 76 && monsterId <= 78)      // Goblin A-C.
+            || (monsterId >= 145 && monsterId <= 147);   // Rat A-C.
+    }));
+    EXPECT_EQ(vChests.size(), 20u);
+
+    // The game loop should keep running: actor AI, animations, doors.
+    game.tick(20);
 }
 
 GAME_TEST(Mm6, PeasantNews) {

@@ -280,6 +280,34 @@ void reconstruct(const SpriteFrame_MM7 &src, SpriteFrame *dst) {
     dst->animationLength = Duration::fromTicks(src.animationLength * 8);
 }
 
+void reconstruct(const BLVFace_MM6 &src, BLVFace_MM7 *dst) {
+    // MM6 blv faces don't store a floating-point face plane - an MM7 addition. Reconstruct it
+    // from the fixpoint one.
+    dst->facePlane.normal.x = src.facePlaneOld.normal.x / 65536.0f;
+    dst->facePlane.normal.y = src.facePlaneOld.normal.y / 65536.0f;
+    dst->facePlane.normal.z = src.facePlaneOld.normal.z / 65536.0f;
+    dst->facePlane.dist = src.facePlaneOld.dist / 65536.0f;
+    dst->facePlaneOld = src.facePlaneOld;
+    dst->zCalc1 = src.zCalc1;
+    dst->zCalc2 = src.zCalc2;
+    dst->zCalc3 = src.zCalc3;
+    dst->attributes = src.attributes;
+    dst->vertexIDs = src.vertexIDs;
+    dst->xInterceptDisplacements = src.xInterceptDisplacements;
+    dst->yInterceptDisplacements = src.yInterceptDisplacements;
+    dst->zInterceptDisplacements = src.zInterceptDisplacements;
+    dst->vertexUIds = src.vertexUIds;
+    dst->vertexVIds = src.vertexVIds;
+    dst->faceExtraId = src.faceExtraId;
+    dst->bitmapId = src.bitmapId;
+    dst->sectorId = src.sectorId;
+    dst->backSectorId = src.backSectorId;
+    dst->bounding = src.bounding;
+    dst->polygonType = src.polygonType;
+    dst->numVertices = src.numVertices;
+    dst->_pad = 0;
+}
+
 void reconstruct(const BLVFace_MM7 &src, BLVFace *dst) {
     reconstruct(src.facePlane, &dst->facePlane);
     dst->zCalc.init(dst->facePlane);
@@ -1913,6 +1941,18 @@ void reconstruct(const Chest_MM7 &src, ChestInventory *dst, ContextTag<int> ches
     for (size_t index = 0; index < items.size(); index++)
         if (!processed[index] && items[index].itemId != ITEM_NULL)
             dst->stashAt(items[index], index); // We need to preserve item indices.
+}
+
+void reconstruct(const BLVLight_MM6 &src, BLVLight_MM7 *dst) {
+    dst->vPosition = src.vPosition;
+    dst->uRadius = src.uRadius;
+    // Per-light colors & type are an MM7 addition, MM6 lights are white.
+    dst->uRed = -1;
+    dst->uGreen = -1;
+    dst->uBlue = -1;
+    dst->uType = 1;
+    dst->uAtributes = src.uAttributes;
+    dst->uBrightness = src.uBrightness;
 }
 
 void reconstruct(const BLVLight_MM7 &src, BLVLight *dst) {

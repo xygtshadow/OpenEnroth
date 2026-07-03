@@ -50,7 +50,7 @@ struct IndoorLocation_MM7 {
 };
 
 void reconstruct(const IndoorLocation_MM7 &src, IndoorLocation *dst);
-void deserialize(InputStream &src, IndoorLocation_MM7 *dst);
+void deserialize(InputStream &src, IndoorLocation_MM7 *dst, ContextTag<GameVersion> version);
 
 
 struct IndoorDelta_MM7 {
@@ -70,7 +70,7 @@ struct IndoorDelta_MM7 {
 void snapshot(const IndoorLocation &src, IndoorDelta_MM7 *dst);
 void reconstruct(const IndoorDelta_MM7 &src, IndoorLocation *dst);
 void serialize(const IndoorDelta_MM7 &src, OutputStream *dst);
-void deserialize(InputStream &src, IndoorDelta_MM7 *dst, ContextTag<IndoorLocation_MM7> ctx);
+void deserialize(InputStream &src, IndoorDelta_MM7 *dst, ContextTag<IndoorLocation_MM7> ctx, ContextTag<GameVersion> version);
 
 
 struct BSPModelExtras_MM7 {

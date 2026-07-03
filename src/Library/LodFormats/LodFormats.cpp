@@ -167,8 +167,18 @@ Blob lod::decodeCompressedDataMm6Game(const Blob &blob) {
     deserialize(stream, &dataSize);
     deserialize(stream, &decompressedSize);
 
-    Blob result = stream.readAsBlobOrFail(dataSize);
-    return zlib::uncompress(result.withDisplayPath(blob.displayPath()), decompressedSize).withDisplayPath(blob.displayPath());
+    Blob compressed = stream.readAsBlobOrFail(dataSize).withDisplayPath(blob.displayPath());
+    Blob result;
+    try {
+        result = zlib::uncompress(compressed, decompressedSize);
+    } catch (const Exception &) {
+        // Some MM6 games.lod entries (e.g. cd3.blv & d08.blv) ship with a corrupt zlib checksum
+        // while the deflate payload itself is complete - recover what we can.
+        result = zlib::uncompressBestEffort(compressed, decompressedSize);
+        if (result.size() != decompressedSize)
+            throw;
+    }
+    return result.withDisplayPath(blob.displayPath());
 }
 
 Blob lod::decodeCompressedPseudoImage(const Blob &blob) {

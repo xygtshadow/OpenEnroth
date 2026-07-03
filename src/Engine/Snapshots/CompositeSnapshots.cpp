@@ -266,10 +266,21 @@ void reconstruct(const IndoorLocation_MM7 &src, IndoorLocation *dst) {
     reconstruct(src.mapOutlines, &dst->mapOutlines);
 }
 
-void deserialize(InputStream &src, IndoorLocation_MM7 *dst) {
+void deserialize(InputStream &src, IndoorLocation_MM7 *dst, ContextTag<GameVersion> version) {
     deserialize(src, &dst->header);
     deserialize(src, &dst->vertices);
-    deserialize(src, &dst->faces);
+
+    if (*version == GAME_VERSION_MM6) {
+        // MM6 blv faces don't store the floating-point face plane, and decorations, lights &
+        // spawn points are prefix-subsets of their MM7 counterparts. The rest of the layout
+        // is the same as in MM7.
+        uint32_t faceCount;
+        deserialize(src, &faceCount);
+        deserialize(src, &dst->faces, tags::presized(faceCount), tags::each, tags::via<BLVFace_MM6>);
+    } else {
+        deserialize(src, &dst->faces);
+    }
+
     deserialize(src, &dst->faceData, tags::presized(dst->header.faceDataSizeBytes / sizeof(uint16_t)));
     deserialize(src, &dst->faceTextures, tags::presized(dst->faces.size()));
     deserialize(src, &dst->faceExtras);
@@ -278,11 +289,30 @@ void deserialize(InputStream &src, IndoorLocation_MM7 *dst) {
     deserialize(src, &dst->sectorData, tags::presized(dst->header.sectorDataSizeBytes / sizeof(uint16_t)));
     deserialize(src, &dst->sectorLightData, tags::presized(dst->header.sectorLightDataSizeBytes / sizeof(uint16_t)));
     deserialize(src, &dst->doorCount);
-    deserialize(src, &dst->decorations);
-    deserialize(src, &dst->decorationNames, tags::presized(dst->decorations.size()));
-    deserialize(src, &dst->lights);
-    deserialize(src, &dst->bspNodes);
-    deserialize(src, &dst->spawnPoints);
+
+    if (*version == GAME_VERSION_MM6) {
+        uint32_t decorationCount;
+        deserialize(src, &decorationCount);
+        deserialize(src, &dst->decorations, tags::presized(decorationCount), tags::each, tags::via<LevelDecoration_MM6>);
+        deserialize(src, &dst->decorationNames, tags::presized(decorationCount));
+
+        uint32_t lightCount;
+        deserialize(src, &lightCount);
+        deserialize(src, &dst->lights, tags::presized(lightCount), tags::each, tags::via<BLVLight_MM6>);
+
+        deserialize(src, &dst->bspNodes);
+
+        uint32_t spawnPointCount;
+        deserialize(src, &spawnPointCount);
+        deserialize(src, &dst->spawnPoints, tags::presized(spawnPointCount), tags::each, tags::via<SpawnPoint_MM6>);
+    } else {
+        deserialize(src, &dst->decorations);
+        deserialize(src, &dst->decorationNames, tags::presized(dst->decorations.size()));
+        deserialize(src, &dst->lights);
+        deserialize(src, &dst->bspNodes);
+        deserialize(src, &dst->spawnPoints);
+    }
+
     deserialize(src, &dst->mapOutlines);
 }
 
@@ -414,7 +444,43 @@ void serialize(const IndoorDelta_MM7 &src, OutputStream *dst) {
     serialize(src.locationTime, dst);
 }
 
-void deserialize(InputStream &src, IndoorDelta_MM7 *dst, ContextTag<IndoorLocation_MM7> ctx) {
+void deserialize(InputStream &src, IndoorDelta_MM7 *dst, ContextTag<IndoorLocation_MM7> ctx, ContextTag<GameVersion> version) {
+    if (*version == GAME_VERSION_MM6) {
+        // MM6 dlv layout: 8-byte header, visible outlines, then actors / sprite objects / chests,
+        // then doors, event variables & location time. Face attributes & decoration flags are MM7
+        // additions - synthesize them from the blv data instead. Door records are the same as in MM7.
+        dst->header = {};
+        deserialize(src, &dst->header.info.respawnCount);
+        deserialize(src, &dst->header.info.lastRespawnDay);
+        deserialize(src, &dst->visibleOutlines);
+
+        dst->faceAttributes.clear();
+        for (const BLVFace_MM7 &face : ctx->faces)
+            dst->faceAttributes.push_back(face.attributes);
+
+        dst->decorationFlags.clear();
+        for (const LevelDecoration_MM7 &decoration : ctx->decorations)
+            dst->decorationFlags.push_back(decoration.uFlags);
+
+        uint32_t actorCount;
+        deserialize(src, &actorCount);
+        deserialize(src, &dst->actors, tags::presized(actorCount), tags::each, tags::via<Actor_MM6>);
+
+        uint32_t spriteObjectCount;
+        deserialize(src, &spriteObjectCount);
+        deserialize(src, &dst->spriteObjects, tags::presized(spriteObjectCount), tags::each, tags::via<SpriteObject_MM6>);
+
+        uint32_t chestCount;
+        deserialize(src, &chestCount);
+        deserialize(src, &dst->chests, tags::presized(chestCount), tags::each, tags::via<Chest_MM6>);
+
+        deserialize(src, &dst->doors, tags::presized(ctx->doorCount));
+        deserialize(src, &dst->doorsData, tags::presized(ctx->header.doorsDataSizeBytes / sizeof(int16_t)));
+        deserialize(src, &dst->eventVariables);
+        deserialize(src, &dst->locationTime);
+        return;
+    }
+
     deserialize(src, &dst->header);
     deserialize(src, &dst->visibleOutlines);
     deserialize(src, &dst->faceAttributes, tags::presized(ctx->faces.size()));
