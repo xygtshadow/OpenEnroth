@@ -620,6 +620,11 @@ void Game::processQueuedMessages() {
                                 case SCREEN_BRANCHLESS_NPC_DIALOG:  // click escape
                                     engine->_statusBar->clearEvent();
 
+                                    // Escaping out of a typed-input prompt (MM6's EVENT_InputString) cancels it:
+                                    // don't resume the paused event, so neither its answer branch runs.
+                                    if (pGUIWindow_BranchlessDialogue && pGUIWindow_BranchlessDialogue->event() == EVENT_InputString &&
+                                        pGUIWindow_BranchlessDialogue->keyboard_input_status != WINDOW_INPUT_CONFIRMED)
+                                        savedEventID = 0;
                                     releaseBranchlessDialogue();
                                     DialogueEnding();
                                     current_screen_type = SCREEN_GAME;

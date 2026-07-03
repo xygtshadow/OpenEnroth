@@ -44,6 +44,8 @@ static Time timerGuard;
 int savedEventID;
 int savedEventStep;
 LevelDecoration *savedDecoration;
+std::string savedEventInput;
+std::string savedEventPrompt;
 
 void initDecorationEvents() {
     DecorationId id = pDecorationList->GetDecorIdByName("Event Trigger");

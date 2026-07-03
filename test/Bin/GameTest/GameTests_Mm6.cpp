@@ -358,6 +358,66 @@ GAME_TEST(Mm6, AllMapEventsParse) {
     EXPECT_EQ(parsed, 67); // All of MM6's maps.
 }
 
+GAME_TEST(Mm6, RiddlePasswordPrompt) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The Dragoons' Caverns (cd1.blv) sword-in-the-rock is MM6's password prompt: local event 69
+    // asks "What's the password?" (answers JBARD / jbard). A correct answer jumps to the
+    // MapVars[6] = 1 branch, a wrong answer falls through into a teleport trap.
+    MapId caverns = pMapStats->GetMapInfo("cd1.blv");
+    ASSERT_NE(caverns, MAP_INVALID);
+    game.teleportTo(caverns, Vec3f(-3136, 2240, 224), 0); // A known-valid cd1 position (the event's own teleport target).
+
+    // Event 69 hangs on a pressure-plate floor face: it fires when the party steps onto it.
+    const BLVFace *plate = nullptr;
+    for (const BLVFace &face : pIndoor->faces) {
+        if (face.eventId == 69 && (face.attributes & FACE_PRESSURE_PLATE)) {
+            plate = &face;
+            break;
+        }
+    }
+    ASSERT_NE(plate, nullptr);
+    Vec3f platePos = plate->boundingBox.center();
+    platePos.z = plate->boundingBox.z1;
+    Vec3f awayPos = platePos + Vec3f(300, 0, 0);
+
+    // Stepping onto the plate opens the password prompt.
+    game.teleportTo(caverns, awayPos, 0);
+    game.tick(1);
+    game.teleportTo(caverns, platePos, 0);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_BRANCHLESS_NPC_DIALOG);
+
+    // Escape cancels the prompt without taking either event branch: no trap teleport, no unlock.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_LE((pParty->pos - platePos).length(), 256.0f);
+    EXPECT_EQ(engine->_persistentVariables.mapVars[6], 0);
+
+    // Step off and back on: the prompt reopens (pressure plates are edge-triggered).
+    game.teleportTo(caverns, awayPos, 0);
+    game.tick(2);
+    game.teleportTo(caverns, platePos, 0);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_BRANCHLESS_NPC_DIALOG);
+
+    // Typing the password unlocks: the event jumps to its correct-answer branch.
+    for (PlatformKey key : {PlatformKey::KEY_J, PlatformKey::KEY_B, PlatformKey::KEY_A, PlatformKey::KEY_R, PlatformKey::KEY_D}) {
+        game.pressAndReleaseKey(key);
+        game.tick(1);
+    }
+    game.pressAndReleaseKey(PlatformKey::KEY_RETURN);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_LE((pParty->pos - platePos).length(), 256.0f); // Not teleported into the wrong-answer trap.
+    EXPECT_EQ(engine->_persistentVariables.mapVars[6], 1);
+    game.tick(5);
+}
+
 GAME_TEST(Mm6, PeasantNews) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

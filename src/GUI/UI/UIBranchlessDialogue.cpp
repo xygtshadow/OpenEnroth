@@ -1,4 +1,5 @@
 #include <memory>
+#include <string>
 
 #include "UIBranchlessDialogue.h"
 
@@ -17,6 +18,10 @@
 #include "GUI/UI/UIGame.h"
 
 #include "Io/KeyboardInputHandler.h"
+
+#include "Library/Color/ColorTable.h"
+
+#include "Utility/String/Format.h"
 
 GUIWindow_BranchlessDialogue::GUIWindow_BranchlessDialogue(EvtOpcode event) : GUIWindow(WINDOW_GreetingNPC, {0, 0}, render->GetRenderDimensions()), _event(event) {
     prev_screen_type = current_screen_type;
@@ -38,27 +43,23 @@ void GUIWindow_BranchlessDialogue::Update() {
     pGUIWindow_BranchlessDialogue->DrawDialoguePanel(branchless_dialogue_str);
     render->DrawQuad2D(game_ui_statusbar, {0, 352});
 
-    // TODO(Nik-RE-dev): this code related to text input in MM6/MM8, revisit
-    // this functionality when it's time to support it.
-#if 0
-    if (pGUIWindow_BranchlessDialogue->keyboard_input_status != WINDOW_INPUT_IN_PROGRESS) {
-        if (pGUIWindow_BranchlessDialogue->keyboard_input_status == WINDOW_INPUT_CONFIRMED) {
-            pGUIWindow_BranchlessDialogue->keyboard_input_status = WINDOW_INPUT_NONE;
-            GameUI_StatusBar_OnInput(keyboardInputHandler->GetTextInput());
-        } else {
-            GameUI_StatusBar_ClearInputString();
+    // MM6/MM8 typed-input prompt (EVENT_InputString, e.g. MM6's riddle doors): draw the question and the answer
+    // typed so far, and once the input is confirmed with Enter hand the answer back to the paused event script.
+    if (event() == EVENT_InputString) {
+        if (keyboard_input_status == WINDOW_INPUT_IN_PROGRESS) {
+            std::string str = fmt::format("{} {}", savedEventPrompt, keyboardInputHandler->GetTextInput());
+            DrawText(assets->pFontLucida.get(), {13, 357}, colorTable.White, str, frameRect);
+            DrawFlashingInputCursor(assets->pFontLucida->GetLineWidth(str) + 13, 357, assets->pFontLucida.get(), frameRect);
+            return;
         }
-        releaseBranchlessDialogue();
+        if (keyboard_input_status == WINDOW_INPUT_CONFIRMED) {
+            savedEventInput = keyboardInputHandler->GetTextInput(); // The paused event resumes on escape below.
+        } else {
+            savedEventID = 0; // Cancelled with Escape - close the prompt without taking either event branch.
+        }
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 0, 0);
         return;
     }
-
-    if (pGUIWindow_BranchlessDialogue->event() == EVENT_InputString) {
-        auto str = fmt::format("{} {}", GameUI_StatusBar_GetInput(), keyboardInputHandler->GetTextInput());
-        pGUIWindow_BranchlessDialogue->DrawText(pFontLucida, {13, 357}, colorTable.White, str);
-        pGUIWindow_BranchlessDialogue->DrawFlashingInputCursor(pFontLucida->GetLineWidth(str) + 13, 357, pFontLucida);
-        return;
-    }
-#endif
 
     // Close branchless dialog on any keypress
     if (!keyboardInputHandler->GetTextInput().empty()) {

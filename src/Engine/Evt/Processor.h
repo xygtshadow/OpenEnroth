@@ -28,3 +28,5 @@ void onTimer();
 extern int savedEventID;
 extern int savedEventStep;
 extern LevelDecoration *savedDecoration;
+extern std::string savedEventInput; // Answer typed at an EVENT_InputString prompt, consumed on event resume.
+extern std::string savedEventPrompt; // Question line shown while an EVENT_InputString prompt is open.

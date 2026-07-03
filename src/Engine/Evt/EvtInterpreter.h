@@ -22,6 +22,7 @@ class EvtInterpreter {
 
  private:
      int _eventId = 0;
+     int _startStep = 0; // Step execution started from; a resumed EVENT_InputString re-enters at its own step.
      std::vector<EvtInstruction> _events;
      Pid _objectPid = Pid();
      bool _canShowMessages = false;

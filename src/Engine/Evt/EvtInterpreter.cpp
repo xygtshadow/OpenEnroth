@@ -27,6 +27,7 @@
 #include "Media/MediaPlayer.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Utility/String/Ascii.h"
 #include "Utility/String/Transformations.h"
 
 #include "GUI/GUIProgressBar.h"
@@ -415,13 +416,29 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         case EVENT_RandomGoTo:
             return ir.data.random_goto_descr.random_goto[grng->random(ir.data.random_goto_descr.random_goto_len)];
         case EVENT_InputString:
-            // Originally starting step was checked to ensure skipping this command when returning from dialogue.
-            // Changed to using "step + 1" to go to next event
-            //
             // TODO(Nik-RE-dev): this event is not used in MM7. In GrayFace's data it's called "Question" and must have additional arguments
             // that control where events executions must be continued on correct/incorrect input.
-            // TODO(mm6): MM6 uses this for its riddle doors (parsed into data.question_descr + target_step). The
-            //            input prompt isn't wired up yet, so fall through to the next step - the wrong-answer path.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                // MM6's "Question" (riddle doors, steal prompts): pause on the prompt, then re-enter at this very
+                // step once the answer was typed. Execution resuming at this step is what marks the second pass -
+                // the original engine used the same check.
+                if (step == _startStep) {
+                    auto matches = [&](int textId) {
+                        return textId >= 0 && textId < engine->_levelStrings.size() &&
+                               ascii::noCaseEquals(savedEventInput, engine->_levelStrings[textId]);
+                    };
+                    if (!savedEventInput.empty() &&
+                        (matches(ir.data.question_descr.answer1_text_id) || matches(ir.data.question_descr.answer2_text_id)))
+                        return ir.target_step; // Correct answer.
+                    break; // Wrong answer - fall through to the next step.
+                }
+                savedEventInput.clear();
+                savedEventPrompt = ir.data.question_descr.question_text_id < engine->_levelStrings.size()
+                                       ? engine->_levelStrings[ir.data.question_descr.question_text_id]
+                                       : "";
+                startBranchlessDialogue(_eventId, step, EVENT_InputString);
+                return -1;
+            }
             logger->warning("EVENT_InputString is not implemented, taking the wrong-answer path");
             break;
         case EVENT_StatusText:
@@ -655,6 +672,7 @@ bool EvtInterpreter::executeRegular(int startStep) {
     }
 
     int step = startStep;
+    _startStep = startStep;
 
     _who = !pParty->hasActiveCharacter() ? CHOOSE_RANDOM : CHOOSE_ACTIVE;
 
