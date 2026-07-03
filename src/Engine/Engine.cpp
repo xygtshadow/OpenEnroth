@@ -746,7 +746,7 @@ void Engine::SecondaryInitialization() {
     initializeAwards(engine->resources()->eventsData("awards.txt"));
     initializeTransitions(engine->resources()->eventsData("trans.txt"));
     initializeMerchants(engine->resources()->eventsData("merchant.txt"));
-    initializeMessageScrolls(engine->resources()->eventsData("scroll.txt"), gameVersion());
+    initializeMessageScrolls(engine->resources()->eventsData("scroll.txt"));
     initializeChests();
 
     engine->_globalEventMap = EvtProgram::load(engine->resources()->eventsData("global.evt"), gameVersion());

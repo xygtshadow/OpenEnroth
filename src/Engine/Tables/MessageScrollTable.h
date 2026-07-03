@@ -1,16 +1,20 @@
 #pragma once
 
+#include <map>
 #include <string>
 
-#include "Application/Paths/GameVersion.h"
 #include "Engine/Objects/ItemEnums.h"
-#include "Utility/IndexedArray.h"
 
 class Blob;
 
 /**
  * @offset 0x4764C2
  */
-void initializeMessageScrolls(const Blob &scrolls, GameVersion version);
+void initializeMessageScrolls(const Blob &scrolls);
 
-extern IndexedArray<std::string, ITEM_FIRST_MESSAGE_SCROLL, ITEM_LAST_MESSAGE_SCROLL> pMessageScrolls;
+/**
+ * Message scroll texts keyed by the scroll's item id, as read from scroll.txt. MM6 message scrolls
+ * are item ids 500-581, MM7's are 700-781 (82 entries each), hence a map rather than an
+ * `IndexedArray` over an id range.
+ */
+extern std::map<ItemId, std::string> pMessageScrolls;

@@ -176,9 +176,10 @@ void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
         items[item_counter].baseValue = fromString<int>(tokens[3]);
         items[item_counter].type = valueOr(equipStatMap, tokens[4], ITEM_TYPE_NONE);
         items[item_counter].skill = valueOr(equipSkillMap, tokens[5], SKILL_MISC);
-        // Non-dice Mod1 payloads: "S<n>" spell scrolls/books, "M<n>" message scrolls, and (MM6 only)
-        // "P<n>" potions. These carry a content id, not damage - see docs/pending/mm6-item-model.md
-        // for the MM6 scroll/potion id binding leftover.
+        // Non-dice Mod1 payloads carry a content id, not damage: "S<n>" binds spell n (the standard
+        // 9-schools-by-11 numbering the SpellId enum follows) to scrolls, books and wands, "P<n>"
+        // (MM6 only) is the potion content id, and "M<n>" is the message-scroll text ordinal (unused
+        // here - scroll.txt is keyed by item id directly).
         std::array<std::string_view, 2> diceRollTokens = split(tokens[6]).by('d');
         char damagePrefix = tolower(diceRollTokens[0][0]);
         if (!diceRollTokens[1].empty()) {
@@ -190,7 +191,58 @@ void ItemTable::LoadItems(const Blob &itemsBlob, GameVersion version) {
         } else {
             items[item_counter].damageDice = 0;
             items[item_counter].damageRoll = 0;
+
+            std::string_view payloadToken = trim(diceRollTokens[0].substr(1)); // Also handles "S 09"-style cells.
+            ItemType itemType = items[item_counter].type;
+            bool bindsSpell = itemType == ITEM_TYPE_SPELL_SCROLL || itemType == ITEM_TYPE_BOOK || itemType == ITEM_TYPE_WAND;
+            if (damagePrefix == 's' && bindsSpell) {
+                int spell = fromString<int>(payloadToken);
+                if (spell >= std::to_underlying(SPELL_FIRST_REGULAR) && spell <= std::to_underlying(SPELL_LAST_REGULAR)) {
+                    items[item_counter].spellId = static_cast<SpellId>(spell);
+                } else {
+                    logger->warning("items.txt: item {} has an out-of-range spell binding '{}'", std::to_underlying(item_counter), tokens[6]);
+                }
+            } else if (damagePrefix == 'p' && itemType == ITEM_TYPE_POTION) {
+                items[item_counter].potionId = fromString<int>(payloadToken);
+            }
         }
+
+        // MM7's wand rows carry stale MM6 values in the "S<n>" column (16 of 25 disagree with what
+        // MM7 wands actually cast), so for MM7 the hardcoded wand map below is authoritative. MM6 has
+        // no wand map - its engine reads the spell from the data, so the parse above stands.
+        static constexpr IndexedArray<SpellId, ITEM_FIRST_WAND, ITEM_LAST_WAND> mm7SpellByWand = {
+            {ITEM_WAND_OF_FIRE,                SPELL_FIRE_FIRE_BOLT},
+            {ITEM_WAND_OF_SPARKS,              SPELL_AIR_SPARKS},
+            {ITEM_WAND_OF_POISON,              SPELL_WATER_POISON_SPRAY},
+            {ITEM_WAND_OF_STUNNING,            SPELL_EARTH_STUN},
+            {ITEM_WAND_OF_HARM,                SPELL_BODY_HARM},
+
+            {ITEM_FAIRY_WAND_OF_LIGHT,         SPELL_LIGHT_LIGHT_BOLT},
+            {ITEM_FAIRY_WAND_OF_ICE,           SPELL_WATER_ICE_BOLT},
+            {ITEM_FAIRY_WAND_OF_LASHING,       SPELL_SPIRIT_SPIRIT_LASH},
+            {ITEM_FAIRY_WAND_OF_MIND,          SPELL_MIND_MIND_BLAST},
+            {ITEM_FAIRY_WAND_OF_SWARMS,        SPELL_EARTH_DEADLY_SWARM},
+
+            {ITEM_ALACORN_WAND_OF_FIREBALLS,   SPELL_FIRE_FIREBALL},
+            {ITEM_ALACORN_WAND_OF_ACID,        SPELL_WATER_ACID_BURST},
+            {ITEM_ALACORN_WAND_OF_LIGHTNING,   SPELL_AIR_LIGHTNING_BOLT},
+            {ITEM_ALACORN_WAND_OF_BLADES,      SPELL_EARTH_BLADES},
+            {ITEM_ALACORN_WAND_OF_CHARMS,      SPELL_MIND_CHARM},
+
+            {ITEM_ARCANE_WAND_OF_BLASTING,     SPELL_WATER_ICE_BLAST},
+            {ITEM_ARCANE_WAND_OF_THE_FIST,     SPELL_BODY_FLYING_FIST},
+            {ITEM_ARCANE_WAND_OF_ROCKS,        SPELL_EARTH_ROCK_BLAST},
+            {ITEM_ARCANE_WAND_OF_PARALYZING,   SPELL_LIGHT_PARALYZE},
+            {ITEM_ARCANE_WAND_OF_CLOUDS,       SPELL_DARK_TOXIC_CLOUD},
+
+            {ITEM_MYSTIC_WAND_OF_IMPLOSION,    SPELL_AIR_IMPLOSION},
+            {ITEM_MYSTIC_WAND_OF_DISTORTION,   SPELL_EARTH_MASS_DISTORTION},
+            {ITEM_MYSTIC_WAND_OF_SHRAPMETAL,   SPELL_DARK_SHARPMETAL},
+            {ITEM_MYSTIC_WAND_OF_SHRINKING,    SPELL_DARK_SHRINKING_RAY},
+            {ITEM_MYSTIC_WAND_OF_INCINERATION, SPELL_FIRE_INCINERATE}
+        };
+        if (version != GAME_VERSION_MM6 && items[item_counter].type == ITEM_TYPE_WAND && isWand(item_counter))
+            items[item_counter].spellId = mm7SpellByWand[item_counter];
         items[item_counter].damageMod = fromString<int>(tokens[7]);
         items[item_counter].rarity = valueOr(materialMap, tokens[8], RARITY_COMMON);
         items[item_counter].identifyAndRepairDifficulty = fromString<int>(tokens[9]);

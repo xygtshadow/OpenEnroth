@@ -1,9 +1,10 @@
 #pragma once
 
+#include <cassert>
 #include <string>
 
 #include "Engine/Objects/ItemEnums.h"
-#include "Engine/Objects/ItemEnumFunctions.h"
+#include "Engine/Tables/ItemTable.h"
 
 #include "GUI/GUIEnums.h"
 #include "GUI/GUIWindow.h"
@@ -12,7 +13,8 @@ class GUIWindow_MessageScroll : public GUIWindow {
  public:
     GUIWindow_MessageScroll(Pointi position, Sizei dimensions, ItemId scroll_type, std::string_view hint = {}) :
         GUIWindow(WINDOW_Scroll, position, dimensions, hint) {
-        assert(isMessageScroll(scroll_type));
+        // Checked via items.txt data, not id ranges - MM6 message scrolls live at different ids.
+        assert(pItemTable->items[scroll_type].type == ITEM_TYPE_MESSAGE_SCROLL);
 
         this->scroll_type = scroll_type;
         CreateCharacterButtons();

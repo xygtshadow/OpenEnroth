@@ -6,6 +6,7 @@
 #include "Engine/Objects/SpriteEnums.h"
 #include "Engine/Objects/ItemEnums.h"
 #include "Engine/Objects/CharacterEnums.h"
+#include "Engine/Spells/SpellEnums.h"
 
 #include "Library/Geometry/Point.h"
 
@@ -21,6 +22,8 @@ struct ItemData {
     Pointi paperdollAnchorOffset; // Paperdoll offset for the item sprite when equipped, relative to the item type-specific anchor point.
     ItemType type = ITEM_TYPE_INVALID; // Item type. Is never `ITEM_TYPE_INVALID` for items in the game.
     Skill skill = SKILL_INVALID; // Skill associated with the item. Is never `SKILL_INVALID` for items in the game.
+    SpellId spellId = SPELL_NONE; // Spell bound to the item ("S<n>" in items.txt) - what a scroll casts, a book teaches, a wand shoots. `SPELL_NONE` otherwise.
+    int potionId = 0; // MM6 only: potion content id ("P<n>" in items.txt). MM7 potions are identified by their item id directly. 0 for everything else.
     int damageDice = 0; // Damage dice, base AC for armor.
     int damageRoll = 0; // Always 1 for armor.
     int damageMod = 0; // Also base charges for wands. Additional AC for armor, effective AC = damageDice+damageMod.

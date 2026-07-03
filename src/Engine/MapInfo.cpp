@@ -22,6 +22,19 @@ bool isMapIndoor(MapId mapid) {
     return mapid != MAP_INVALID && pMapStats->pInfos[mapid].fileName.ends_with(".blv");
 }
 
+bool isMapUnderwater(MapId mapid) {
+    // MM7's Shoals; MM6 has no underwater locations (and no map file by this name).
+    return mapid != MAP_INVALID && pMapStats->pInfos[mapid].fileName == "out15.odm";
+}
+
+bool isHirelingsBlockedOnMap(MapId mapid) {
+    // MM7's Shoals and The Lincoln; neither map file name exists in MM6.
+    if (mapid == MAP_INVALID)
+        return false;
+    const std::string &fileName = pMapStats->pInfos[mapid].fileName;
+    return fileName == "out15.odm" || fileName == "d23.blv";
+}
+
 void MapStats::Initialize(const Blob &mapStats, GameVersion version) {
     // mapstats.txt table structure: map id | name (localized) | file name | ... |
     //                               map designer (set only in mm6, not used) | dev notes | parent map (not used).

@@ -1,10 +1,9 @@
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "Testing/Game/GameTest.h"
-
-#include "Application/Paths/GameVersion.h"
 
 #include "Engine/Tables/MessageScrollTable.h"
 #include "Engine/Objects/ItemEnums.h"
@@ -26,28 +25,32 @@ static Blob makeScrollsBlob(const std::vector<std::vector<std::string>> &rows) {
     return Blob::fromString(std::move(bytes));
 }
 
-// MM6's scroll.txt uses item ids 500-581, whereas MM7's run 700-781 (both 82 entries). The ItemId enum is
-// MM7-shaped, so pMessageScrolls is indexed [ITEM_FIRST_MESSAGE_SCROLL(700), ITEM_LAST_MESSAGE_SCROLL(781)]
-// and MM6's first row (id 500) falls outside that range, which previously aborted bring-up with an
-// "array subscript out of range" _STL_VERIFY. For MM6 the parser logs and returns, leaving pMessageScrolls
-// empty so engine bring-up proceeds; the faithful MM6 scroll model is deferred (see docs/pending/mm6-item-model.md).
-GAME_TEST(MessageScrollsMm6, BootsPast) {
-    // id 500 is below the MM7-shaped range [700, 781]; parsing it as an ItemId index would crash.
+// scroll.txt is keyed by item id and structurally identical in both games - only the id range
+// differs (MM6: 500-581, MM7: 700-781), which is why pMessageScrolls is a map keyed by item id
+// rather than an IndexedArray over the MM7 id range (MM6's id 500 used to fall outside it and
+// aborted bring-up with an "array subscript out of range" _STL_VERIFY).
+//
+// initializeMessageScrolls rebuilds the file-scope global pMessageScrolls from scratch, so these
+// tests snapshot and restore the whole map to stay hermetic for other tests sharing the process.
+GAME_TEST(MessageScrollsMm6, Parses) {
+    std::map<ItemId, std::string> saved = std::move(pMessageScrolls);
+
     Blob blob = makeScrollsBlob({
-        {"#", "message text", "dungeon #", "Notes"},          // Header.
-        {"500", "Some MM6-specific scroll text", "12", ""},
+        {"Item#", "message text", " dungeon #", "Notes"},     // Header.
+        {"500", "III = 16 & IV = 4", "D1", "Button combo notation."},
+        {"505", "\"My Dear Sulman, you have done well\"", "T7", ""},
     });
 
-    EXPECT_NO_THROW(initializeMessageScrolls(blob, GAME_VERSION_MM6));
+    initializeMessageScrolls(blob);
+
+    EXPECT_EQ(pMessageScrolls[ItemId(500)], "III = 16 & IV = 4");
+    EXPECT_EQ(pMessageScrolls[ItemId(505)], "My Dear Sulman, you have done well"); // Quotes stripped.
+
+    pMessageScrolls = std::move(saved);
 }
 
-// Guards the MM7 parse path through the version-parameter refactor: MM7's scroll ids are in range, so the
-// table must still populate as before.
 GAME_TEST(MessageScrollsMm7, Parses) {
-    // initializeMessageScrolls writes the file-scope global pMessageScrolls; snapshot and restore the slots
-    // we touch so the test stays hermetic for other tests sharing the process.
-    std::string saved700 = pMessageScrolls[ITEM_MESSAGE_FROM_ERATHIA];
-    std::string saved701 = pMessageScrolls[ITEM_MESSAGE_CIPHER];
+    std::map<ItemId, std::string> saved = std::move(pMessageScrolls);
 
     Blob blob = makeScrollsBlob({
         {"#", "message text", "Location", "Item Name"},       // Header.
@@ -55,11 +58,10 @@ GAME_TEST(MessageScrollsMm7, Parses) {
         {"701", "An encrypted cipher", "Free Haven", "Message Cipher"},
     });
 
-    EXPECT_NO_THROW(initializeMessageScrolls(blob, GAME_VERSION_MM7));
+    initializeMessageScrolls(blob);
 
     EXPECT_EQ(pMessageScrolls[ITEM_MESSAGE_FROM_ERATHIA], "A Message From Erathia");
     EXPECT_EQ(pMessageScrolls[ITEM_MESSAGE_CIPHER], "An encrypted cipher");
 
-    pMessageScrolls[ITEM_MESSAGE_FROM_ERATHIA] = saved700;
-    pMessageScrolls[ITEM_MESSAGE_CIPHER] = saved701;
+    pMessageScrolls = std::move(saved);
 }

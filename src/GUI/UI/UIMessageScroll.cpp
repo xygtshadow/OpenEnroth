@@ -12,7 +12,8 @@
 #include "GUI/GUIFont.h"
 
 void CreateMsgScrollWindow(ItemId mscroll_id) {
-    if (!pGUIWindow_ScrollWindow && isMessageScroll(mscroll_id)) {
+    // Checked via items.txt data, not id ranges - MM6 message scrolls live at different ids.
+    if (!pGUIWindow_ScrollWindow && pItemTable->items[mscroll_id].type == ITEM_TYPE_MESSAGE_SCROLL) {
         pGUIWindow_ScrollWindow = std::make_unique<GUIWindow_MessageScroll>(Pointi(0, 0), render->GetRenderDimensions(), mscroll_id, "");
     }
 }

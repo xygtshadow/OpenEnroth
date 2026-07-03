@@ -22,14 +22,18 @@
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
+#include "Engine/Objects/CombinedSkillValue.h"
 #include "Engine/Objects/SpriteObject.h"
+#include "Engine/Spells/SpellEnums.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
+#include "Engine/Tables/MessageScrollTable.h"
 #include "Engine/Tables/NPCTable.h"
 
 #include "GUI/GUIButton.h"
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/UIHouses.h"
+#include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/Houses/Shops.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
@@ -983,4 +987,69 @@ GAME_TEST(Mm6, CompleteCandelabraFetchQuest) {
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
     game.tick(5);
+}
+
+GAME_TEST(Mm6, UseSpellScroll) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Item 200 is MM6's Torch Light scroll (items.txt binds it to spell 1 via Mod1 "S1").
+    // Right-clicking a character portrait with the scroll held uses it on that character:
+    // the scroll is consumed and the bound spell is cast, lighting the party torch.
+    ASSERT_EQ(pItemTable->items[ItemId(200)].type, ITEM_TYPE_SPELL_SCROLL);
+    EXPECT_FALSE(pParty->TorchlightActive());
+    for (int i = 0; i < 100 && pParty->pCharacters[0].timeToRecovery != 0_ticks; i++)
+        game.tick(1); // Using a scroll requires the target character to be recovered.
+    ASSERT_EQ(pParty->pCharacters[0].timeToRecovery, 0_ticks);
+    pParty->setHoldingItem(Item(ItemId(200)));
+    game.pressAndReleaseButton(BUTTON_RIGHT, 50, 420); // Character 1's portrait.
+    game.tick(5);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL); // Scroll consumed.
+    EXPECT_TRUE(pParty->TorchlightActive());
+}
+
+GAME_TEST(Mm6, LearnSpellFromBook) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Item 300 is MM6's Torch Light spell book (Mod1 "S1"). Learning it requires the Fire skill;
+    // the book is used on the character whose portrait is right-clicked while it's held.
+    ASSERT_EQ(pItemTable->items[ItemId(300)].type, ITEM_TYPE_BOOK);
+    Character &learner = pParty->pCharacters[0];
+    learner.setSkillValue(SKILL_FIRE, CombinedSkillValue::novice());
+    EXPECT_FALSE(learner.bHaveSpell[SPELL_FIRE_TORCH_LIGHT]);
+    pParty->setHoldingItem(Item(ItemId(300)));
+    game.pressAndReleaseButton(BUTTON_RIGHT, 50, 420);
+    game.tick(5);
+    EXPECT_TRUE(learner.bHaveSpell[SPELL_FIRE_TORCH_LIGHT]);
+}
+
+GAME_TEST(Mm6, ReadMessageScroll) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Item 505 is "The Letter" from the Andover Potbello quest, an Mscroll whose text lives in
+    // scroll.txt under the same item id. Right-clicking a portrait with it held opens the scroll
+    // reading window with that text.
+    ASSERT_EQ(pItemTable->items[ItemId(505)].type, ITEM_TYPE_MESSAGE_SCROLL);
+    pParty->setHoldingItem(Item(ItemId(505)));
+    // Like all right-click popups, the scroll shows only while the right button is held.
+    game.pressButton(BUTTON_RIGHT, 50, 420);
+    game.tick(2);
+    ASSERT_NE(pGUIWindow_ScrollWindow, nullptr);
+    EXPECT_EQ(pGUIWindow_ScrollWindow->scroll_type, ItemId(505));
+    EXPECT_TRUE(pMessageScrolls[ItemId(505)].starts_with("My Dear Sulman"));
+
+    game.releaseButton(BUTTON_RIGHT, 50, 420);
+    game.tick(2);
+    EXPECT_EQ(pGUIWindow_ScrollWindow, nullptr);
 }

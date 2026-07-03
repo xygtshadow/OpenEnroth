@@ -703,7 +703,7 @@ bool Item::canSellRepairIdentifyAt(HouseId houseId) {
     if (isArtifact(itemId) && !isSpawnableArtifact(itemId))
         return false; // Can't sell quest artifacts, e.g. Hermes Sandals.
 
-    if (::isMessageScroll(itemId) && !isRecipe(itemId))
+    if (this->isMessageScroll() && !isRecipe(itemId))
         return false; // Can't sell message scrolls. Recipes are sellable at alchemy shops.
 
     switch (houseTable[houseId].uType) {

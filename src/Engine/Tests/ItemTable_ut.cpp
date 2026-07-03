@@ -251,9 +251,15 @@ GAME_TEST(ItemsMm6, ParsesMm6Layout) {
         {"0", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, // Blank id-0 placeholder row.
         {"1", "lsword1", "Longsword", "50", "Weapon", "Sword", "3d3", "0", "8", "1", "Longsword", "1", "4", "499", "8", "A longsword."},
         {"2", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, // Blank separator row (ids 299/399 in the real data).
-        {"3", "scroll4", "Fly", "300", "Sscroll", "Misc", "0", "0", "2", "1", "Spell Scroll", "0", "1", "0", "0", "The Fly spell."},
+        {"3", "scroll4", "Fly", "300", "Sscroll", "Misc", "S21", "0", "2", "1", "Spell Scroll", "0", "1", "0", "0", "The Fly spell."},
         {"4", "ldagger3", "Mordred", "20000", "Weapon", "Dagger", "2d3", "8", "Artifact", "15", "Artifact", "6", "0", "10", "20", "An artifact."},
         {"5", "memcryst", "Memory Crystal", "0", "N / A", "Misc", "0", "0", "", "0", "Memory Crystal", "0", "0", "0", "0", "A quest item."},
+        {"6", "book5", "Dark Containment", "60000", "Book", "Misc", "S99", "0", "2", "10", "Spell Book", "0", "1", "0", "0", "A spell book."},
+        {"7", "bottle22", "Rejuvenation", "1500", "Bottle", "Misc", "P25", "0", "2", "0", "Potion", "0", "1", "0", "0", "A potion."},
+        // MM6 wands take their spell from the data column (the original MM6 engine had no wand table).
+        // Id 136 deliberately matches an MM7 wand id: the MM7-only legacy wand map must NOT kick in here.
+        {"136", "wand1", "Wand of Static", "750", "WeaponW", "Misc", "S13", "15", "2", "5", "Wand", "0", "1", "0", "0", "A wand."},
+        {"500", "scroll5", "Name of Message", "10", "Mscroll", "Misc", "M1", "0", "2", "0", "Scroll", "0", "1", "0", "0", "A message scroll."},
     });
 
     ItemTable table;
@@ -277,6 +283,46 @@ GAME_TEST(ItemsMm6, ParsesMm6Layout) {
     EXPECT_EQ(table.items[ItemId(3)].type, ITEM_TYPE_SPELL_SCROLL);
     EXPECT_EQ(table.items[ItemId(4)].rarity, RARITY_ARTIFACT);
     EXPECT_EQ(table.items[ItemId(5)].type, ITEM_TYPE_NONE); // "N / A" - quest items and other non-equipment.
+
+    // Mod1 "S<n>" payloads carry the bound spell id (the standard 9-schools-by-11 spell numbering that
+    // the SpellId enum follows) for scrolls, books and - in MM6 - wands; "P<n>" carries the MM6 potion
+    // content id. Non-payload items get no bindings.
+    EXPECT_EQ(table.items[ItemId(3)].spellId, SPELL_AIR_FLY); // S21.
+    EXPECT_EQ(table.items[ItemId(6)].spellId, SPELL_DARK_SOULDRINKER); // S99 - MM6's Dark Containment slot.
+    EXPECT_EQ(table.items[ItemId(7)].potionId, 25); // P25.
+    EXPECT_EQ(table.items[ItemId(7)].spellId, SPELL_NONE);
+    EXPECT_EQ(table.items[ItemId(136)].spellId, SpellId(13)); // S13 from data - MM6's Static Charge slot; no MM7 wand-map override.
+    EXPECT_EQ(table.items[ItemId(1)].spellId, SPELL_NONE); // Dice Mod1.
+    EXPECT_EQ(table.items[ItemId(1)].potionId, 0);
+    EXPECT_EQ(table.items[ItemId(5)].spellId, SPELL_NONE); // "0" Mod1.
+    EXPECT_EQ(table.items[ItemId(500)].spellId, SPELL_NONE); // "M<n>" is a message-scroll text ordinal, not a spell.
+}
+
+// Both games' items.txt binds spells to items through Mod1 "S<n>" payloads. For scrolls and spellbooks
+// MM7's column agrees with the engine's legacy hardcoded maps on all 99+99 entries (verified against the
+// original data), so the parse is authoritative. MM7's WAND rows however carry stale MM6 leftovers in
+// that column (16 of 25 disagree with what MM7 wands actually cast), so for MM7 wands the parser applies
+// the legacy wand map instead of the data.
+GAME_TEST(ItemsMm7, ParsesSpellBindings) {
+    Blob items = makeTableBlob({
+        {"Item #", "Pic File", "Name", "Value", "Equip Stat", "Skill Group", "Mod1", "Mod2", "material", "ID/Rep/St", "Not identified name", "Sprite Index", "VarA", "VarB", "Equip X", "Equip Y", "Notes"},
+        {"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""},
+        {"1", "lsword1", "Longsword", "50", "Weapon", "Sword", "3d3", "0", "0", "1", "Longsword", "1", "0", "0", "499", "8", "A longsword."},
+        {"300", "item184", "Torch Light", "50", "Sscroll", "Misc", "S1", "0", "0", "1", "Scroll", "0", "0", "0", "0", "0", "A scroll."},
+        {"498", "item239", "Souldrinker", "60000", "Book", "Misc", "S99", "0", "0", "10", "Book", "0", "0", "0", "0", "0", "A book."},
+        // Wand of Sparks: the data column says S13 (a stale MM6 value), but MM7's wand really casts
+        // Sparks (spell 15) - the legacy wand map must override the data for MM7 wands.
+        {"136", "item135", "Wand of Sparks", "750", "WeaponW", "Misc", "S13", "15", "0", "5", "Wand", "0", "0", "0", "0", "0", "A wand."},
+    });
+
+    ItemTable table;
+    table.LoadItems(items, GAME_VERSION_MM7);
+
+    EXPECT_EQ(table.items[ItemId(300)].spellId, SPELL_FIRE_TORCH_LIGHT); // S1 from data.
+    EXPECT_EQ(table.items[ItemId(498)].spellId, SPELL_DARK_SOULDRINKER); // S99 from data.
+    EXPECT_EQ(table.items[ITEM_WAND_OF_SPARKS].spellId, SPELL_AIR_SPARKS); // Legacy map, NOT the stale S13.
+    EXPECT_EQ(table.items[ItemId(1)].spellId, SPELL_NONE);
+    EXPECT_EQ(table.items[ItemId(1)].potionId, 0);
 }
 
 // MM6's rnditems.txt lists per-item chances for ids 1-400 and, unlike MM7's fixed 618-row section, ends

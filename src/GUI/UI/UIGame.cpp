@@ -1612,10 +1612,12 @@ void GameUI_DrawTorchlightAndWizardEye() {
         current_screen_type == SCREEN_BOOKS ||
         current_screen_type == SCREEN_BRANCHLESS_NPC_DIALOG ||
         current_screen_type == SCREEN_QUICK_REFERENCE) {
-        if (pParty->TorchlightActive()) {
+        // The animation ids are -1 when the icons are absent from dift.bin (MM6 has no "torch"/"wizeye"
+        // HUD animations) - the buffs still work, only the HUD indicator is skipped.
+        if (pParty->TorchlightActive() && game_ui_torchLight != -1) {
             render->DrawQuad2D(pIconsFrameTable->animationFrame(game_ui_torchLight, pMiscTimer->time()), {468, 0});
         }
-        if (pParty->wizardEyeActive()) {
+        if (pParty->wizardEyeActive() && game_ui_wizardEye != -1) {
             render->DrawQuad2D(pIconsFrameTable->animationFrame(game_ui_wizardEye, pMiscTimer->time()), {606, 0});
         }
     }
