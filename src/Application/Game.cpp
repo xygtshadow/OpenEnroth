@@ -101,6 +101,13 @@ Game::Game(PlatformApplication *application, std::shared_ptr<GameConfig> config)
 
 Game::~Game() = default;
 
+static MapId startingMapId(const GameConfig *config) {
+    std::string startingMap = config->gameplay.StartingMap.value();
+    if (engine->gameVersion() == GAME_VERSION_MM6 && startingMap == config->gameplay.StartingMap.defaultValue())
+        startingMap = "oute3.odm"; // The config default is the MM7 starting map, MM6 starts in New Sorpigal.
+    return pMapStats->GetMapInfo(startingMap);
+}
+
 int Game::run() {
     window->activate();
     ::eventLoop->processMessages(eventHandler);
@@ -166,7 +173,7 @@ bool Game::loop() {
 
             pParty->pPickedItem.itemId = ITEM_NULL;
 
-            engine->_transitionMapId = pMapStats->GetMapInfo(_config->gameplay.StartingMap.value());
+            engine->_transitionMapId = startingMapId(_config.get());
 
             // TODO(Nik-RE-dev): should not be an assert but an exception or error message.
             assert(engine->_transitionMapId != MAP_INVALID);
@@ -1681,7 +1688,7 @@ void Game::gameLoop() {
                 } else {
                     pParty->pos = Vec3f(12552, 1816, 193); // respawn on emerald isle
                     pParty->_viewYaw = 512;
-                    mapid = pMapStats->GetMapInfo(_config->gameplay.StartingMap.value());
+                    mapid = startingMapId(_config.get());
                     // TODO(Nik-RE-dev): should not be an assert but an exception or error message.
                     assert(mapid != MAP_INVALID);
                 }

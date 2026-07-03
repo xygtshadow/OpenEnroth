@@ -38,7 +38,11 @@ bool GUIProgressBar::Initialize(Type type) {
     turnHourIconId = pIconsFrameTable->animationId("turnhour");
 
     if (uType == TYPE_Fullscreen) {
-        loading_bg = assets->getImage_PCXFromIconsLOD(fmt::format("loading{}.pcx", vrng->random(5) + 1));
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            loading_bg = assets->getImage_PCXFromIconsLOD("loading.pcx"); // MM6 has a single loading screen.
+        } else {
+            loading_bg = assets->getImage_PCXFromIconsLOD(fmt::format("loading{}.pcx", vrng->random(5) + 1));
+        }
 
         uProgressCurrent = 0;
         uX = 122;
