@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,6 +23,8 @@
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Tables/NPCTable.h"
+
+#include "GUI/GUIWindow.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -223,6 +226,114 @@ GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
     EXPECT_EQ(pParty->pos, Vec3f(16406, -19669, 865));
     EXPECT_NE(pIndoor->GetSector(pParty->pos.x, pParty->pos.y, pParty->pos.z), 0);
     game.tick(20);
+}
+
+GAME_TEST(Mm6, OpenChestInGoblinwatch) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+
+    // Find a clickable vertical (side-facing) face wired to an OpenChest event, so that the party
+    // can stand in front of it. Prefer an untrapped chest so that interacting opens the chest UI
+    // instead of setting off the trap.
+    const BLVFace *chestFace = nullptr;
+    int chestId = -1;
+    for (const BLVFace &face : pIndoor->faces) {
+        if (!face.eventId || !face.Clickable() || !engine->_localEventMap.hasEvent(face.eventId))
+            continue;
+        if (std::abs(face.facePlane.normal.z) >= 0.5f)
+            continue; // A chest lid/floor plate - the party can't stand in front of it.
+        for (const EvtInstruction &instruction : engine->_localEventMap.function(face.eventId)) {
+            if (instruction.opcode == EVENT_OpenChest && !vChests[instruction.data.chest_id].Trapped()) {
+                chestFace = &face;
+                chestId = instruction.data.chest_id;
+                break;
+            }
+        }
+        if (chestFace)
+            break;
+    }
+    ASSERT_NE(chestFace, nullptr);
+
+    // Stand in front of the chest, facing it.
+    Vec3f chestCenter = chestFace->boundingBox.center();
+    Vec3f pos = chestCenter + chestFace->facePlane.normal * 130;
+    pos.z = chestFace->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(chestCenter.x - pos.x, chestCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(goblinwatch, pos, yawDegrees);
+    game.tick(1);
+
+    // Interacting with the chest fires its OpenChest event and brings up the chest screen.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(1);
+    EXPECT_EQ(current_screen_type, SCREEN_CHEST);
+
+    // The opened chest was set up: its stash was laid out on the chest grid.
+    EXPECT_TRUE(vChests[chestId].Initialized());
+
+    // Escape closes the chest and the game is live again.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(20);
+}
+
+GAME_TEST(Mm6, SwitchChangesDoorStateInGoblinwatch) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+
+    // Find a clickable vertical face whose event script starts with a ChangeDoorState - a switch
+    // or a door handle - and locate the door it drives.
+    const BLVFace *switchFace = nullptr;
+    int doorId = -1;
+    for (const BLVFace &face : pIndoor->faces) {
+        if (!face.eventId || !face.Clickable() || !engine->_localEventMap.hasEvent(face.eventId))
+            continue;
+        if (std::abs(face.facePlane.normal.z) >= 0.5f)
+            continue;
+        const std::vector<EvtInstruction> &script = engine->_localEventMap.function(face.eventId);
+        if (script.size() >= 2 && script[1].opcode == EVENT_ChangeDoorState) {
+            switchFace = &face;
+            doorId = script[1].data.door_descr.door_id;
+            break;
+        }
+    }
+    ASSERT_NE(switchFace, nullptr);
+
+    BLVDoor *door = nullptr;
+    for (BLVDoor &candidate : pIndoor->doors) {
+        if (candidate.doorId == static_cast<uint32_t>(doorId)) {
+            door = &candidate;
+            break;
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    DoorState stateBefore = door->state;
+
+    // Stand in front of the switch, facing it.
+    Vec3f switchCenter = switchFace->boundingBox.center();
+    Vec3f pos = switchCenter + switchFace->facePlane.normal * 130;
+    pos.z = switchFace->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(switchCenter.x - pos.x, switchCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(goblinwatch, pos, yawDegrees);
+    game.tick(1);
+
+    // Interacting fires the event, and the door it drives starts moving.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    EXPECT_NE(door->state, stateBefore);
+    game.tick(20); // And the door animation keeps the game loop happy.
 }
 
 GAME_TEST(Mm6, AllMapEventsParse) {
