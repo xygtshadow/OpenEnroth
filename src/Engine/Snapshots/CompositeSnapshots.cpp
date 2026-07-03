@@ -25,7 +25,9 @@
 
 #include "GUI/GUIFont.h"
 
+#include "Library/Logger/Logger.h"
 #include "Library/Snapshots/CommonSnapshots.h"
+#include "Library/Snapshots/SnapshotSerialization.h"
 #include "Library/Lod/LodWriter.h"
 #include "Library/Lod/LodReader.h"
 #include "Library/Lod/LodEnums.h"
@@ -538,7 +540,7 @@ void reconstruct(const OutdoorLocation_MM7 &src, OutdoorLocation *dst) {
     reconstruct(src.spawnPoints, &dst->pSpawnPoints);
 }
 
-void deserialize(InputStream &src, OutdoorLocation_MM7 *dst) {
+void deserialize(InputStream &src, OutdoorLocation_MM7 *dst, ContextTag<GameVersion> version) {
     deserialize(src, &dst->name);
     deserialize(src, &dst->fileName);
     deserialize(src, &dst->description);
@@ -548,10 +550,21 @@ void deserialize(InputStream &src, OutdoorLocation_MM7 *dst) {
     deserialize(src, &dst->heightMap);
     deserialize(src, &dst->tileMap);
     deserialize(src, &dst->attributeMap);
-    deserialize(src, &dst->normalCount);
-    deserialize(src, &dst->someOtherMap);
-    deserialize(src, &dst->normalMap);
-    deserialize(src, &dst->normals, tags::presized(dst->normalCount));
+
+    if (*version == GAME_VERSION_MM6) {
+        // MM6 odm files don't store per-vertex normals - an MM7 addition. These are unused in
+        // OpenEnroth (normals are recalculated on load), so just leave them empty.
+        dst->normalCount = 0;
+        dst->someOtherMap = {};
+        dst->normalMap = {};
+        dst->normals.clear();
+    } else {
+        deserialize(src, &dst->normalCount);
+        deserialize(src, &dst->someOtherMap);
+        deserialize(src, &dst->normalMap);
+        deserialize(src, &dst->normals, tags::presized(dst->normalCount));
+    }
+
     deserialize(src, &dst->models);
 
     dst->modelExtras.clear();
@@ -564,11 +577,25 @@ void deserialize(InputStream &src, OutdoorLocation_MM7 *dst) {
         deserialize(src, &extra.faceTextures, tags::presized(model.numFaces));
     }
 
-    deserialize(src, &dst->decorations);
-    deserialize(src, &dst->decorationNames, tags::presized(dst->decorations.size()));
-    deserialize(src, &dst->decorationPidList);
-    deserialize(src, &dst->decorationMap);
-    deserialize(src, &dst->spawnPoints);
+    if (*version == GAME_VERSION_MM6) {
+        // MM6 level decorations and spawn points are prefix-subsets of their MM7 counterparts.
+        uint32_t decorationCount;
+        deserialize(src, &decorationCount);
+        deserialize(src, &dst->decorations, tags::presized(decorationCount), tags::each, tags::via<LevelDecoration_MM6>);
+        deserialize(src, &dst->decorationNames, tags::presized(decorationCount));
+        deserialize(src, &dst->decorationPidList);
+        deserialize(src, &dst->decorationMap);
+
+        uint32_t spawnPointCount;
+        deserialize(src, &spawnPointCount);
+        deserialize(src, &dst->spawnPoints, tags::presized(spawnPointCount), tags::each, tags::via<SpawnPoint_MM6>);
+    } else {
+        deserialize(src, &dst->decorations);
+        deserialize(src, &dst->decorationNames, tags::presized(dst->decorations.size()));
+        deserialize(src, &dst->decorationPidList);
+        deserialize(src, &dst->decorationMap);
+        deserialize(src, &dst->spawnPoints);
+    }
 }
 
 void snapshot(const OutdoorLocation &src, OutdoorDelta_MM7 *dst) {
@@ -646,10 +673,54 @@ void serialize(const OutdoorDelta_MM7 &src, OutputStream *dst) {
     serialize(src.locationTime, dst);
 }
 
-void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLocation_MM7> ctx) {
+void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLocation_MM7> ctx, ContextTag<GameVersion> version) {
     size_t totalFaces = 0;
     for (const BSPModelData_MM7 &model : ctx->models)
         totalFaces += model.numFaces;
+
+    if (*version == GAME_VERSION_MM6) {
+        // MM6 record sizes, derived from oute3.ddm. The structs are not modelled yet, see below.
+        constexpr size_t mm6ActorSize = 548;
+        constexpr size_t mm6SpriteObjectSize = 100;
+        constexpr size_t mm6ChestSize = 4204; // 4-byte header + 140 items of 28 bytes + 140 uint16_t indices.
+
+        // MM6 ddm layout: 8-byte header, reveal bitmaps, then actors / sprite objects / chests, then event
+        // variables & location time. Face attributes & decoration flags are MM7 additions - synthesize them
+        // from the odm data instead.
+        dst->header = {};
+        deserialize(src, &dst->header.info.respawnCount);
+        deserialize(src, &dst->header.info.lastRespawnDay);
+        deserialize(src, &dst->fullyRevealedCells);
+        deserialize(src, &dst->partiallyRevealedCells);
+
+        dst->faceAttributes.clear();
+        for (const BSPModelExtras_MM7 &extras : ctx->modelExtras)
+            for (const ODMFace_MM7 &face : extras.faces)
+                dst->faceAttributes.push_back(face.attributes);
+
+        dst->decorationFlags.clear();
+        for (const LevelDecoration_MM7 &decoration : ctx->decorations)
+            dst->decorationFlags.push_back(decoration.uFlags);
+
+        uint32_t actorCount, spriteObjectCount, chestCount;
+        deserialize(src, &actorCount);
+        src.skipOrFail(actorCount * mm6ActorSize);
+        deserialize(src, &spriteObjectCount);
+        src.skipOrFail(spriteObjectCount * mm6SpriteObjectSize);
+        deserialize(src, &chestCount);
+        src.skipOrFail(chestCount * mm6ChestSize);
+        dst->actors.clear();
+        dst->spriteObjects.clear();
+        dst->chests.clear();
+        if (actorCount || spriteObjectCount || chestCount)
+            logger->warning("MM6 map actors, sprite objects & chests are not implemented yet - the map will be empty. "
+                            "MM6's on-disk actor ({} bytes), sprite object ({} bytes) and chest ({} bytes) records differ "
+                            "from MM7's and need dedicated models.", mm6ActorSize, mm6SpriteObjectSize, mm6ChestSize);
+
+        deserialize(src, &dst->eventVariables);
+        deserialize(src, &dst->locationTime);
+        return;
+    }
 
     deserialize(src, &dst->header);
     deserialize(src, &dst->fullyRevealedCells);

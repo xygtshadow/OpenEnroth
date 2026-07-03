@@ -954,6 +954,7 @@ struct SpawnPoint_MM7 {
 static_assert(sizeof(SpawnPoint_MM7) == 24);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(SpawnPoint_MM7)
 
+void reconstruct(const SpawnPoint_MM6 &src, SpawnPoint_MM7 *dst);
 void reconstruct(const SpawnPoint_MM7 &src, SpawnPoint *dst);
 
 
@@ -1093,7 +1094,7 @@ MM_DECLARE_MEMCOPY_SERIALIZABLE(PortraitFrameData_MM7)
 void reconstruct(const PortraitFrameData_MM7 &src, PortraitFrameData *dst);
 
 
-struct LevelDecoration_MM7 {
+struct LevelDecoration_MM6 {
     uint16_t uDecorationDescID;
     uint16_t uFlags;
     Vec3i vPosition;
@@ -1102,12 +1103,18 @@ struct LevelDecoration_MM7 {
     uint16_t uEventID;
     uint16_t uTriggerRange;
     int16_t field_1A;
+};
+static_assert(sizeof(LevelDecoration_MM6) == 28);
+MM_DECLARE_MEMCOPY_SERIALIZABLE(LevelDecoration_MM6)
+
+struct LevelDecoration_MM7 : LevelDecoration_MM6 {
     int16_t eventVarId;
     int16_t field_1E;
 };
 static_assert(sizeof(LevelDecoration_MM7) == 32);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(LevelDecoration_MM7)
 
+void reconstruct(const LevelDecoration_MM6 &src, LevelDecoration_MM7 *dst);
 void reconstruct(const LevelDecoration_MM7 &src, LevelDecoration *dst);
 
 

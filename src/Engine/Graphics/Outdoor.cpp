@@ -455,7 +455,7 @@ void OutdoorLocation::Load(std::string_view filename, int days_played, int respa
     odm_filename.replace(odm_filename.length() - 4, 4, ".odm");
 
     OutdoorLocation_MM7 location;
-    deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(odm_filename)), &location); // read throws.
+    deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(odm_filename)), &location, tags::context(engine->gameVersion())); // read throws.
     reconstruct(location, this);
 
     // ****************.ddm file*********************//
@@ -467,7 +467,10 @@ void OutdoorLocation::Load(std::string_view filename, int days_played, int respa
     OutdoorDelta_MM7 delta;
     if (Blob blob = lod::decodeMaybeCompressed(pMapDeltas.at(ddm_filename))) {
         try {
-            deserialize(blob, &delta, tags::context(location));
+            // Deltas coming from a save are always MM7-format - that's what serialize() writes. Original MM6
+            // ddm blobs that were copied into the save verbatim will fail to parse here and trigger a respawn
+            // from games.lod below, which is version-aware.
+            deserialize(blob, &delta, tags::context(location), tags::context(GAME_VERSION_MM7));
 
             size_t totalFaces = 0;
             for (BSPModel &model : pBModels)
@@ -496,13 +499,13 @@ void OutdoorLocation::Load(std::string_view filename, int days_played, int respa
     assert(respawnInitial + respawnTimed <= 1);
 
     if (respawnInitial) {
-        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddm_filename)), &delta, tags::context(location));
+        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddm_filename)), &delta, tags::context(location), tags::context(engine->gameVersion()));
         *outdoors_was_respawned = true;
     } else if (respawnTimed) {
         auto header = delta.header;
         auto fullyRevealedCells = delta.fullyRevealedCells;
         auto partiallyRevealedCells = delta.partiallyRevealedCells;
-        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddm_filename)), &delta, tags::context(location));
+        deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddm_filename)), &delta, tags::context(location), tags::context(engine->gameVersion()));
         delta.header = header;
         delta.fullyRevealedCells = fullyRevealedCells;
         delta.partiallyRevealedCells = partiallyRevealedCells;

@@ -7,6 +7,8 @@
 
 #include "EntitySnapshots.h"
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Utility/Memory/Blob.h"
 #include "Utility/Hash.h"
 
@@ -107,7 +109,7 @@ struct OutdoorLocation_MM7 {
 
 void reconstruct(const OutdoorLocation_MM7 &src, OutdoorTerrain *dst);
 void reconstruct(const OutdoorLocation_MM7 &src, OutdoorLocation *dst);
-void deserialize(InputStream &src, OutdoorLocation_MM7 *dst);
+void deserialize(InputStream &src, OutdoorLocation_MM7 *dst, ContextTag<GameVersion> version);
 
 struct OutdoorDelta_MM7 {
     LocationHeader_MM7 header;
@@ -125,7 +127,7 @@ struct OutdoorDelta_MM7 {
 void snapshot(const OutdoorLocation &src, OutdoorDelta_MM7 *dst);
 void reconstruct(const OutdoorDelta_MM7 &src, OutdoorLocation *dst);
 void serialize(const OutdoorDelta_MM7 &src, OutputStream *dst);
-void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLocation_MM7> ctx);
+void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLocation_MM7> ctx, ContextTag<GameVersion> version);
 
 
 struct SaveGame_MM7 {

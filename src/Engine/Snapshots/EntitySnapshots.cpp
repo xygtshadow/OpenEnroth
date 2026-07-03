@@ -1589,6 +1589,15 @@ void reconstruct(const ODMFace_MM7 &src, BLVFace *dst, ContextTag<int> faceIndex
     dst->faceId = *faceIndex;
 }
 
+void reconstruct(const SpawnPoint_MM6 &src, SpawnPoint_MM7 *dst) {
+    dst->position = src.position;
+    dst->radius = src.radius;
+    dst->type = src.type;
+    dst->treasureLevelOrMonsterIndex = src.treasureLevelOrMonsterIndex;
+    dst->attributes = src.attributes;
+    dst->group = 0; // Spawn groups are an MM7 addition.
+}
+
 void reconstruct(const SpawnPoint_MM7 &src, SpawnPoint *dst) {
     dst->position = src.position.toFloat();
     dst->radius = src.radius;
@@ -1776,6 +1785,12 @@ void reconstruct(const PortraitFrameData_MM7 &src, PortraitFrameData *dst) {
     dst->frameLength = Duration::fromTicks(src.frameLength * 8);
     dst->animationLength = Duration::fromTicks(src.animationLength * 8);
     dst->flags = static_cast<FrameFlags>(src.flags);
+}
+
+void reconstruct(const LevelDecoration_MM6 &src, LevelDecoration_MM7 *dst) {
+    static_cast<LevelDecoration_MM6 &>(*dst) = src;
+    dst->eventVarId = 0; // Persistent decoration event variables are an MM7 addition.
+    dst->field_1E = 0;
 }
 
 void reconstruct(const LevelDecoration_MM7 &src, LevelDecoration *dst) {

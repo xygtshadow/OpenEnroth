@@ -864,14 +864,14 @@ GAME_TEST(Prs, Pr2354) {
         } else if (isMapOutdoor(mapId)) {
             // Deserialize and reconstruct the base outdoor location (.odm).
             OutdoorLocation_MM7 rawLocation;
-            deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(fileName)), &rawLocation);
+            deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(fileName)), &rawLocation, tags::context(engine->gameVersion()));
             OutdoorLocation location;
             reconstruct(rawLocation, &location);
 
             // Deserialize and reconstruct the default delta (.ddm).
             std::string ddmFilename = fmt::format("{}.ddm", baseName);
             OutdoorDelta_MM7 rawDelta;
-            deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddmFilename)), &rawDelta, tags::context(rawLocation));
+            deserialize(lod::decodeMaybeCompressed(pGames_LOD->read(ddmFilename)), &rawDelta, tags::context(rawLocation), tags::context(engine->gameVersion()));
             reconstruct(rawDelta, &location);
         }
     }
