@@ -85,6 +85,12 @@ struct NPCGreeting {
     std::string pGreeting2;  // at latest meets
 };
 
+// One row of MM6's npcnews.txt - the "Regional News" gossip that street townsfolk tell when talked to.
+struct RegionalNewsEntry {
+    std::string topic; // Dev-facing topic name, e.g. "Goblinwatch".
+    std::string text; // The news line itself.
+};
+
 struct NPCStats {
     void Initialize(ResourceManager *resourceManager, GameVersion version);
     void InitializeNPCNames(const Blob &npcNames);
@@ -121,12 +127,23 @@ struct NPCStats {
      */
     const std::string &sub_495366_MispronounceName(char firstLetter, Sex gender);
 
+    /**
+     * Picks a random news line for a street townsfolk chat - either regional news for the given map or a
+     * kingdom-wide rumor, uniformly across both pools. Only populated for MM6 (from npcnews.txt).
+     *
+     * @param map                       Map the party is on.
+     * @return                          News line text, or an empty string if no news is loaded.
+     */
+    std::string pickRandomNewsLine(MapId map) const;
+
     std::array<NPCData, 501> pOriginalNPCData; // NPC data as read from npcdata.txt.
     std::array<NPCData, 501> pNPCData; // NPC data used during the game.
     IndexedArray<std::vector<std::string>, SEX_FIRST, SEX_LAST> pNPCNames = {};
     IndexedArray<NPCProfession, NPC_PROFESSION_FIRST, NPC_PROFESSION_LAST> pProfessions = {};
     std::array<NPCData, 100> pAdditionalNPC = {{}};
     std::array<std::string, 52> pCatchPhrases{};   // 15CA4h
+    IndexedArray<std::vector<RegionalNewsEntry>, MAP_FIRST, MAP_LAST> pRegionalNews = {{}}; // MM6 npcnews.txt, keyed by map.
+    std::vector<RegionalNewsEntry> pGeneralNews; // MM6 npcnews.txt kingdom-wide rumors (its "Map" column = 1).
     std::array<std::string, 500> pNPCUnicNames{};  // from first batch
     IndexedArray<NPCProfessionChance, MAP_FIRST, MAP_LAST> pProfessionChance;
     int field_17884 = 0;

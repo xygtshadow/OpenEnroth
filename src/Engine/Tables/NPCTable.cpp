@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Engine/MapEnumFunctions.h"
@@ -93,14 +94,20 @@ void NPCStats::InitializeNPCData(const Blob &npcData, GameVersion version) {
         pOriginalNPCData[i].name = pNPCUnicNames[i - 1]; // TODO(captainurist): just make this 1-based too?
         pOriginalNPCData[i].portraitId = fromString<int>(tokens[2]);
         pOriginalNPCData[i].house = static_cast<HouseId>(fromString<int>(tokens[6]));
-        pOriginalNPCData[i].profession = static_cast<NpcProfession>(fromString<int>(tokens[7]));
         pOriginalNPCData[i].dialogue_1_evt_id = fromString<int>(tokens[10]);
         pOriginalNPCData[i].dialogue_2_evt_id = fromString<int>(tokens[11]);
         pOriginalNPCData[i].dialogue_3_evt_id = fromString<int>(tokens[12]);
         if (isMm6) {
+            // MM6 professions 1-22 coincide with MM7's, then the sets diverge and MM6 runs to id 77 - past
+            // the MM7-shaped NpcProfession arrays (that's an out-of-range abort at first use, e.g. when the
+            // dialogue UI draws the NPC's title). Keep the shared prefix and drop the rest until MM6's
+            // profession set is modelled (docs/pending/mm6-npcprof-model.md).
+            int profession = fromString<int>(tokens[7]);
+            pOriginalNPCData[i].profession = profession >= 1 && profession <= 22 ? static_cast<NpcProfession>(profession) : NoProfession;
             // No greeting-index column; join is the numeric col 8 (0/1); no event D/E/F columns.
             pOriginalNPCData[i].canJoin = fromString<int>(tokens[8]) != 0;
         } else {
+            pOriginalNPCData[i].profession = static_cast<NpcProfession>(fromString<int>(tokens[7]));
             pOriginalNPCData[i].greetingIndex = fromString<int>(tokens[8]);
             pOriginalNPCData[i].canJoin = tokens[9][0] == 'y' ? 1 : 0;
             pOriginalNPCData[i].dialogue_4_evt_id = fromString<int>(tokens[13]);
@@ -136,16 +143,28 @@ void NPCStats::InitializeNPCGroups(const Blob &npcGroups) {
 
 void NPCStats::InitializeNPCNews(const Blob &npcNews, GameVersion version) {
     if (version == GAME_VERSION_MM6) {
-        // MM6's npcnews.txt is a different feature from MM7's: it is per-map "Regional News" (279 rows of
-        // index | Map | Topic | News Text) under two header rows, whereas MM7 is a 52-entry NPC catch-phrase
-        // list (index | text | notes) under a single header. The two sets do not correspond - MM6's indices
-        // run to 279 (would overflow pCatchPhrases, size 52) and its tokens[1] is a numeric Map id, not phrase
-        // text (so the MM7 parse would also throw on the '#' of the second header row). Modelling MM6's
-        // regional-news feature is a separate task (see docs/pending/mm6-npcnews-model.md); for now MM6's
-        // catch phrases are deliberately left unpopulated so engine bring-up can proceed.
-        logger->warning("MM6 npcnews.txt parsing is not implemented yet - NPC catch phrases will be empty. "
-                        "MM6's Regional News is a different feature from MM7's catch-phrase list and needs a "
-                        "dedicated model.");
+        // MM6's npcnews.txt is a different feature from MM7's: it is "Regional News" - the gossip street
+        // townsfolk tell when talked to - under two header rows, with rows of index | Map | Topic | News Text.
+        // The Map column is offset by 25 from the mapstats.txt row for the 15 outdoor regions (values 26-40 ->
+        // rows 1-15, e.g. 40 = New Sorpigal), and Map 1 is a pool of kingdom-wide rumors.
+        for (std::string_view line : split(npcNews.str()).by("\r\n").drop(2).skip("")) {
+            std::array<std::string_view, 4> tokens = split(line).by('\t');
+            if (tokens[0].empty())
+                continue; // Trailing orphan row with no index column.
+
+            int newsMapId = fromString<int>(tokens[1]);
+            RegionalNewsEntry entry;
+            entry.topic = removeQuotes(tokens[2]);
+            entry.text = removeQuotes(tokens[3]);
+            if (newsMapId == 1) {
+                pGeneralNews.push_back(std::move(entry));
+            } else if (newsMapId >= 26 && newsMapId <= 40) {
+                pRegionalNews[static_cast<MapId>(newsMapId - 25)].push_back(std::move(entry));
+            } else {
+                logger->warning("npcnews.txt: unexpected map id {} for news topic '{}', skipping.",
+                                newsMapId, entry.topic);
+            }
+        }
         return;
     }
 
@@ -155,6 +174,16 @@ void NPCStats::InitializeNPCNews(const Blob &npcNews, GameVersion version) {
         int i = fromString<int>(tokens[0]); // File indices are 0-based.
         pCatchPhrases[i] = removeQuotes(tokens[1]);
     }
+}
+
+std::string NPCStats::pickRandomNewsLine(MapId map) const {
+    const std::vector<RegionalNewsEntry> &regional = pRegionalNews[map];
+    size_t total = regional.size() + pGeneralNews.size();
+    if (total == 0)
+        return {};
+
+    size_t index = grng->random(total);
+    return index < regional.size() ? regional[index].text : pGeneralNews[index - regional.size()].text;
 }
 
 //----- (0047702F) --------------------------------------------------------

@@ -31,7 +31,9 @@ static Blob makeNpcDataBlob(const std::vector<std::vector<std::string>> &rows) {
 // 0/1 "Join" flag at col 8, and free-form text from col 13 on ("Notes"). Parsing MM6 with MM7's columns
 // throws ("'gives money...' is not a number") when the numeric read of dialogue_4 (tokens[13]) lands on
 // the text Notes column. The MM6 parse path reads the join flag from col 8, maps events A/B/C to
-// dialogue 1/2/3, and leaves greetingIndex / dialogue 4-6 at their defaults.
+// dialogue 1/2/3, and leaves greetingIndex / dialogue 4-6 at their defaults. MM6 profession ids share
+// MM7's 1-22 prefix but then diverge and run to 77, overflowing the MM7-shaped NpcProfession arrays, so
+// only the shared prefix is kept until MM6's profession set is modelled (docs/pending/mm6-npcprof-model.md).
 GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
     Blob blob = makeNpcDataBlob({
         {"NPC Data (Special)"},                                                          // Header 1.
@@ -40,7 +42,7 @@ GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
         // index | name | pic | state | fame | rep | house | profession | join | news | A | B | C | notes.
         {"1", "Andover Potbello", "81", "0", "0", "0", "92", "74", "1", "0", "1", "296", "0",
          "gives money for the sixth letter and retrieve candelabra quest"},
-        {"2", "Maria", "126", "0", "0", "0", "92", "48", "0", "1", "8", "0", "0",
+        {"2", "Maria", "126", "0", "0", "0", "92", "4", "0", "1", "8", "0", "0",
          "gives clue for marketing promotion."},
     });
 
@@ -51,7 +53,7 @@ GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
     EXPECT_EQ(npc1.name, "Andover Potbello");
     EXPECT_EQ(npc1.portraitId, 81u);
     EXPECT_EQ(static_cast<int>(npc1.house), 92);
-    EXPECT_EQ(static_cast<int>(npc1.profession), 74);
+    EXPECT_EQ(npc1.profession, NoProfession); // MM6 id 74 is past the shared 1-22 prefix -> dropped.
     EXPECT_TRUE(npc1.canJoin);                 // MM6 join flag from col 8 (numeric 1).
     EXPECT_EQ(npc1.greetingIndex, 0);          // MM6 has no greeting-index column -> default.
     EXPECT_EQ(npc1.dialogue_1_evt_id, 1u);     // Event #A.
@@ -63,30 +65,44 @@ GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
 
     const NPCData &npc2 = stats->pOriginalNPCData[2];
     EXPECT_EQ(npc2.name, "Maria");
+    EXPECT_EQ(npc2.profession, Scholar);       // MM6 id 4 is in the shared 1-22 prefix -> kept as is.
     EXPECT_FALSE(npc2.canJoin);                // col 8 = 0.
     EXPECT_EQ(npc2.dialogue_1_evt_id, 8u);
 }
 
-// MM6's npcnews.txt is a different feature from MM7's: it is per-map "Regional News" (279 rows of
+// MM6's npcnews.txt is a different feature from MM7's: it is per-map "Regional News" (rows of
 // index | Map | Topic | News Text) preceded by TWO header rows ("Regional News" then "# Map Topic News
 // Text"), whereas MM7 is a 52-entry NPC catch-phrase list (index | text | notes) with a single header.
-// Parsing MM6 with the MM7 layout throws ("'#' is not a number") because the parser drops only one
-// header row, so tokens[0] lands on the literal '#'; even past that, the 279 indices would overflow
-// pCatchPhrases (size 52) and tokens[1] is a numeric Map id, not phrase text. MM6 is therefore booted
-// past (left unpopulated) until a dedicated regional-news model is built - same interim treatment as
-// spells.txt / items.txt.
-GAME_TEST(NPCTableNewsMm6, BootsPastRegionalNews) {
+// The Map column is offset by 25 from the mapstats.txt row for the 15 outdoor regions (26-40 -> rows
+// 1-15, e.g. 40 = New Sorpigal), and Map 1 is a pool of kingdom-wide rumors. The MM6 parse fills
+// pRegionalNews / pGeneralNews and leaves MM7's pCatchPhrases untouched.
+GAME_TEST(NPCTableNewsMm6, ParsesRegionalNews) {
     Blob blob = makeNpcDataBlob({
         {"Regional News", "", "", ""},               // Header 1.
         {"#", "Map", "Topic", "News Text"},          // Header 2.
-        {"1", "40", "Goblinwatch", "The keep on the hill is now home to a pack of goblins."},
+        {"1", "40", "Goblinwatch", "\"The keep on the hill is now home to a pack of goblins.\""},
         {"2", "40", "Baa Temple", "A new Temple dedicated to Baa lies west of here."},
+        {"3", "1", "Obelisks", "Touch an obelisk and you'll get part of a message."},
     });
 
     auto stats = std::make_unique<NPCStats>();
     EXPECT_NO_THROW(stats->InitializeNPCNews(blob, GAME_VERSION_MM6));
 
-    // Boot-past leaves the MM7-shaped catch-phrase array at its defaults.
+    // Map 40 - 25 = mapstats row 15, New Sorpigal.
+    const std::vector<RegionalNewsEntry> &sorpigal = stats->pRegionalNews[static_cast<MapId>(15)];
+    ASSERT_EQ(sorpigal.size(), 2u);
+    EXPECT_EQ(sorpigal[0].topic, "Goblinwatch");
+    EXPECT_EQ(sorpigal[0].text, "The keep on the hill is now home to a pack of goblins."); // Unquoted.
+    EXPECT_EQ(sorpigal[1].topic, "Baa Temple");
+
+    // Map 1 = the kingdom-wide pool.
+    ASSERT_EQ(stats->pGeneralNews.size(), 1u);
+    EXPECT_EQ(stats->pGeneralNews[0].topic, "Obelisks");
+
+    // And a news line can be picked for the map (from either pool).
+    EXPECT_FALSE(stats->pickRandomNewsLine(static_cast<MapId>(15)).empty());
+
+    // MM7's catch-phrase array stays at its defaults.
     EXPECT_TRUE(stats->pCatchPhrases[0].empty());
     EXPECT_TRUE(stats->pCatchPhrases[1].empty());
 }

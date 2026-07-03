@@ -1,6 +1,8 @@
 #include "Viewport.h"
 
 #include <algorithm>
+#include <string>
+#include <utility>
 
 #include "Engine/Engine.h"
 #include "Engine/Evt/Processor.h"
@@ -187,6 +189,20 @@ void InteractWithActor(unsigned int id) {
     assert(CanInteractWithActor(id));
 
     Actor::AI_FaceObject(id, Pid::character(0), 0);
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 street townsfolk aren't npcdata NPCs - their npcId on the map is just 1 (male) / 2 (female) -
+        // the original generates a random citizen who tells "Regional News" (npcnews.txt). Citizen generation
+        // and hiring hinge on MM6's profession model (docs/pending/mm6-npcprof-model.md); until then just
+        // surface the news line itself.
+        std::string news = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
+        if (!news.empty()) {
+            branchless_dialogue_str = std::move(news);
+            startBranchlessDialogue(0, 0, EVENT_Invalid);
+        }
+        return;
+    }
+
     if (pActors[id].npcId) {
         engine->_messageQueue->addMessageCurrentFrame(UIMSG_StartNPCDialogue, id, 0);
     } else {
