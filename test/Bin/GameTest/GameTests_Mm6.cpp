@@ -16,16 +16,20 @@
 
 #include "Utility/Math/TrigLut.h"
 #include "Engine/Graphics/BSPModel.h"
+#include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/SpriteObject.h"
+#include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/NPCTable.h"
 
 #include "GUI/GUIWindow.h"
+#include "GUI/UI/UIHouses.h"
+#include "GUI/UI/Houses/Shops.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -487,6 +491,117 @@ GAME_TEST(Mm6, QuestItemPickup) {
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(2);
     EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(220));
+    game.tick(5);
+}
+
+GAME_TEST(Mm6, EnterWeaponShop) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The Knife Shoppe is New Sorpigal's weapon shop: 2dEvents.txt row 1, loaded into houseTable.
+    EXPECT_EQ(houseTable[HouseId(1)].name, "The Knife Shoppe");
+    EXPECT_EQ(houseTable[HouseId(1)].uType, HOUSE_TYPE_WEAPON_SHOP);
+
+    // Its door face is wired to local event 17, an ungated SpeakInHouse(1).
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 17 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+
+    // Stand in front of the door, facing it.
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+
+    // Interacting with the door fires the SpeakInHouse event and brings up the house screen.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(1));
+
+    // Escape leaves the shop and the game is live again.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+GAME_TEST(Mm6, BuyFromWeaponShop) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Enter The Knife Shoppe (see Mm6.EnterWeaponShop for the door mechanics).
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 17 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    pParty->SetGold(2000); // Enough for any treasure-level-1 weapon.
+
+    // Pick "Buy Standard Goods" - the first right-hand dialogue option.
+    game.pressAndReleaseButton(BUTTON_LEFT, 550, 160);
+    game.tick(2);
+
+    // Entering the buy screen generated the shop's stock from MM6 item data.
+    const std::array<Item, 12> &stock = pParty->standartItemsInShops[HouseId(1)];
+    int slot = -1;
+    for (int i = 0; i < 6; i++) {
+        if (stock[i].itemId != ITEM_NULL) {
+            slot = i;
+            break;
+        }
+    }
+    ASSERT_NE(slot, -1);
+    ItemId stockItem = stock[slot].itemId;
+    EXPECT_FALSE(pItemTable->items[stockItem].name.empty());
+
+    // Click the item to buy it: gold is paid and it moves into the active character's inventory.
+    // Click coordinates mirror GUIWindow_Shop::houseScreenClick's hit test: the slot's icon is
+    // horizontally centered at 60 + slot * 70, vertically at weaponYPos[slot] + 30 plus half the icon.
+    int goldBefore = pParty->GetGold();
+    int x = 60 + slot * 70;
+    int y = weaponYPos[slot] + 30 + shop_ui_items_in_store[slot]->height() / 2;
+    game.pressAndReleaseButton(BUTTON_LEFT, x, y);
+    game.tick(2);
+    EXPECT_LT(pParty->GetGold(), goldBefore);
+    EXPECT_EQ(stock[slot].itemId, ITEM_NULL); // The shelf slot sold out.
+    EXPECT_TRUE(pParty->activeCharacter().inventory.find(stockItem));
+
+    // Leave the buy screen, then the shop.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
     game.tick(5);
 }
 
