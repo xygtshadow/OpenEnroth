@@ -589,6 +589,60 @@ void SetUserInterface(PartyAlignment align) {
         parchment = assets->getImage_ColorKey("parchment");
     }
 
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's in-game HUD is a completely different skin (a single full-screen 'ibground' background
+        // instead of per-alignment 'ib-*' frame assets), and is not modelled yet. Assign a shared
+        // placeholder image so the MM7-shaped draw code doesn't crash - the HUD will draw as blanks.
+        logger->warning("MM6 in-game UI skin is not implemented yet - the HUD will not be drawn properly. "
+                        "MM6 uses a single 'ibground' background instead of MM7's per-alignment 'ib-*' assets and needs a dedicated UI skin.");
+        GraphicsImage *placeholder = GraphicsImage::Create(1, 1);
+        game_ui_rightframe = placeholder;
+        game_ui_bottomframe = placeholder;
+        game_ui_topframe = placeholder;
+        game_ui_leftframe = placeholder;
+        game_ui_statusbar = placeholder;
+        game_ui_right_panel_frame = placeholder;
+        game_ui_minimap_frame = placeholder;
+        game_ui_minimap_compass = placeholder;
+        game_ui_player_alert_green = placeholder;
+        game_ui_player_alert_yellow = placeholder;
+        game_ui_player_alert_red = placeholder;
+        ui_btn_npc_left = placeholder;
+        ui_btn_npc_right = placeholder;
+        game_ui_btn_zoomin = placeholder;
+        game_ui_btn_zoomout = placeholder;
+        game_ui_player_selection_frame = placeholder;
+        game_ui_btn_cast = placeholder;
+        game_ui_btn_rest = placeholder;
+        game_ui_btn_quickref = placeholder;
+        game_ui_btn_settings = placeholder;
+        ui_exit_cancel_button_background = placeholder;
+        game_ui_playerbuff_bless = placeholder;
+        game_ui_playerbuff_preservation = placeholder;
+        game_ui_playerbuff_hammerhands = placeholder;
+        game_ui_playerbuff_pain_reflection = placeholder;
+        game_ui_evtnpc = placeholder;
+        ui_character_inventory_background = placeholder;
+        messagebox_corner_y = placeholder;
+        messagebox_corner_w = placeholder;
+        messagebox_corner_x = placeholder;
+        messagebox_corner_z = placeholder;
+        messagebox_border_bottom = placeholder;
+        messagebox_border_left = placeholder;
+        messagebox_border_right = placeholder;
+        messagebox_border_top = placeholder;
+        _591428_endcap = placeholder;
+
+        game_ui_wizardEye = pIconsFrameTable->animationId("wizeye"); // -1, MM6 has no such animation.
+        game_ui_torchLight = pIconsFrameTable->animationId("torch"); // Same.
+
+        uGameUIFontMain = colorTable.Diesel;
+        uGameUIFontShadow = colorTable.StarkWhite;
+
+        UI_Create();
+        return;
+    }
+
     if (align == PartyAlignment::PartyAlignment_Evil) {
         game_ui_rightframe = assets->getImage_PCXFromIconsLOD("ib-r-C.pcx");
         game_ui_bottomframe = assets->getImage_PCXFromIconsLOD("ib-b-C.pcx");

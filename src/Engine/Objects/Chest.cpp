@@ -1,5 +1,6 @@
 #include "Engine/Objects/Chest.h"
 
+#include <algorithm>
 #include <memory>
 #include <numeric>
 #include <unordered_map>
@@ -324,7 +325,7 @@ void Chest::GrabItem(bool all) {  // new function to grab items from chest using
 
 void GenerateItemsInChest() {
     MapInfo *currMapInfo = &pMapStats->pInfos[engine->_currentLoadedMapId];
-    for (int i = 0; i < 20; ++i) {
+    for (size_t i = 0; i < std::min<size_t>(vChests.size(), 20); ++i) {
         for (InventoryEntry entry : vChests[i].inventory.entries()) {
             if (!isRandomItem(entry->itemId))
                 continue;

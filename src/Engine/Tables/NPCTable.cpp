@@ -318,14 +318,16 @@ void NPCStats::InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid
         pNPCDataBuff->rep = 0;
     }
 
-    max_prof_cap = grng->random(pProfessionChance[uMapId].total);
-    test_prof_summ = 0;
     pNPCDataBuff->profession = NPC_PROFESSION_LAST;
-    for (NpcProfession i : allNpcProfessions()) {
-        test_prof_summ += pProfessionChance[uMapId].chanceByProfession[i];
-        if (test_prof_summ > max_prof_cap) {
-            pNPCDataBuff->profession = i;
-            break;
+    if (pProfessionChance[uMapId].total > 0) { // Zero when profession chances are not loaded, e.g. for MM6 (npcprof.txt is not implemented yet).
+        max_prof_cap = grng->random(pProfessionChance[uMapId].total);
+        test_prof_summ = 0;
+        for (NpcProfession i : allNpcProfessions()) {
+            test_prof_summ += pProfessionChance[uMapId].chanceByProfession[i];
+            if (test_prof_summ > max_prof_cap) {
+                pNPCDataBuff->profession = i;
+                break;
+            }
         }
     }
     pNPCDataBuff->house = uLocation2D;

@@ -255,6 +255,7 @@ inline Segment<ItemSlot> itemSlotsForItemType(ItemType type) {
     default:
         assert(false);
         [[fallthrough]];
+    case ITEM_TYPE_INVALID: // Type of items not present in the loaded item table, e.g. MM7 item ids under MM6 data.
     case ITEM_TYPE_REAGENT:
     case ITEM_TYPE_POTION:
     case ITEM_TYPE_SPELL_SCROLL:
