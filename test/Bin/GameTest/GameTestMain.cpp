@@ -11,6 +11,7 @@
 #include "Library/Platform/Application/PlatformApplication.h"
 #include "Library/FileSystem/Directory/DirectoryFileSystem.h"
 
+#include "Utility/NonInteractiveCrt.h"
 #include "Utility/String/Format.h"
 #include "Utility/UnicodeCrt.h"
 
@@ -26,6 +27,7 @@ void printGoogleTestHelp(char *app) {
 int platformMain(int argc, char **argv) {
     try {
         StackTraceOnCrash st;
+        NonInteractiveCrt nonInteractiveCrt; // Tests run unattended, a failed assert shouldn't block on a dialog.
         UnicodeCrt _(argc, argv);
         GameTestOptions opts = GameTestOptions::parse(argc, argv);
         if (opts.helpPrinted) {

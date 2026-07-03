@@ -13,6 +13,7 @@ set(UTILITY_SOURCES
         String/Ascii.cpp
         String/Encoding.cpp
         String/Transformations.cpp
+        NonInteractiveCrt.cpp
         UnicodeCrt.cpp
         String/Wrap.cpp)
 
@@ -48,6 +49,7 @@ set(UTILITY_HEADERS
         String/Transformations.h
         String/Unicode.h
         Unaligned.h
+        NonInteractiveCrt.h
         UnicodeCrt.h
         SmallVector.h
         ScopedRollback.h
