@@ -293,6 +293,18 @@ GAME_TEST(Mm6, OpenChestInGoblinwatch) {
     // The opened chest was set up: its stash was laid out on the chest grid.
     EXPECT_TRUE(vChests[chestId].Initialized());
 
+    // With MM6 item data loaded, chest contents are real items: every item in every chest of the
+    // dungeon resolves to a named items.txt entry, and the chests aren't all empty.
+    int chestItemCount = 0;
+    for (const Chest &chest : vChests) {
+        for (auto entry : chest.inventory.entries()) {
+            EXPECT_FALSE(pItemTable->items[(*entry).itemId].name.empty())
+                << "item id " << std::to_underlying((*entry).itemId);
+            chestItemCount++;
+        }
+    }
+    EXPECT_GT(chestItemCount, 0);
+
     // Escape closes the chest and the game is live again.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
