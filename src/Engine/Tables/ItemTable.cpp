@@ -522,7 +522,8 @@ void ItemTable::generateItem(ItemTreasureLevel treasureLevel, RandomItemType uTr
             }
         }
     }
-    if (outItem->isPotion() && outItem->itemId != ITEM_POTION_BOTTLE) {  // if it potion set potion spec
+    // MM6 potions have no power concept - their effects are fixed per potion.
+    if (version != GAME_VERSION_MM6 && outItem->isPotion() && outItem->itemId != ITEM_POTION_BOTTLE) {  // if it potion set potion spec
         outItem->potionPower = grng->randomDice(2, 4) * std::to_underlying(treasureLevel);
     }
 

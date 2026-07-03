@@ -3032,6 +3032,142 @@ bool Character::DiscardConditionIfLastsLongerThan(Condition uCondition,
     }
 }
 
+// MM6 potion effects are keyed by the items.txt "P<n>" content id (ItemData::potionId) and,
+// unlike MM7's, carry no potion power: restores are fixed amounts, temporary boosts go into the
+// until-rest bonus fields (cleared by resetTempBonuses on rest & heal), buff potions apply the
+// spell effect for 6 hours, and the black potions (P15-P25) are permanent - the seven essences
+// work once per stat per character, at the canonical stat trade-offs.
+static bool applyMm6PotionEffect(Character *playerAffected, int potionId) {
+    const auto applyBuff = [playerAffected](CharacterBuff buff) {
+        playerAffected->pCharacterBuffs[buff].Apply(pParty->GetPlayingTime() + Duration::fromHours(6), MASTERY_MASTER, 5, 0, 0);
+    };
+    const auto addStatBonuses = [playerAffected](int value) {
+        for (Attribute stat : playerAffected->_statBonuses.indices())
+            playerAffected->_statBonuses[stat] = std::min(playerAffected->_statBonuses[stat] + value, 255);
+    };
+    const auto addResistanceBonuses = [playerAffected](int value) {
+        // MM6's five resistances: Elec/Cold/Poison map onto Air/Water/Earth and the single
+        // non-elemental "Magic" one fans out to Mind/Spirit/Body, mirroring the MM6
+        // monsters.txt resistance-column mapping.
+        playerAffected->sResFireBonus += value;
+        playerAffected->sResAirBonus += value;
+        playerAffected->sResWaterBonus += value;
+        playerAffected->sResEarthBonus += value;
+        playerAffected->sResMindBonus += value;
+        playerAffected->sResSpiritBonus += value;
+        playerAffected->sResBodyBonus += value;
+    };
+    const auto addMana = [playerAffected](int value) {
+        playerAffected->mana = std::min(playerAffected->mana + value, playerAffected->GetMaxMana());
+    };
+    const auto drinkEssence = [playerAffected](Attribute plusStat, Attribute minusStat) {
+        if (playerAffected->_pureStatPotionUsed[plusStat])
+            return;
+        playerAffected->_stats[plusStat] += 15;
+        playerAffected->_stats[minusStat] -= 5;
+        playerAffected->_pureStatPotionUsed[plusStat] = true;
+    };
+
+    switch (potionId) {
+        case 1: // Cure Wounds.
+            playerAffected->Heal(10);
+            break;
+        case 2: // Magic.
+            addMana(10);
+            break;
+        case 3: // Energy.
+            addStatBonuses(10);
+            break;
+        case 4: // Protection.
+            playerAffected->sACModifier = std::min(playerAffected->sACModifier + 10, 255);
+            break;
+        case 5: // Resistance.
+            addResistanceBonuses(10);
+            break;
+        case 6: // Cure Poison.
+            playerAffected->conditions.reset(CONDITION_POISON_SEVERE);
+            playerAffected->conditions.reset(CONDITION_POISON_MEDIUM);
+            playerAffected->conditions.reset(CONDITION_POISON_WEAK);
+            break;
+        case 7: // Supreme Protection.
+            playerAffected->sACModifier = std::min(playerAffected->sACModifier + 20, 255);
+            break;
+        case 8: // Restoration - cures everything except dead, stone and eradicated.
+            for (Condition condition : {CONDITION_CURSED, CONDITION_WEAK, CONDITION_SLEEP,
+                                        CONDITION_FEAR, CONDITION_DRUNK, CONDITION_INSANE,
+                                        CONDITION_POISON_WEAK, CONDITION_DISEASE_WEAK,
+                                        CONDITION_POISON_MEDIUM, CONDITION_DISEASE_MEDIUM,
+                                        CONDITION_POISON_SEVERE, CONDITION_DISEASE_SEVERE,
+                                        CONDITION_PARALYZED, CONDITION_UNCONSCIOUS})
+                playerAffected->conditions.reset(condition);
+            break;
+        case 9: // Extreme Energy.
+            addStatBonuses(20);
+            break;
+        case 10: // Super Resistance.
+            addResistanceBonuses(20);
+            break;
+        case 11: // Heroism.
+            applyBuff(CHARACTER_BUFF_HEROISM);
+            break;
+        case 12: // Haste.
+            if (!playerAffected->conditions.has(CONDITION_WEAK))
+                applyBuff(CHARACTER_BUFF_HASTE);
+            break;
+        case 13: // Stone Skin.
+            applyBuff(CHARACTER_BUFF_STONESKIN);
+            break;
+        case 14: // Bless.
+            applyBuff(CHARACTER_BUFF_BLESS);
+            break;
+        case 15: // Divine Power.
+            playerAffected->sLevelModifier = std::min(playerAffected->sLevelModifier + 20, 255);
+            playerAffected->sAgeModifier += 1;
+            break;
+        case 16: // Divine Cure.
+            playerAffected->Heal(100);
+            playerAffected->sAgeModifier += 1;
+            break;
+        case 17: // Divine Magic.
+            addMana(100);
+            playerAffected->sAgeModifier += 1;
+            break;
+        case 18: // Essence of Might.
+            drinkEssence(ATTRIBUTE_MIGHT, ATTRIBUTE_INTELLIGENCE);
+            break;
+        case 19: // Essence of Intellect.
+            drinkEssence(ATTRIBUTE_INTELLIGENCE, ATTRIBUTE_MIGHT);
+            break;
+        case 20: // Essence of Personality.
+            drinkEssence(ATTRIBUTE_PERSONALITY, ATTRIBUTE_SPEED);
+            break;
+        case 21: // Essence of Endurance - the only essence that pays with 1 point of everything else.
+            if (!playerAffected->_pureStatPotionUsed[ATTRIBUTE_ENDURANCE]) {
+                for (Attribute stat : playerAffected->_stats.indices())
+                    playerAffected->_stats[stat] += stat == ATTRIBUTE_ENDURANCE ? 15 : -1;
+                playerAffected->_pureStatPotionUsed[ATTRIBUTE_ENDURANCE] = true;
+            }
+            break;
+        case 22: // Essence of Accuracy.
+            drinkEssence(ATTRIBUTE_ACCURACY, ATTRIBUTE_LUCK);
+            break;
+        case 23: // Essence of Speed.
+            drinkEssence(ATTRIBUTE_SPEED, ATTRIBUTE_PERSONALITY);
+            break;
+        case 24: // Essence of Luck.
+            drinkEssence(ATTRIBUTE_LUCK, ATTRIBUTE_ACCURACY);
+            break;
+        case 25: // Rejuvenation - wipes magical aging for a point of every stat.
+            playerAffected->sAgeModifier = 0;
+            for (Attribute stat : playerAffected->_stats.indices())
+                playerAffected->_stats[stat] -= 1;
+            break;
+        default:
+            return false;
+    }
+    return true;
+}
+
 void Character::useItem(int targetCharacter, bool isPortraitClick) {
     Character *playerAffected = &pParty->pCharacters[targetCharacter];
     if (pParty->bTurnBasedModeOn && (pTurnEngine->turn_stage == TE_WAIT || pTurnEngine->turn_stage == TE_MOVEMENT)) {
@@ -3071,6 +3207,30 @@ void Character::useItem(int targetCharacter, bool isPortraitClick) {
                 this->SetRecoveryTime(debug_non_combat_recovery_mul * flt_debugrecmod3 * 100_ticks);
             }
         //}
+        pParty->takeHoldingItem();
+        return;
+    }
+
+    if (pParty->pPickedItem.isPotion() && engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 potions dispatch on the items.txt "P<n>" content id - MM7's ITEM_POTION_* item
+        // ids mean unrelated items in an MM6 session.
+        if (!applyMm6PotionEffect(playerAffected, pItemTable->items[pParty->pPickedItem.itemId].potionId)) {
+            engine->_statusBar->setEvent(LSTR_S_CAN_NOT_BE_USED_THAT_WAY, pParty->pPickedItem.GetDisplayName());
+            pAudioPlayer->playUISound(SOUND_error);
+            return;
+        }
+        playerAffected->playReaction(SPEECH_DRINK_POTION);
+        pAudioPlayer->playUISound(SOUND_drink);
+        if (pGUIWindow_CurrentMenu && pGUIWindow_CurrentMenu->eWindowType != WINDOW_null) {
+            engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 0, 0);
+        }
+        if (pParty->bTurnBasedModeOn) {
+            pParty->pTurnBasedCharacterRecoveryTimes[targetCharacter] = 100_ticks;
+            this->SetRecoveryTime(100_ticks);
+            pTurnEngine->ApplyPlayerAction();
+        } else {
+            this->SetRecoveryTime(debug_non_combat_recovery_mul * flt_debugrecmod3 * 100_ticks);
+        }
         pParty->takeHoldingItem();
         return;
     }

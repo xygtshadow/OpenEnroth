@@ -1092,3 +1092,186 @@ GAME_TEST(Mm6, ArtifactIdsAndTreasureRoll) {
     }
     EXPECT_GT(artifactsRolled, 0); // ~5% of 400 rolls, capped by the artifact limit.
 }
+
+GAME_TEST(Mm6, DrinkPotions) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 potions are items 164-188, bound to content ids P1-P25 in items.txt. Unlike MM7 they
+    // have no potion power: effects are fixed, temporary boosts go into the until-rest bonus
+    // fields (statBonuses/sACModifier/sRes*Bonus/sLevelModifier), buff potions last 6 hours, and
+    // black potions are permanent (essences once per stat per character).
+    ASSERT_EQ(pItemTable->items[ItemId(164)].type, ITEM_TYPE_POTION);
+    ASSERT_EQ(pItemTable->items[ItemId(164)].potionId, 1); // Cure Wounds.
+    ASSERT_EQ(pItemTable->items[ItemId(188)].potionId, 25); // Rejuvenation.
+
+    // Generated MM6 potions must not get MM7-style potion power.
+    Item generated(ItemId(165));
+    generated.postGenerate(ITEM_SOURCE_CHEST);
+    EXPECT_EQ(generated.potionPower, 0);
+    for (int i = 0; i < 20; i++) {
+        Item rolled;
+        pItemTable->generateItem(ITEM_TREASURE_LEVEL_3, RANDOM_ITEM_POTION, &rolled);
+        ASSERT_TRUE(rolled.isPotion());
+        EXPECT_EQ(rolled.potionPower, 0);
+    }
+
+    Character &knight = pParty->pCharacters[0]; // Character 1, portrait at (50,420).
+    int casterIndex = -1; // Someone with spell points for the mana potions.
+    for (int i = 0; i < pParty->pCharacters.size(); i++) {
+        if (pParty->pCharacters[i].GetMaxMana() >= 10) {
+            casterIndex = i;
+            break;
+        }
+    }
+    ASSERT_NE(casterIndex, -1);
+    Character &caster = pParty->pCharacters[casterIndex];
+
+    auto drink = [&](int itemId, int targetCharacter) {
+        pParty->setHoldingItem(Item(ItemId(itemId)));
+        pParty->pCharacters[0].useItem(targetCharacter, true);
+        game.tick(1);
+        EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL); // Drunk & consumed.
+    };
+
+    // P1 Cure Wounds heals 10, via the real right-click-portrait path.
+    for (int i = 0; i < 100 && knight.timeToRecovery != 0_ticks; i++)
+        game.tick(1);
+    ASSERT_GT(knight.health, 15);
+    knight.health -= 15;
+    int hpBefore = knight.health;
+    pParty->setHoldingItem(Item(ItemId(164)));
+    game.pressAndReleaseButton(BUTTON_RIGHT, 50, 420);
+    game.tick(3);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    EXPECT_EQ(knight.health, hpBefore + 10);
+
+    // P2 Magic restores 10 spell points.
+    caster.mana = 0;
+    drink(165, casterIndex);
+    EXPECT_EQ(caster.mana, std::min(10, caster.GetMaxMana()));
+
+    // P3 Energy adds 10 to all seven stats until rest; P9 Extreme Energy stacks another 20.
+    for (Attribute stat : knight._statBonuses.indices())
+        ASSERT_EQ(knight._statBonuses[stat], 0);
+    drink(166, 0);
+    for (Attribute stat : knight._statBonuses.indices())
+        EXPECT_EQ(knight._statBonuses[stat], 10);
+    drink(172, 0);
+    for (Attribute stat : knight._statBonuses.indices())
+        EXPECT_EQ(knight._statBonuses[stat], 30);
+
+    // P4 Protection adds 10 AC until rest; P7 Supreme Protection another 20.
+    ASSERT_EQ(knight.sACModifier, 0);
+    drink(167, 0);
+    EXPECT_EQ(knight.sACModifier, 10);
+    drink(170, 0);
+    EXPECT_EQ(knight.sACModifier, 30);
+
+    // P5 Resistance adds 10 to the five MM6 resistances until rest; P10 Super Resistance
+    // another 20. MM6 Elec/Cold/Poison map to Air/Water/Earth, and the single MM6 "Magic"
+    // resistance fans out to Mind/Spirit/Body, mirroring the monsters.txt column mapping.
+    ASSERT_EQ(knight.sResFireBonus, 0);
+    drink(168, 0);
+    EXPECT_EQ(knight.sResFireBonus, 10);
+    EXPECT_EQ(knight.sResAirBonus, 10);
+    EXPECT_EQ(knight.sResWaterBonus, 10);
+    EXPECT_EQ(knight.sResEarthBonus, 10);
+    EXPECT_EQ(knight.sResMindBonus, 10);
+    EXPECT_EQ(knight.sResSpiritBonus, 10);
+    EXPECT_EQ(knight.sResBodyBonus, 10);
+    EXPECT_EQ(knight.sResPhysicalBonus, 0); // Not a character resistance in MM6.
+    EXPECT_EQ(knight.sResLightBonus, 0);
+    EXPECT_EQ(knight.sResDarkBonus, 0);
+    drink(173, 0);
+    EXPECT_EQ(knight.sResFireBonus, 30);
+    EXPECT_EQ(knight.sResBodyBonus, 30);
+
+    // P6 Cure Poison clears all poison stages.
+    knight.conditions.set(CONDITION_POISON_MEDIUM, pParty->GetPlayingTime());
+    drink(169, 0);
+    EXPECT_FALSE(knight.conditions.has(CONDITION_POISON_WEAK));
+    EXPECT_FALSE(knight.conditions.has(CONDITION_POISON_MEDIUM));
+    EXPECT_FALSE(knight.conditions.has(CONDITION_POISON_SEVERE));
+
+    // P8 Restoration cures everything except dead, stone and eradicated.
+    knight.conditions.set(CONDITION_WEAK, pParty->GetPlayingTime());
+    knight.conditions.set(CONDITION_DISEASE_SEVERE, pParty->GetPlayingTime());
+    knight.conditions.set(CONDITION_PARALYZED, pParty->GetPlayingTime());
+    knight.conditions.set(CONDITION_DEAD, pParty->GetPlayingTime());
+    drink(171, 0);
+    EXPECT_FALSE(knight.conditions.has(CONDITION_WEAK));
+    EXPECT_FALSE(knight.conditions.has(CONDITION_DISEASE_SEVERE));
+    EXPECT_FALSE(knight.conditions.has(CONDITION_PARALYZED));
+    EXPECT_TRUE(knight.conditions.has(CONDITION_DEAD));
+    knight.conditions.reset(CONDITION_DEAD);
+
+    // P11 Heroism, P12 Haste, P13 Stone Skin, P14 Bless: the spell effect for 6 hours.
+    Time drinkStart = pParty->GetPlayingTime();
+    drink(174, 0);
+    drink(175, 0);
+    drink(176, 0);
+    drink(177, 0);
+    Time drinkEnd = pParty->GetPlayingTime();
+    for (CharacterBuff buff : {CHARACTER_BUFF_HEROISM, CHARACTER_BUFF_HASTE,
+                               CHARACTER_BUFF_STONESKIN, CHARACTER_BUFF_BLESS}) {
+        EXPECT_TRUE(knight.pCharacterBuffs[buff].Active());
+        EXPECT_GE(knight.pCharacterBuffs[buff].expireTime, drinkStart + Duration::fromHours(6));
+        EXPECT_LE(knight.pCharacterBuffs[buff].expireTime, drinkEnd + Duration::fromHours(6));
+    }
+
+    // P15 Divine Power adds 20 levels until rest and a year of magical age.
+    ASSERT_EQ(knight.sLevelModifier, 0);
+    int ageModifier = knight.sAgeModifier;
+    drink(178, 0);
+    EXPECT_EQ(knight.sLevelModifier, 20);
+    EXPECT_EQ(knight.sAgeModifier, ageModifier + 1);
+
+    // P16 Divine Cure restores 100 hit points and ages a year.
+    knight.health = 1;
+    drink(179, 0);
+    EXPECT_EQ(knight.health, std::min(101, knight.GetMaxHealth()));
+    EXPECT_EQ(knight.sAgeModifier, ageModifier + 2);
+
+    // P17 Divine Magic restores 100 spell points and ages a year.
+    caster.mana = 0;
+    int casterAgeModifier = caster.sAgeModifier;
+    drink(180, casterIndex);
+    EXPECT_EQ(caster.mana, std::min(100, caster.GetMaxMana()));
+    EXPECT_EQ(caster.sAgeModifier, casterAgeModifier + 1);
+
+    // P18 Essence of Might: +15 might / -5 intellect, permanent, once per character.
+    int mightBefore = knight._stats[ATTRIBUTE_MIGHT];
+    int intellectBefore = knight._stats[ATTRIBUTE_INTELLIGENCE];
+    drink(181, 0);
+    EXPECT_EQ(knight._stats[ATTRIBUTE_MIGHT], mightBefore + 15);
+    EXPECT_EQ(knight._stats[ATTRIBUTE_INTELLIGENCE], intellectBefore - 5);
+    EXPECT_TRUE(knight._pureStatPotionUsed[ATTRIBUTE_MIGHT]);
+    drink(181, 0); // A second one is drunk but has no further effect.
+    EXPECT_EQ(knight._stats[ATTRIBUTE_MIGHT], mightBefore + 15);
+    EXPECT_EQ(knight._stats[ATTRIBUTE_INTELLIGENCE], intellectBefore - 5);
+
+    // P21 Essence of Endurance: +15 endurance / -1 everything else.
+    IndexedArray<int, ATTRIBUTE_FIRST_STAT, ATTRIBUTE_LAST_STAT> statsBefore = knight._stats;
+    drink(184, 0);
+    for (Attribute stat : knight._stats.indices())
+        EXPECT_EQ(knight._stats[stat], statsBefore[stat] + (stat == ATTRIBUTE_ENDURANCE ? 15 : -1));
+
+    // P24 Essence of Luck: +15 luck / -5 accuracy.
+    int luckBefore = knight._stats[ATTRIBUTE_LUCK];
+    int accuracyBefore = knight._stats[ATTRIBUTE_ACCURACY];
+    drink(187, 0);
+    EXPECT_EQ(knight._stats[ATTRIBUTE_LUCK], luckBefore + 15);
+    EXPECT_EQ(knight._stats[ATTRIBUTE_ACCURACY], accuracyBefore - 5);
+
+    // P25 Rejuvenation wipes magical aging at the price of 1 point of every stat, permanently.
+    ASSERT_GT(knight.sAgeModifier, 0);
+    statsBefore = knight._stats;
+    drink(188, 0);
+    EXPECT_EQ(knight.sAgeModifier, 0);
+    for (Attribute stat : knight._stats.indices())
+        EXPECT_EQ(knight._stats[stat], statsBefore[stat] - 1);
+}

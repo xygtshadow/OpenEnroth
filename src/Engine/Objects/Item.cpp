@@ -744,7 +744,8 @@ void Item::postGenerate(ItemSource source) {
         standardEnchantmentStrength = pItemTable->items[itemId].standardEnchantmentStrength;
     }
 
-    if (type() == ITEM_TYPE_POTION && itemId != ITEM_POTION_BOTTLE && potionPower == 0) {
+    // MM6 potions have no power concept - their effects are fixed per potion.
+    if (pItemTable->version != GAME_VERSION_MM6 && type() == ITEM_TYPE_POTION && itemId != ITEM_POTION_BOTTLE && potionPower == 0) {
         if (source == ITEM_SOURCE_MAP || source == ITEM_SOURCE_CHEST || source == ITEM_SOURCE_SCRIPT) {
             potionPower = grng->random(15) + 5;
         } else if (source == ITEM_SOURCE_MONSTER) {
