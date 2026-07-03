@@ -1,16 +1,22 @@
 #include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "Testing/Game/GameTest.h"
 
 #include "Engine/Engine.h"
+#include "Engine/Evt/EvtProgram.h"
+#include "Engine/MapEnumFunctions.h"
 #include "Engine/MapInfo.h"
 #include "Engine/Party.h"
+#include "Engine/Resources/ResourceManager.h"
 #include "Engine/mm7_data.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Engine/Graphics/BSPModel.h"
 #include "Engine/Graphics/Indoor.h"
+#include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
@@ -174,6 +180,71 @@ GAME_TEST(Mm6, EnterGoblinwatch) {
 
     // The game loop should keep running: actor AI, animations, doors.
     game.tick(20);
+}
+
+GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // New Sorpigal's Abandoned Temple of Baa entrance is the door face wired to local event 102,
+    // an ungated MoveToMap into d02.blv.
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 102 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+
+    // Stand right in front of the door, facing it.
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1; // Feet on the ground, not at the door's mid-height.
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+
+    // Interacting with the door fires event 102, which opens the enter-the-dungeon prompt.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(1);
+
+    // Confirming it loads the Abandoned Temple.
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(5);
+    EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_INDOOR);
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "d02.blv");
+
+    // The event's MoveToMap teleports the party to the temple's entrance and the map is live.
+    EXPECT_EQ(pParty->pos, Vec3f(16406, -19669, 865));
+    EXPECT_NE(pIndoor->GetSector(pParty->pos.x, pParty->pos.y, pParty->pos.z), 0);
+    game.tick(20);
+}
+
+GAME_TEST(Mm6, AllMapEventsParse) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The global event map is parsed during engine initialization; its first event is a Compare record.
+    EXPECT_TRUE(engine->_globalEventMap.hasEvent(1));
+
+    // Local events of every MM6 map parse with the MM6 opcode/operand layouts.
+    int parsed = 0;
+    for (MapId mapId : allMaps()) {
+        if (!isMapIndoor(mapId) && !isMapOutdoor(mapId))
+            continue; // Not an MM6 map slot.
+        std::string fileName = pMapStats->pInfos[mapId].fileName;
+        std::string baseName = fileName.substr(0, fileName.rfind('.'));
+        EXPECT_NO_THROW(EvtProgram::load(engine->resources()->eventsData(baseName + ".evt"), engine->gameVersion())) << fileName;
+        parsed++;
+    }
+    EXPECT_EQ(parsed, 67); // All of MM6's maps.
 }
 
 GAME_TEST(Mm6, PeasantNews) {

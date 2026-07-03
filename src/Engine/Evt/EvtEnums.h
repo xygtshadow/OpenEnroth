@@ -75,6 +75,15 @@ enum class EvtOpcode : uint8_t {
     EVENT_SpecialJump = 66,
     EVENT_IsTotalBountyHuntingAwardInRange = 67,
     EVENT_IsNPCInParty = 68,
+
+    // MM6-only opcodes. Their on-disk opcode bytes collide with different MM7 opcodes (12, 24) or don't exist in
+    // MM7 at all (20, 27, 28), so EvtInstruction::parse remaps them onto these engine-internal values to keep the
+    // in-memory representation version-independent.
+    EVENT_SetTextureOutdoors = 69,   // MM6 opcode 12. Sets a texture on an outdoor model face by (model, face) index.
+    EVENT_SetFacesBitOutdoors = 70,  // MM6 opcode 24. Toggles a face attribute on outdoor model faces by (model, face) index.
+    EVENT_ModifyItem = 71,           // MM6 opcode 20. Semantics unreversed ("ModifyItem" per mm8leveleditor); parsed and skipped.
+    EVENT_RandomPassword = 72,       // MM6 opcode 27. Semantics unreversed (MM6's random password quest); parsed and skipped.
+    EVENT_RandomAnswer = 73,         // MM6 opcode 28. Semantics unreversed (companion of EVENT_RandomPassword); parsed and skipped.
 };
 using enum EvtOpcode;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(EvtOpcode)

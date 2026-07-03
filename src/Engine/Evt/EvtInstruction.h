@@ -3,6 +3,8 @@
 #include <array>
 #include <string>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Engine/Data/HouseEnums.h"
 #include "Engine/Evt/EvtEnums.h"
 #include "Engine/Objects/CharacterEnums.h"
@@ -19,7 +21,7 @@ class InputStream;
 class EvtInstruction {
  public:
     std::string toString() const;
-    static EvtInstruction parse(InputStream &stream, size_t size);
+    static EvtInstruction parse(InputStream &stream, size_t size, GameVersion version);
 
     EvtOpcode opcode;
     int step;
@@ -170,6 +172,21 @@ class EvtInstruction {
             Mastery skill_mastery;
             int skill_level;
         } check_skill_descr;
+        struct {
+            int model;
+            int face;
+        } outdoor_texture_descr;
+        struct {
+            int model;
+            int face; // -1 means all faces of the model.
+            FaceAttribute face_bit;
+            int is_on;
+        } outdoor_faces_bit_descr;
+        struct {
+            int question_text_id;
+            int answer1_text_id;
+            int answer2_text_id;
+        } question_descr;
     } data;
 };
 

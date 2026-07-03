@@ -21,6 +21,8 @@
 #include "Engine/Engine.h"
 #include "Engine/MapInfo.h"
 
+#include "Library/Logger/Logger.h"
+
 #include "Media/Audio/AudioPlayer.h"
 #include "Media/MediaPlayer.h"
 
@@ -252,7 +254,23 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
             }
             break;
         case EVENT_SetTexture:
-            setTexture(ir.data.sprite_texture_descr.cog, ir.str);
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                // In MM6 the operand is a direct index into the indoor face array, not an MM7 face-group cog.
+                if (uCurrentlyLoadedLevelType == LEVEL_INDOOR && ir.data.sprite_texture_descr.cog >= 0 &&
+                    ir.data.sprite_texture_descr.cog < pIndoor->faces.size()) {
+                    pIndoor->faces[ir.data.sprite_texture_descr.cog].SetTexture(ir.str);
+                }
+            } else {
+                setTexture(ir.data.sprite_texture_descr.cog, ir.str);
+            }
+            break;
+        case EVENT_SetTextureOutdoors: // MM6-only: address an outdoor model face by (model, face) index.
+            if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && ir.data.outdoor_texture_descr.model >= 0 &&
+                ir.data.outdoor_texture_descr.model < pOutdoor->pBModels.size()) {
+                BSPModel &model = pOutdoor->pBModels[ir.data.outdoor_texture_descr.model];
+                if (ir.data.outdoor_texture_descr.face >= 0 && ir.data.outdoor_texture_descr.face < model.faces.size())
+                    model.faces[ir.data.outdoor_texture_descr.face].SetTexture(ir.str);
+            }
             break;
         case EVENT_ShowMovie:
         {
@@ -355,7 +373,41 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
             }
             break;
         case EVENT_SetFacesBit:
-            setFacesBit(ir.data.faces_bit_descr.cog, ir.data.faces_bit_descr.face_bit, ir.data.faces_bit_descr.is_on);
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                // In MM6 the operand is a direct index into the indoor face array, not an MM7 face-group cog.
+                if (uCurrentlyLoadedLevelType == LEVEL_INDOOR && ir.data.faces_bit_descr.cog >= 0 &&
+                    ir.data.faces_bit_descr.cog < pIndoor->faces.size()) {
+                    if (ir.data.faces_bit_descr.is_on) {
+                        pIndoor->faces[ir.data.faces_bit_descr.cog].attributes |= ir.data.faces_bit_descr.face_bit;
+                    } else {
+                        pIndoor->faces[ir.data.faces_bit_descr.cog].attributes &= ~ir.data.faces_bit_descr.face_bit;
+                    }
+                }
+            } else {
+                setFacesBit(ir.data.faces_bit_descr.cog, ir.data.faces_bit_descr.face_bit, ir.data.faces_bit_descr.is_on);
+            }
+            break;
+        case EVENT_SetFacesBitOutdoors: // MM6-only: address outdoor model faces by (model, face) index, face -1 = all.
+            if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && ir.data.outdoor_faces_bit_descr.model >= 0 &&
+                ir.data.outdoor_faces_bit_descr.model < pOutdoor->pBModels.size()) {
+                BSPModel &model = pOutdoor->pBModels[ir.data.outdoor_faces_bit_descr.model];
+                for (int i = 0; i < model.faces.size(); i++) {
+                    if (ir.data.outdoor_faces_bit_descr.face != -1 && ir.data.outdoor_faces_bit_descr.face != i)
+                        continue;
+                    if (ir.data.outdoor_faces_bit_descr.is_on) {
+                        model.faces[i].attributes |= ir.data.outdoor_faces_bit_descr.face_bit;
+                    } else {
+                        model.faces[i].attributes &= ~ir.data.outdoor_faces_bit_descr.face_bit;
+                    }
+                }
+            }
+            break;
+        case EVENT_ModifyItem:
+        case EVENT_RandomPassword:
+        case EVENT_RandomAnswer:
+            // MM6-only opcodes whose semantics nobody has reversed yet (MMExtension treats them as decode-only
+            // stubs too). ModifyItem appears only in znwc.blv, RandomPassword/RandomAnswer only in d09.blv.
+            logger->warning("Skipping MM6 event instruction {} - its semantics are not known", ::toString(ir.opcode));
             break;
         case EVENT_ToggleActorFlag:
             Actor::toggleFlag(ir.data.actor_flag_descr.id, ir.data.actor_flag_descr.attr, ir.data.actor_flag_descr.is_set);
@@ -368,12 +420,10 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
             //
             // TODO(Nik-RE-dev): this event is not used in MM7. In GrayFace's data it's called "Question" and must have additional arguments
             // that control where events executions must be continued on correct/incorrect input.
-            assert(false);
-#if 0
-            game_ui_status_bar_event_string = (ir.data.text_id < engine->_levelStrings.size()) ? engine->_levelStrings[ir.data.text_id] : "";
-            startBranchlessDialogue(_eventId, step + 1, EVENT_InputString);
-#endif
-            return -1;
+            // TODO(mm6): MM6 uses this for its riddle doors (parsed into data.question_descr + target_step). The
+            //            input prompt isn't wired up yet, so fall through to the next step - the wrong-answer path.
+            logger->warning("EVENT_InputString is not implemented, taking the wrong-answer path");
+            break;
         case EVENT_StatusText:
             if (activeLevelDecoration) {
                 if (activeLevelDecoration == (LevelDecoration *)1) {

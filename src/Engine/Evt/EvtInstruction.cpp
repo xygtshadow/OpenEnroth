@@ -833,6 +833,14 @@ std::string EvtInstruction::toString() const {
         case EVENT_IsNPCInParty:
             // TODO
             break;
+        case EVENT_SetTextureOutdoors:
+            return fmt::format("{}: SetTextureOutdoors({}, {}, \"{}\")", step, data.outdoor_texture_descr.model, data.outdoor_texture_descr.face, str);
+        case EVENT_SetFacesBitOutdoors:
+            return fmt::format("{}: SetFacesBitOutdoors({}, {}, 0x{:x}, {})", step, data.outdoor_faces_bit_descr.model, data.outdoor_faces_bit_descr.face, (int)data.outdoor_faces_bit_descr.face_bit, data.outdoor_faces_bit_descr.is_on);
+        case EVENT_RandomPassword:
+        case EVENT_RandomAnswer:
+        case EVENT_ModifyItem:
+            break; // MM6-only, semantics unreversed.
         default:
             break;
     }
@@ -840,15 +848,79 @@ std::string EvtInstruction::toString() const {
     return fmt::format("{}: UNPROCESSED/{}", step, ::toString(opcode));
 }
 
-EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
+// MM6's .evt bytecode reuses opcode bytes that mean something else in MM7 (12, 24) or nothing at all (20, 27, 28),
+// so parsing remaps them onto dedicated EvtOpcode values, keeping the in-memory representation version-independent.
+// Layouts verified against every record of all 67 MM6 map .evt files + global.evt, cross-checked with MMExtension's
+// evt.lua (which declares per-game operand layouts and executes them through the original engine).
+static EvtOpcode remapMm6Opcode(uint8_t opcode) {
+    switch (opcode) {
+        case 12: return EVENT_SetTextureOutdoors;   // In MM7 opcode 12 is EVENT_ShowMovie; MM6 has no movie event.
+        case 20: return EVENT_ModifyItem;           // Not an opcode in MM7.
+        case 24: return EVENT_SetFacesBitOutdoors;  // In MM7 opcode 24 is EVENT_ToggleActorFlag.
+        case 27: return EVENT_RandomPassword;       // Not an opcode in MM7.
+        case 28: return EVENT_RandomAnswer;         // Not an opcode in MM7.
+        default:
+            if (opcode > std::to_underlying(EVENT_CheckSkill)) // MM6's opcode set ends at CheckSkill (43).
+                throw Exception("Unknown MM6 evt type: {}", opcode);
+            return EvtOpcode(opcode);
+    }
+}
+
+// Maps an MM6 variable id (stored as a single byte in MM6 bytecode) onto the engine's EvtVariable enum, which
+// follows MM7's numbering. Ids 0x01-0x2D coincide. Above that MM6 diverges: it has 5 resistances
+// (Fire/Elec/Cold/Poison/Magic) vs MM7's 11 slots, and 31 skills vs MM7's 37, so MM6 skill ids sit 0x0C below
+// MM7's and everything from the conditions up sits 0x12 below. Source: MMExtension's evt.lua VarNum tables.
+static EvtVariable evtVariableFromMm6(uint8_t type) {
+    if (type <= 0x2D) // Sex..ActualLuck: identical numbering.
+        return EvtVariable(type);
+
+    switch (type) {
+        case 0x2E: return VAR_FireResistance;
+        case 0x2F: return VAR_AirResistance;   // MM6 Elec.
+        case 0x30: return VAR_WaterResistance; // MM6 Cold.
+        case 0x31: return VAR_EarthResistance; // MM6 Poison.
+        case 0x32: return VAR_MagicResistance;
+        case 0x33: return VAR_FireResistanceBonus;
+        case 0x34: return VAR_AirResistanceBonus;   // MM6 Elec.
+        case 0x35: return VAR_WaterResistanceBonus; // MM6 Cold.
+        case 0x36: return VAR_EarthResistanceBonus; // MM6 Poison.
+        case 0x37: return VAR_MagicResistanceBonus;
+        default: break;
+    }
+
+    if (type <= 0x55) // Skills Staff (0x38) .. DisarmTraps (0x55): first 30 skills are ordered exactly as MM7's.
+        return EvtVariable(type + 0x0C);
+    if (type == 0x56) // Learning is MM6's last skill; MM7 squeezes 6 more skills before it.
+        return VAR_LearningSkill;
+    if (type == 0xD7) // Reputation. 0xD7 + 0x12 = 0xE9, which the engine doesn't model - remap to what it does.
+        return VAR_ReputationInCurrentLocation;
+    if (type <= 0xE2) // Conditions (0x57 = Cursed), MapVars, AutoNotes, PlayerBits, ..., MonthIs (0xE2, MM6's last).
+        return EvtVariable(type + 0x12);
+
+    throw Exception("Unknown MM6 evt variable id: {}", type);
+}
+
+EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size, GameVersion version) {
     // TODO(yoctozepto): zeroing-out the struct to prevent values from previous events from lingering;
     //                   this makes it slightly easier to spot uninitialised members but, since the 0s may have a proper meaning, not always;
     EvtInstruction ir = {};
 
     ir.step = fromStream<uint8_t>(stream);
-    ir.opcode = EvtOpcode(fromStream<uint8_t>(stream));
+    if (version == GAME_VERSION_MM6) {
+        ir.opcode = remapMm6Opcode(fromStream<uint8_t>(stream));
+    } else {
+        ir.opcode = EvtOpcode(fromStream<uint8_t>(stream));
+    }
 
     bool requireSizeCalled = false;
+
+    // The variable-family opcodes (Compare/Add/Subtract/Set) store the variable id as a single byte in MM6 vs
+    // MM7's uint16, and MM6's variable numbering diverges from MM7's above 0x2D.
+    const auto readVariableType = [&] {
+        if (version == GAME_VERSION_MM6)
+            return evtVariableFromMm6(fromStream<uint8_t>(stream));
+        return static_cast<EvtVariable>(fromStream<uint16_t>(stream));
+    };
 
     const auto requireSize = [&](size_t minSize) {
         requireSizeCalled = true;
@@ -881,6 +953,12 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
             ir.step = -1; // Step duplicated for other command, so ignore it
             break;
         case EVENT_LocationName:  // TODO(yoctozepto): not present in used MM7 data
+            if (version == GAME_VERSION_MM6) {
+                // MM6's "MazeInfo": a level-string index with the location's name. Parsed as a marker like
+                // EVENT_MouseOver; nothing consumes it yet.
+                requireSize(6);
+                ir.data.text_id = fromStream<uint8_t>(stream);
+            }
             ir.step = -1; // Step duplicated for other command, so ignore it
             break;
         case EVENT_MoveToMap:
@@ -934,7 +1012,7 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
             break;
         case EVENT_Compare:
             requireSize(11);
-            ir.data.variable_descr.type = static_cast<EvtVariable>(fromStream<uint16_t>(stream));
+            ir.data.variable_descr.type = readVariableType();
             ir.data.variable_descr.value = fromStream<uint32_t>(stream);
             ir.target_step = fromStream<uint8_t>(stream);
             break;
@@ -947,19 +1025,25 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
         case EVENT_Subtract:
         case EVENT_Set:
             requireSize(8);
-            ir.data.variable_descr.type = static_cast<EvtVariable>(fromStream<uint16_t>(stream));
+            ir.data.variable_descr.type = readVariableType();
             ir.data.variable_descr.value = fromStream<uint32_t>(stream);
             break;
         case EVENT_SummonMonsters:
-            requireSize(28);
+            requireSize(version == GAME_VERSION_MM6 ? 20 : 28);
             ir.data.monster_descr.type = fromStream<uint8_t>(stream);
             ir.data.monster_descr.level = fromStream<uint8_t>(stream);
             ir.data.monster_descr.count = fromStream<uint8_t>(stream);
             ir.data.monster_descr.x = fromStream<uint32_t>(stream);
             ir.data.monster_descr.y = fromStream<uint32_t>(stream);
             ir.data.monster_descr.z = fromStream<uint32_t>(stream);
-            ir.data.monster_descr.group = fromStream<uint32_t>(stream);
-            ir.data.monster_descr.name_id = fromStream<uint32_t>(stream);
+            if (version == GAME_VERSION_MM6) {
+                // MM6 records end here - no monster group / unique name fields.
+                ir.data.monster_descr.group = 0;
+                ir.data.monster_descr.name_id = 0;
+            } else {
+                ir.data.monster_descr.group = fromStream<uint32_t>(stream);
+                ir.data.monster_descr.name_id = fromStream<uint32_t>(stream);
+            }
             break;
         case EVENT_CastSpell:
             requireSize(32);
@@ -1006,6 +1090,16 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
             }
             break;
         case EVENT_InputString:  // TODO(yoctozepto): not present in used MM7 data; likely present in MM8 (e.g., Escaton's riddles)
+            if (version == GAME_VERSION_MM6) {
+                // MM6's "Question": prompt for typed input, jump to target_step when it matches either answer
+                // string. The question string doubles as the failure text.
+                requireSize(18);
+                ir.data.question_descr.question_text_id = fromStream<uint32_t>(stream);
+                ir.data.question_descr.answer1_text_id = fromStream<uint32_t>(stream);
+                ir.data.question_descr.answer2_text_id = fromStream<uint32_t>(stream);
+                ir.target_step = fromStream<uint8_t>(stream);
+                break;
+            }
             requireSize(9);
             ir.data.text_id = fromStream<uint32_t>(stream);
             break;
@@ -1035,6 +1129,10 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
             ir.data.light_descr.is_enable = fromStream<uint8_t>(stream);
             break;
         case EVENT_PressAnyKey:  // TODO(yoctozepto): not present in used MM7 data
+            if (version == GAME_VERSION_MM6) {
+                requireSize(6);
+                fromStream<uint8_t>(stream); // Always 0 in MM6 data.
+            }
             // Nothing?
             break;
         case EVENT_SummonItem:  // TODO(yoctozepto): not present in used MM7 data
@@ -1190,6 +1288,32 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size) {
             break;
         case EVENT_IsNPCInParty:  // TODO(yoctozepto): not present in used MM7 data
             // TODO
+            break;
+        case EVENT_SetTextureOutdoors: // MM6-only.
+            requireSize(14);
+            ir.data.outdoor_texture_descr.model = fromStream<uint32_t>(stream);
+            ir.data.outdoor_texture_descr.face = fromStream<uint32_t>(stream);
+            ir.str = fromStream<std::string>(stream, tags::nullTerminated);
+            break;
+        case EVENT_SetFacesBitOutdoors: // MM6-only.
+            requireSize(18);
+            ir.data.outdoor_faces_bit_descr.model = fromStream<uint32_t>(stream);
+            ir.data.outdoor_faces_bit_descr.face = fromStream<uint32_t>(stream);
+            ir.data.outdoor_faces_bit_descr.face_bit = static_cast<FaceAttribute>(fromStream<uint32_t>(stream));
+            ir.data.outdoor_faces_bit_descr.is_on = fromStream<uint8_t>(stream);
+            break;
+        case EVENT_ModifyItem: // MM6-only, semantics unreversed - consume the operands.
+            requireSize(10);
+            fromStream<uint32_t>(stream);
+            fromStream<uint8_t>(stream);
+            break;
+        case EVENT_RandomPassword: // MM6-only, semantics unreversed - consume the operands.
+            requireSize(7);
+            fromStream<uint16_t>(stream);
+            break;
+        case EVENT_RandomAnswer: // MM6-only, semantics unreversed - consume the operands.
+            requireSize(6);
+            fromStream<uint8_t>(stream);
             break;
         default:
             throw Exception("Unknown evt type: {}", static_cast<uint8_t>(ir.opcode));

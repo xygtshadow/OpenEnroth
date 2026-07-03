@@ -22,21 +22,8 @@
 EvtProgram EvtProgram::load(const Blob &rawData, GameVersion version) {
     EvtProgram result;
 
-    if (version == GAME_VERSION_MM6) {
-        // MM6's event bytecode is laid out differently from MM7's, so parsing it with MM7's per-opcode field
-        // widths corrupts the stream. The variable-family opcodes (Compare/Add/Subtract/Set) store the
-        // EvtVariable type as a uint8 rather than MM7's uint16, making each such record one byte shorter than
-        // EvtInstruction::parse expects (it then underflows reading the next field); MM6 also uses opcodes such
-        // as PressAnyKey with operands MM7's parser treats as a read-nothing no-op (tripping an assert). Building
-        // the MM6 event VM (opcode set, EvtVariable mapping, SetSnow/seasons, overlays) is a separate task (see
-        // docs/pending/mm6-events-and-overlays.md); for now MM6 events are deliberately left unloaded so engine
-        // bring-up can proceed. Global scripting and per-map local events will not fire for MM6 until then.
-        logger->warning("MM6 event bytecode parsing is not implemented yet - events will not fire. MM6's .evt "
-                        "opcode/operand layout differs from MM7's (e.g. the Compare/Add/Subtract/Set variable "
-                        "type is a uint8, not a uint16), so it needs the MM6 event model.");
-        return result;
-    }
-
+    // The record framing is identical in MM6 and MM7; the per-opcode operand layouts differ, which
+    // EvtInstruction::parse handles.
     const uint8_t *pos = reinterpret_cast<const uint8_t *>(rawData.data());
     const uint8_t *const end = pos + rawData.size();
     while (pos < end) {
@@ -47,7 +34,7 @@ EvtProgram EvtProgram::load(const Blob &rawData, GameVersion version) {
             throw Exception("Encountered corrupted evt binary data");
         MemoryInputStream stream(pos + 1, size - 1); // offset is 1 because we are skipping the `size` byte - it was already read
         uint16_t eventId = fromStream<uint16_t>(stream);
-        result.add(eventId, EvtInstruction::parse(stream, size));
+        result.add(eventId, EvtInstruction::parse(stream, size, version));
         pos += size;
     }
 
