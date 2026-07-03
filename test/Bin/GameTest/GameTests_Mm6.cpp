@@ -82,6 +82,62 @@ GAME_TEST(Mm6, WalkAndInteract) {
     game.tick(200);
 }
 
+GAME_TEST(Mm6, KillAndLootPeasant) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Find the known placed level 3 peasant (first actor record of oute3.ddm).
+    auto peasant = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return std::to_underlying(actor.monsterId) == 123 && actor.initialPosition == Vec3f(-10296, -7528, 160);
+    });
+    ASSERT_NE(peasant, pActors.end());
+    int peasantId = peasant->id;
+
+    // The ddm-embedded stat block is what the engine uses (matching the original), and for this actor it
+    // slightly diverges from monsters.txt row 123 (PeasantF1C): 3D6 gold instead of the txt's 4D6.
+    EXPECT_EQ(peasant->monsterInfo.exp, 39);
+    EXPECT_EQ(peasant->monsterInfo.goldDiceRolls, 3);
+    EXPECT_EQ(peasant->monsterInfo.goldDiceSides, 6);
+
+    auto teleportNextTo = [&](Vec3f targetPos, float distance) {
+        Vec3f pos = targetPos + Vec3f(-distance, 0, 0);
+        int yawDegrees = TrigLUT.atan2(targetPos.x - pos.x, targetPos.y - pos.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+        game.tick(1);
+    };
+
+    uint64_t expBefore = 0;
+    for (const Character &character : pParty->pCharacters)
+        expBefore += character.experience;
+    int goldBefore = pParty->GetGold();
+
+    // Melee the peasant until it dies, chasing it if it flees.
+    for (int i = 0; i < 100 && pActors[peasantId].aiState != Dead; i++) {
+        teleportNextTo(pActors[peasantId].pos, 160);
+        game.pressAndReleaseKey(PlatformKey::KEY_A);
+        game.tick(2);
+    }
+    EXPECT_EQ(pActors[peasantId].aiState, Dead);
+
+    // The kill awards the monster's exp, split between the four party members.
+    uint64_t expAfter = 0;
+    for (const Character &character : pParty->pCharacters)
+        expAfter += character.experience;
+    EXPECT_GE(expAfter - expBefore, 36u); // 39 / 4 = 9 per character, at least.
+
+    // Looting the corpse with the interact key rolls the peasant's 3D6 gold dice. Loot from a bit further
+    // out: a corpse right at the party's feet projects below the game viewport and isn't pickable, just
+    // like in the original.
+    teleportNextTo(pActors[peasantId].pos, 350);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    int goldFound = pParty->GetGold() - goldBefore;
+    EXPECT_GE(goldFound, 3);
+    EXPECT_LE(goldFound, 18);
+}
+
 GAME_TEST(Mm6, PeasantNews) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
