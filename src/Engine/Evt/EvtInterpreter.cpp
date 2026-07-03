@@ -496,7 +496,10 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
             if (ir.data.npc_topic_descr.index == 3) npc->dialogue_4_evt_id = ir.data.npc_topic_descr.event_id;
             if (ir.data.npc_topic_descr.index == 4) npc->dialogue_5_evt_id = ir.data.npc_topic_descr.event_id;
             if (ir.data.npc_topic_descr.index == 5) npc->dialogue_6_evt_id = ir.data.npc_topic_descr.event_id;
-            if (ir.data.npc_topic_descr.npc_id == 8) {
+            // MM7-only hack: setting npc 8's topic to event 78 warps the party into the Pit's
+            // dark guild. MM6 npc 8 is the Oracle, whose quest chain legitimately runs
+            // SetNPCTopic(8, 1, 78) from global event 76 - it must not trigger this.
+            if (engine->gameVersion() == GAME_VERSION_MM7 && ir.data.npc_topic_descr.npc_id == 8) {
                 if (ir.data.npc_topic_descr.event_id == 78) {
                     houseDialogPressEscape();
                     window_SpeakInHouse = nullptr;

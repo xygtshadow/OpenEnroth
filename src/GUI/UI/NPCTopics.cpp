@@ -667,32 +667,42 @@ DialogueId handleScriptedNPCTopicSelection(DialogueId topic, NPCData *npcData) {
     }
 
 
-    if (eventId == 311) {
-        // Original code also listed this event which presumably opened bounty dialogue but MM7
-        // use event 311 for some teleport in Bracada
-        assert(false);
-        return DIALOGUE_MAIN;
+    // The special event ids below (Oracle 139, Arena 399, guild membership 400-410, mastery
+    // teachers 200-310) are MM7 global.evt conventions. MM6 has no such reserved ranges - its
+    // NPC topics are ordinary global.evt scripts (e.g. New Sorpigal's candelabra quest is
+    // event 296), so in an MM6 session every topic takes the generic interpreter path.
+    if (engine->gameVersion() == GAME_VERSION_MM7) {
+        if (eventId == 311) {
+            // Original code also listed this event which presumably opened bounty dialogue but MM7
+            // use event 311 for some teleport in Bracada
+            assert(false);
+            return DIALOGUE_MAIN;
+        }
+
+        if (eventId == 139) {
+            oracleDialogue();
+            return DIALOGUE_MAIN;
+        }
+        if (eventId == 399) {
+            return arenaMainDialogue();
+        }
+        if (eventId >= 400 && eventId <= 410) {
+            guildMembershipNPCTopicId = topic;
+            current_npc_text = pNPCTopics[eventId - 301].pText;
+            topicEventId = eventId;
+            return DIALOGUE_MAGIC_GUILD_OFFER;
+        }
+        if (eventId >= 200 && eventId <= 310) {
+            current_npc_text = pNPCTopics[eventId + 168].pText;
+            topicEventId = eventId;
+            return DIALOGUE_MASTERY_TEACHER_OFFER;
+        }
     }
 
-    if (eventId == 139) {
-        oracleDialogue();
-    } else if (eventId == 399) {
-        return arenaMainDialogue();
-    } else if (eventId >= 400 && eventId <= 410) {
-        guildMembershipNPCTopicId = topic;
-        current_npc_text = pNPCTopics[eventId - 301].pText;
-        topicEventId = eventId;
-        return DIALOGUE_MAGIC_GUILD_OFFER;
-    } else if (eventId >= 200 && eventId <= 310) {
-        current_npc_text = pNPCTopics[eventId + 168].pText;
-        topicEventId = eventId;
-        return DIALOGUE_MASTERY_TEACHER_OFFER;
-    } else {
-        activeLevelDecoration = (LevelDecoration *)1;
-        current_npc_text.clear();
-        eventProcessor(eventId, Pid(), 1);
-        activeLevelDecoration = nullptr;
-    }
+    activeLevelDecoration = (LevelDecoration *)1;
+    current_npc_text.clear();
+    eventProcessor(eventId, Pid(), 1);
+    activeLevelDecoration = nullptr;
 
     return DIALOGUE_MAIN;
 }

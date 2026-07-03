@@ -27,6 +27,7 @@
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/NPCTable.h"
 
+#include "GUI/GUIButton.h"
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/Houses/Shops.h"
@@ -636,4 +637,91 @@ GAME_TEST(Mm6, PeasantNews) {
     // Any key dismisses the dialogue.
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(2);
+}
+
+GAME_TEST(Mm6, QuestNpcDialogueInTavern) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // A Lonely Knight is New Sorpigal's tavern (2dEvents row 92). Andover Potbello (npcdata row 1)
+    // lives there with two scripted dialogue topics wired to global.evt: event 1 "The Letter" and
+    // event 296 "Quest" - the candelabra quest that MM6 opens with.
+    EXPECT_EQ(houseTable[HouseId(92)].name, "A Lonely Knight");
+    NPCData *andover = &pNPCStats->pNPCData[1];
+    EXPECT_EQ(andover->name, "Andover Potbello");
+    EXPECT_EQ(andover->house, HouseId(92));
+    EXPECT_EQ(andover->dialogue_1_evt_id, 1u);
+    EXPECT_EQ(andover->dialogue_2_evt_id, 296u);
+    EXPECT_EQ(pNPCTopics[1].pTopic, "The Letter");
+    EXPECT_EQ(pNPCTopics[296].pTopic, "Quest");
+
+    // The tavern door face is wired to local event 11, an ungated SpeakInHouse(92).
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 11 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(92));
+
+    // The tavern hosts the proprietor plus the house NPCs Andover and Maria; click Andover's portrait.
+    ASSERT_GE(houseNpcs.size(), 3u);
+    int andoverIndex = -1;
+    for (int i = 0; i < houseNpcs.size(); i++)
+        if (houseNpcs[i].type == HOUSE_NPC && houseNpcs[i].npc == andover)
+            andoverIndex = i;
+    ASSERT_NE(andoverIndex, -1);
+    ASSERT_NE(houseNpcs[andoverIndex].button, nullptr);
+    Recti portrait = houseNpcs[andoverIndex].button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
+    game.tick(2);
+
+    // Both scripted topics became dialogue options. Their buttons are re-laid-out to the rendered
+    // text metrics on draw, so locate the "Quest" option (DIALOGUE_SCRIPTED_LINE_2) by its message
+    // param instead of assuming creation-time coordinates.
+    ASSERT_NE(pDialogueWindow, nullptr);
+    const GUIButton *questOption = nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons) {
+        if (button->msg == UIMSG_SelectHouseNPCDialogueOption) {
+            EXPECT_TRUE(button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_1) ||
+                        button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_2));
+            if (button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_2))
+                questOption = button;
+        }
+    }
+    ASSERT_NE(questOption, nullptr);
+
+    // Clicking the "Quest" topic runs global event 296: quest bit 126 is granted, the topic rewires
+    // itself to event 297 via SetNPCTopic, and the reply text (npctext.txt row 305) is displayed.
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(126)]);
+    game.pressAndReleaseButton(BUTTON_LEFT, questOption->rect.x + questOption->rect.w / 2,
+                               questOption->rect.y + questOption->rect.h / 2);
+    game.tick(2);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(126)]);
+    EXPECT_EQ(andover->dialogue_2_evt_id, 297u);
+    EXPECT_TRUE(current_npc_text.contains("Temple of Baa"));
+
+    // Escape backs out to the portrait selection, a second escape leaves the tavern.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
 }
