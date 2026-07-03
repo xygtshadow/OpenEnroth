@@ -10,6 +10,7 @@ GameTestOptions GameTestOptions::parse(int argc, char **argv) {
     result.ramFsUserData = true; // We want reproducible tests, so shouldn't depend on external user data.
     result.quickStart = true;
     std::optional<std::string> testPath;
+    std::string gameVersion = "mm7";
 
     std::unique_ptr<CliApp> app = std::make_unique<CliApp>();
 
@@ -18,6 +19,9 @@ GameTestOptions GameTestOptions::parse(int argc, char **argv) {
 
     auto testPathOption = app->add_option("--test-path", testPath,
                                           "Path to test data dir.")->check(CLI::ExistingDirectory)->option_text("PATH")->group(requiredOptions);
+    app->add_option(
+        "--game-version", gameVersion,
+        "Which Might and Magic game to test, one of 'mm6' or 'mm7'. Default is 'mm7'.")->check(CLI::IsMember({"mm6", "mm7"}))->option_text("VERSION")->group(otherOptions);
     app->add_option(
         "--data-path", result.dataPath,
         "Path to game data dir.")->check(CLI::ExistingDirectory)->option_text("PATH")->group(otherOptions);
@@ -47,6 +51,7 @@ GameTestOptions GameTestOptions::parse(int argc, char **argv) {
     if (!result.listRequested && !result.helpPrinted && !testPath)
         throw CLI::RequiredError(testPathOption->get_name());
     result.testPath = testPath.value_or("");
+    result.gameVersion = gameVersion == "mm6" ? GAME_VERSION_MM6 : GAME_VERSION_MM7;
 
     return result;
 }
