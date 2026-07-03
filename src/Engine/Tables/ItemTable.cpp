@@ -360,8 +360,18 @@ void ItemTable::LoadRandomItems(const Blob &rnditems, GameVersion version) {
     }
 }
 
+Segment<ItemId> ItemTable::spawnableArtifacts() const {
+    // MM6's artifacts (ids 400-414) and relics (415-429) are all randomly obtainable; MM7 rolls
+    // only its 29 artifacts. Id ranges differ between games - MM7's [500, 528] window covers
+    // message scrolls and quest items in MM6.
+    if (version == GAME_VERSION_MM6)
+        return {ItemId(400), ItemId(429)};
+    return {ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT};
+}
+
 //----- (00456D84) --------------------------------------------------------
 void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version) {
+    this->version = version;
     // potion.txt / potnotes.txt (potion-mixing matrices) are absent from MM6's icons.lod.
     // eventsDataIfPresent yields an empty blob when missing; LoadPotions/LoadPotionNotes no-op on it
     // (empty input splits to zero rows), leaving the matrices at their defaults.
@@ -482,8 +492,8 @@ void ItemTable::generateItem(ItemTreasureLevel treasureLevel, RandomItemType uTr
         // Try to generate an artifact.
         if (treasureLevel == ITEM_TREASURE_LEVEL_6) {
             int artifactsFound = 0;
-            ItemId artifactRandomId = grng->randomSample(allSpawnableArtifacts());
-            for (ItemId i : allSpawnableArtifacts())
+            ItemId artifactRandomId = grng->randomSample(spawnableArtifacts());
+            for (ItemId i : spawnableArtifacts())
                 artifactsFound += pParty->pIsArtifactFound[i];
             bool artifactLimitReached = (engine->config->gameplay.ArtifactLimit.value() != 0 && artifactsFound >= engine->config->gameplay.ArtifactLimit.value());
             if ((grng->random(100) < 5) && !pParty->pIsArtifactFound[artifactRandomId] && !artifactLimitReached) {

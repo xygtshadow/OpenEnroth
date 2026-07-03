@@ -240,7 +240,7 @@ bool Item::GenerateArtifact() {
     artifacts_list.fill(ITEM_NULL);
     uNumArtifactsNotFound = 0;
 
-    for (ItemId i : allSpawnableArtifacts())
+    for (ItemId i : pItemTable->spawnableArtifacts())
         if (!pParty->pIsArtifactFound[i])
             artifacts_list[uNumArtifactsNotFound++] = i;
 

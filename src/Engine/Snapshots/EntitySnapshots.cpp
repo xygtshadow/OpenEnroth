@@ -619,7 +619,11 @@ void snapshot(const Party &src, Party_MM7 *dst) {
 
     snapshot(src.uNumArenaWins, &dst->numArenaWins);
 
-    snapshot(src.pIsArtifactFound, &dst->isArtifactFound);
+    // The save format stores MM7's 29-slot artifact window; the in-memory array spans all item ids
+    // because MM6's artifacts live at 400-429. MM6 artifact-found flags thus don't roundtrip -
+    // saves are MM7-format throughout (see docs/pending/mm6-dlv-model.md).
+    for (ItemId i : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT))
+        dst->isArtifactFound[std::to_underlying(i) - std::to_underlying(ITEM_FIRST_SPAWNABLE_ARTIFACT)] = src.pIsArtifactFound[i];
     snapshot(src._autonoteBits, &dst->autonoteBits, tags::reverseBits);
 
     dst->numArcomageWins = src.uNumArcomageWins;
@@ -734,7 +738,9 @@ void reconstruct(const Party_MM7 &src, Party *dst) {
 
     reconstruct(src.numArenaWins, &dst->uNumArenaWins);
 
-    reconstruct(src.isArtifactFound, &dst->pIsArtifactFound);
+    dst->pIsArtifactFound.fill(false);
+    for (ItemId i : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT))
+        dst->pIsArtifactFound[i] = src.isArtifactFound[std::to_underlying(i) - std::to_underlying(ITEM_FIRST_SPAWNABLE_ARTIFACT)];
     reconstruct(src.autonoteBits, &dst->_autonoteBits, tags::reverseBits);
 
     dst->uNumArcomageWins = src.numArcomageWins;

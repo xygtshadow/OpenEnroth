@@ -32,6 +32,13 @@ struct ItemTable {
      */
     void generateItem(ItemTreasureLevel treasureLevel, RandomItemType uTreasureType, Item *pItem);
 
+    /**
+     * @return                          Ids that the random artifact roll can produce (and that count towards the
+     *                                  artifact limit). MM7: the 29 spawnable artifacts (relics and special items
+     *                                  only drop from fixed places). MM6: all 30 artifacts & relics, ids 400-429.
+     */
+    Segment<ItemId> spawnableArtifacts() const;
+
     /** Item data for all items in the game. */
     IndexedArray<ItemData, ITEM_FIRST_VALID, ITEM_LAST_VALID> items;
 
@@ -84,6 +91,9 @@ struct ItemTable {
 
     /** Ranges of standard enchantment strength by item treasure level. */
     IndexedArray<Segment<int>, ITEM_TREASURE_LEVEL_FIRST_RANDOM, ITEM_TREASURE_LEVEL_LAST_RANDOM> standardEnchantmentRangeByTreasureLevel;
+
+    /** Which game's tables were loaded, set by `Initialize`. Item id semantics follow it. */
+    GameVersion version = GAME_VERSION_MM7;
 };
 
 extern ItemTable *pItemTable;

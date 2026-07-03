@@ -4081,7 +4081,7 @@ void Character::SetVariable(EvtVariable var_type, int var_value) {
             item.itemId = ItemId(var_value);
             item.flags = ITEM_IDENTIFIED;
             pParty->setHoldingItem(item);
-            if (isSpawnableArtifact(ItemId(var_value)))
+            if (pItemTable->spawnableArtifacts().contains(ItemId(var_value)))
                 pParty->pIsArtifactFound[ItemId(var_value)] = true;
             return;
         case VAR_FixedGold:
@@ -4692,7 +4692,7 @@ void Character::AddVariable(EvtVariable var_type, signed int val) {
             item.itemId = ItemId(val);
             item.postGenerate(ITEM_SOURCE_SCRIPT);
 
-            if (isSpawnableArtifact(ItemId(val)))
+            if (pItemTable->spawnableArtifacts().contains(ItemId(val)))
                 pParty->pIsArtifactFound[ItemId(val)] = true;
             pParty->setHoldingItem(item);
             return;

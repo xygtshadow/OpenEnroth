@@ -126,16 +126,6 @@ inline Segment<ItemId> allSpawnableItems() {
 }
 
 /**
- * @return                              Range of all artifacts and relics that can be randomly generated as loot
- *                                      (e.g. picked up from a dragon corpse). Note that not all artifacts can be
- *                                      generated this way, e.g. Hermes' Sandals can only be picked up from a
- *                                      Mega Dragon's corpse.
- */
-inline Segment<ItemId> allSpawnableArtifacts() {
-    return {ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT};
-}
-
-/**
  * @return                              List of lowest level (power=1) alchemical reagents.
  */
 inline std::initializer_list<ItemId> allLevel1Reagents() {

@@ -1053,3 +1053,42 @@ GAME_TEST(Mm6, ReadMessageScroll) {
     game.tick(2);
     EXPECT_EQ(pGUIWindow_ScrollWindow, nullptr);
 }
+
+GAME_TEST(Mm6, ArtifactIdsAndTreasureRoll) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 artifacts & relics are items 400-429 - below the MM7-shaped [500, 528] window that
+    // pIsArtifactFound used to span. A quest script granting one via SetVariable(ItemInHands)
+    // must mark it as found without going out of bounds.
+    ASSERT_EQ(pItemTable->items[ItemId(401)].rarity, RARITY_ARTIFACT); // Thor.
+    pParty->pCharacters[0].SetVariable(VAR_PlayerItemInHands, 401);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(401));
+    EXPECT_TRUE(pParty->pIsArtifactFound[ItemId(401)]);
+    pParty->takeHoldingItem();
+
+    // MM6 quest items sit inside MM7's artifact id range and must NOT be counted as artifacts.
+    pParty->pCharacters[0].SetVariable(VAR_PlayerItemInHands, 505); // The Letter.
+    EXPECT_FALSE(pParty->pIsArtifactFound[ItemId(505)]);
+    pParty->takeHoldingItem();
+
+    // The treasure-level-6 artifact roll must produce MM6 artifacts/relics - rolling MM7's id
+    // range instead would spawn MM6 message scrolls and quest items as random loot.
+    int artifactsRolled = 0;
+    for (int i = 0; i < 400; i++) {
+        Item item;
+        pItemTable->generateItem(ITEM_TREASURE_LEVEL_6, RANDOM_ITEM_ANY, &item);
+        ItemRarity rarity = pItemTable->items[item.itemId].rarity;
+        if (rarity == RARITY_ARTIFACT || rarity == RARITY_RELIC) {
+            EXPECT_GE(std::to_underlying(item.itemId), 400);
+            EXPECT_LE(std::to_underlying(item.itemId), 429);
+            artifactsRolled++;
+        }
+        EXPECT_NE(pItemTable->items[item.itemId].type, ITEM_TYPE_MESSAGE_SCROLL);
+        EXPECT_NE(item.itemId, ItemId(505));
+    }
+    EXPECT_GT(artifactsRolled, 0); // ~5% of 400 rolls, capped by the artifact limit.
+}
