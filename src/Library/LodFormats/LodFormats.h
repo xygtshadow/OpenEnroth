@@ -13,6 +13,7 @@ class Blob;
 namespace lod {
 
 bool detectCompressedData(const Blob &blob);
+bool detectCompressedDataMm6Game(const Blob &blob);
 bool detectCompressedPseudoImage(const Blob &blob);
 bool detectImage(const Blob &blob, bool *isPalette = nullptr);
 bool detectSprite(const Blob &blob);
@@ -26,6 +27,16 @@ bool detectFont(const Blob &blob);
  * @throw Exception                     If the format is not recognized.
  */
 Blob decodeCompressedData(const Blob &blob);
+
+/**
+ * This function processes compressed entries of MM6 games.lod. Unlike the other compressed lod data formats,
+ * these are prefixed with just two `uint32_t` fields - compressed & decompressed data sizes.
+ *
+ * @param blob                          `Blob` from a LOD file.
+ * @return                              Uncompressed `Blob`.
+ * @throw Exception                     If the format is not recognized.
+ */
+Blob decodeCompressedDataMm6Game(const Blob &blob);
 
 /**
  * This function processes compressed lod pseudo-images.

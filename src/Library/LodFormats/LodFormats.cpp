@@ -48,6 +48,22 @@ bool lod::detectCompressedData(const Blob &blob) {
     return header.version == 91969 && memcmp(header.signature.data(), "mvii", 4) == 0;
 }
 
+bool lod::detectCompressedDataMm6Game(const Blob &blob) {
+    if (blob.size() < 10)
+        return false;
+
+    MemoryInputStream stream(blob.data(), blob.size());
+    uint32_t dataSize, decompressedSize;
+    deserialize(stream, &dataSize);
+    deserialize(stream, &decompressedSize);
+
+    // The header is just two uint32_t sizes, so also check for a valid zlib stream header to avoid
+    // misdetecting uncompressed entries.
+    const uint8_t *zlibHeader = static_cast<const uint8_t *>(blob.data()) + 8;
+    return dataSize + 8 == blob.size() && decompressedSize > 0 &&
+        zlibHeader[0] == 0x78 && (zlibHeader[0] * 256 + zlibHeader[1]) % 31 == 0;
+}
+
 bool lod::detectCompressedPseudoImage(const Blob &blob) {
     if (blob.size() < sizeof(LodImageHeader_MM6))
         return false;
@@ -142,6 +158,19 @@ Blob lod::decodeCompressedData(const Blob &blob) {
     return result.withDisplayPath(blob.displayPath());
 }
 
+Blob lod::decodeCompressedDataMm6Game(const Blob &blob) {
+    if (!detectCompressedDataMm6Game(blob))
+        throw Exception("Cannot decode LOD entry '{}' as MM6 games.lod compressed data", blob.displayPath());
+
+    BlobInputStream stream(blob);
+    uint32_t dataSize, decompressedSize;
+    deserialize(stream, &dataSize);
+    deserialize(stream, &decompressedSize);
+
+    Blob result = stream.readAsBlobOrFail(dataSize);
+    return zlib::uncompress(result.withDisplayPath(blob.displayPath()), decompressedSize).withDisplayPath(blob.displayPath());
+}
+
 Blob lod::decodeCompressedPseudoImage(const Blob &blob) {
     if (!detectCompressedPseudoImage(blob))
         throw Exception("Cannot decode LOD entry '{}' as LOD compressed pseudo image", blob.displayPath());
@@ -162,6 +191,9 @@ Blob lod::decodeMaybeCompressed(const Blob &blob) {
 
     if (detectCompressedPseudoImage(blob))
         return decodeCompressedPseudoImage(blob);
+
+    if (detectCompressedDataMm6Game(blob))
+        return decodeCompressedDataMm6Game(blob);
 
     return Blob::share(blob); // Not compressed.
 }
