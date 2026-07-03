@@ -107,7 +107,8 @@ if(OE_BUILD_TESTS)
             Tests/MessageScrollTable_ut.cpp
             Tests/Monsters_ut.cpp
             Tests/NPCTable_ut.cpp
-            Tests/ResourceManager_ut.cpp)
+            Tests/ResourceManager_ut.cpp
+            Tests/TurnBasedOverlay_ut.cpp)
 
     add_library(test_engine OBJECT ${TEST_ENGINE_SOURCES})
     target_link_libraries(test_engine PUBLIC testing_unit engine)

@@ -4,6 +4,8 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/TurnEngine/TurnEngine.h"
 
+#include "Library/Logger/Logger.h"
+
 // Opening hand animation in vanilla was 320 ticks long (that's 2.5 seconds), but it was cut short and only the first
 // 64 ticks were displayed. We fixed it, but then the animation ended up being way too slow, thus we've introduced the
 // acceleration factor, resulting in an animation that's ~107 ticks long (5/6 of a second).
@@ -17,6 +19,18 @@ TurnBasedOverlay turnBasedOverlay;
 
 void TurnBasedOverlay::loadIcons() {
     _initialIconId = pIconsFrameTable->animationId("turnstart");
+    if (_initialIconId == -1) {
+        // MM6's icon frame table has no turn-based combat animations at all - not under any name. MM6 drew its
+        // turn-based UI through a different mechanism, so until that's modeled the overlay stays disabled
+        // (update() keeps the state at TURN_BASED_OVERLAY_NONE when icons are missing).
+        logger->warning("MM6 turn-based overlay icons are not implemented yet - the turn-based overlay "
+                        "will not be drawn.");
+        _attackIconId = -1;
+        _waitIconId = -1;
+        _movementIconIds.fill(-1);
+        return;
+    }
+
     _initialAnimationLength = pIconsFrameTable->animationLength(_initialIconId);
     _attackIconId = pIconsFrameTable->animationId("turnstop");
     _waitIconId = pIconsFrameTable->animationId("turnhour");
@@ -30,6 +44,9 @@ void TurnBasedOverlay::reset() {
 }
 
 void TurnBasedOverlay::update(Duration dt, TurnEngineStep newStep) {
+    if (_initialIconId == -1)
+        return; // No overlay icons (MM6), stay in TURN_BASED_OVERLAY_NONE so draw() never dereferences them.
+
     if (newStep == TE_NONE) {
         _state = TURN_BASED_OVERLAY_NONE;
         return;
