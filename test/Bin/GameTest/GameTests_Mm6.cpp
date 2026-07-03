@@ -725,3 +725,262 @@ GAME_TEST(Mm6, QuestNpcDialogueInTavern) {
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
     game.tick(5);
 }
+
+// Walks the party up to A Lonely Knight, New Sorpigal's tavern, and enters through its door
+// (local event 11, an ungated SpeakInHouse(92)). The party must already be in New Sorpigal.
+static void enterLonelyKnightTavern(EngineController &game) {
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 11 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+}
+
+// Opens the dialogue with a house NPC by clicking their portrait.
+static void clickHouseNpcPortrait(EngineController &game, const NPCData *npc) {
+    int npcIndex = -1;
+    for (int i = 0; i < houseNpcs.size(); i++)
+        if (houseNpcs[i].type == HOUSE_NPC && houseNpcs[i].npc == npc)
+            npcIndex = i;
+    ASSERT_NE(npcIndex, -1);
+    ASSERT_NE(houseNpcs[npcIndex].button, nullptr);
+    Recti portrait = houseNpcs[npcIndex].button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
+    game.tick(2);
+}
+
+// Finds the dialogue-option button for a scripted topic line. Option buttons are re-laid-out to
+// rendered-text metrics on draw, so they are located by their message params, never by fixed
+// coordinates. Returns nullptr when the NPC doesn't offer the topic.
+static const GUIButton *findScriptedTopicButton(DialogueId topicLine) {
+    if (!pDialogueWindow)
+        return nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectHouseNPCDialogueOption && button->msg_param == std::to_underlying(topicLine))
+            return button;
+    return nullptr;
+}
+
+// Clicks a scripted topic in an open NPC dialogue, running its global.evt script.
+static void selectScriptedTopic(EngineController &game, DialogueId topicLine) {
+    const GUIButton *option = findScriptedTopicButton(topicLine);
+    ASSERT_NE(option, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, option->rect.x + option->rect.w / 2,
+                               option->rect.y + option->rect.h / 2);
+    game.tick(2);
+}
+
+GAME_TEST(Mm6, CompleteLetterQuestDelivery) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6's opening quest: deliver The Letter (item 505) to Andover Potbello in A Lonely Knight.
+    // His "The Letter" topic runs global event 1: with the letter in the party's possession it pays
+    // 1000 gold, clears quest bit 81, sets quest bit 82 and retires the topic to event 2; without
+    // it, it shows a refusal and changes nothing.
+    NPCData *andover = &pNPCStats->pNPCData[1];
+    EXPECT_EQ(andover->name, "Andover Potbello");
+    EXPECT_EQ(andover->dialogue_1_evt_id, 1u);
+    EXPECT_EQ(pNPCTopics[1].pTopic, "The Letter");
+    EXPECT_EQ(pItemTable->items[ItemId(505)].name, "The Letter");
+
+    // In the original game a new party starts with the letter and quest bit 81 already set; new-game
+    // defaults are not MM6-aware yet, so arrange that state by hand - minus the letter, to exercise
+    // the refusal branch first.
+    pParty->_questBits.set(static_cast<QuestBit>(81));
+
+    enterLonelyKnightTavern(game);
+
+    // Without the letter the Compare(PlayerItemInHands, 505) branch falls through to the refusal
+    // reply (npctext.txt row 3) and the quest state doesn't budge.
+    int goldBefore = pParty->GetGold();
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("you don't have a letter"));
+    EXPECT_EQ(pParty->GetGold(), goldBefore);
+    EXPECT_EQ(andover->dialogue_1_evt_id, 1u);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(81)]);
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(82)]);
+
+    // Hand over the letter: back out to the portraits, put it in a backpack, ask again.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(505))));
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("The Seal"));
+    EXPECT_EQ(pParty->GetGold(), goldBefore + 1000);
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(81)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(82)]);
+    EXPECT_EQ(andover->dialogue_1_evt_id, 2u); // Topic retired to event 2 via SetNPCTopic.
+    EXPECT_TRUE(pParty->pCharacters[0].inventory.find(ItemId(505))); // The script doesn't take it.
+
+    // Asking again hits the retired topic: a "you got your gold" brush-off, no second payout.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("You got your gold"));
+    EXPECT_EQ(pParty->GetGold(), goldBefore + 1000);
+
+    // Escape back to the portraits, then out of the tavern.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+GAME_TEST(Mm6, CompleteCandelabraFetchQuest) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId newSorpigal = engine->_currentLoadedMapId;
+    Vec3f newSorpigalPos = pParty->pos;
+
+    // The full fetch-quest loop: Andover Potbello's "Quest" topic (global event 296) asks the party
+    // to recover the Candelabra (item 449) left behind in the old Temple of Baa - the Abandoned
+    // Temple, d02.blv. Returning it to him (event 297) pays out and retires the whole topic.
+    NPCData *andover = &pNPCStats->pNPCData[1];
+    EXPECT_EQ(andover->dialogue_2_evt_id, 296u);
+    EXPECT_EQ(pNPCTopics[296].pTopic, "Quest");
+    EXPECT_EQ(pItemTable->items[ItemId(449)].name, "Candelabra");
+
+    // Take the quest: quest bit 126 is granted and the topic chains to event 297.
+    enterLonelyKnightTavern(game);
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(126)]);
+    EXPECT_EQ(andover->dialogue_2_evt_id, 297u);
+    EXPECT_TRUE(current_npc_text.contains("candelabra"));
+
+    // Asking again empty-handed hits event 297's Compare fall-through (npctext.txt row 306).
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(current_npc_text.contains("Baa is patient"));
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(126)]);
+
+    // Leave the tavern.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Fetch: the candelabra sits in a chest in the Abandoned Temple.
+    MapId temple = pMapStats->GetMapInfo("d02.blv");
+    ASSERT_NE(temple, MAP_INVALID);
+    game.teleportTo(temple, Vec3f(16406, -19669, 865), 0); // The temple's entrance.
+    game.tick(1);
+    int chestId = -1;
+    for (int i = 0; i < vChests.size(); i++)
+        if (vChests[i].inventory.find(ItemId(449)))
+            chestId = i;
+    ASSERT_NE(chestId, -1);
+
+    // Find a side face of that chest so the party can stand in front of it (see
+    // Mm6.OpenChestInGoblinwatch), and disarm it - the trap flow isn't what's under test here.
+    const BLVFace *chestFace = nullptr;
+    for (const BLVFace &face : pIndoor->faces) {
+        if (!face.eventId || !face.Clickable() || !engine->_localEventMap.hasEvent(face.eventId))
+            continue;
+        if (std::abs(face.facePlane.normal.z) >= 0.5f)
+            continue;
+        for (const EvtInstruction &instruction : engine->_localEventMap.function(face.eventId)) {
+            if (instruction.opcode == EVENT_OpenChest && instruction.data.chest_id == chestId) {
+                chestFace = &face;
+                break;
+            }
+        }
+        if (chestFace)
+            break;
+    }
+    ASSERT_NE(chestFace, nullptr);
+    vChests[chestId].flags &= ~CHEST_TRAPPED;
+
+    Vec3f chestCenter = chestFace->boundingBox.center();
+    Vec3f standPos = chestCenter + chestFace->facePlane.normal * 130;
+    standPos.z = chestFace->boundingBox.z1;
+    int chestYawDegrees = TrigLUT.atan2(chestCenter.x - standPos.x, chestCenter.y - standPos.y) * 90 / 512;
+    game.teleportTo(temple, standPos, chestYawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(1);
+    ASSERT_EQ(current_screen_type, SCREEN_CHEST);
+
+    // Spacebar grabs one chest item at a time into the active character's backpack; keep grabbing
+    // until the candelabra comes out.
+    auto partyHasCandelabra = [] {
+        return std::ranges::any_of(pParty->pCharacters, [](const Character &character) {
+            return static_cast<bool>(character.inventory.find(ItemId(449)));
+        });
+    };
+    for (int i = 0; i < 30 && !partyHasCandelabra(); i++) {
+        game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+        game.tick(1);
+    }
+    EXPECT_TRUE(partyHasCandelabra());
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Return to Andover and hand it over: event 297's success branch thanks the party
+    // (npctext.txt row 307), takes the candelabra, and pays out - award 39 and 2000 experience
+    // to everyone, 1000 gold, a 200-point reputation boost (MM6 reputation improves downwards)
+    // and quest bit 126 back off. SetNPCTopic(npc 1, index 1, 0) then removes the topic for good.
+    game.teleportTo(newSorpigal, newSorpigalPos, 0);
+    game.tick(1);
+    enterLonelyKnightTavern(game);
+    int goldBefore = pParty->GetGold();
+    std::vector<uint64_t> xpBefore;
+    for (const Character &character : pParty->pCharacters)
+        xpBefore.push_back(character.experience);
+    int reputationBefore = currentLocationInfo().reputation;
+    clickHouseNpcPortrait(game, andover);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(current_npc_text.contains("Baa be praised"));
+    EXPECT_EQ(pParty->GetGold(), goldBefore + 1000);
+    for (int i = 0; i < pParty->pCharacters.size(); i++) {
+        EXPECT_EQ(pParty->pCharacters[i].experience, xpBefore[i] + 2000);
+        EXPECT_TRUE(pParty->pCharacters[i]._achievedAwardsBits[static_cast<AwardId>(39)]);
+    }
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore - 200);
+    EXPECT_FALSE(partyHasCandelabra());
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(126)]);
+    EXPECT_EQ(andover->dialogue_2_evt_id, 0u);
+
+    // With the topic gone, reopening the dialogue offers no second quest line.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    clickHouseNpcPortrait(game, andover);
+    EXPECT_EQ(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_2), nullptr);
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1), nullptr); // The Letter is still on offer.
+
+    // Escape back to the portraits, then out of the tavern.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
