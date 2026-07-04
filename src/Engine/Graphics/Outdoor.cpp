@@ -283,24 +283,30 @@ bool OutdoorLocation::Initialize(std::string_view filename, int days_played,
 // MM6 has no foot-travel tables: the 15 outdoor maps form a 5x3 grid encoded right in the
 // map file names ("out<column><row>.odm", columns 'a'..'e' west to east, rows '1'..'3' north
 // to south), and MM6.EXE derives the destination by stepping to the adjacent grid cell
-// (sub_47BCA0). Any grid-adjacent crossing is allowed - map geometry alone gates the rest.
-// Crossing always takes 5 days, and the party keeps its position with the crossed axis
+// (sub_47BCA0). Both axes are checked independently, so walking off a map corner crosses
+// diagonally. Any grid-adjacent crossing is allowed - map geometry alone gates the rest.
+// Crossing always takes 5 days, and the party keeps its position with the crossed axes
 // flipped to the opposite border (MM6 has no per-edge arrival points - its ddeclist.bin
 // only knows "Party Start").
-static MapId getTravelDestinationMm6(MapId currentMap, int direction) {
+static MapId getTravelDestinationMm6(MapId currentMap, int partyX, int partyY) {
     std::string fileName = ascii::toLower(pMapStats->pInfos[currentMap].fileName);
     if (fileName.size() != 9 || !fileName.starts_with("out"))
         return MAP_INVALID;
 
     char column = fileName[3]; // 'a'..'e', west to east.
     char row = fileName[4]; // '1'..'3', north to south.
-    switch (direction) {
-        case 0: row--; break; // north
-        case 1: row++; break; // south
-        case 2: column++; break; // east
-        case 3: column--; break; // west
-        default: assert(false); break;
+    if (partyX < -maxPartyAxisDistance) {
+        column--; // west
+    } else if (partyX > maxPartyAxisDistance) {
+        column++; // east
     }
+    if (partyY < -maxPartyAxisDistance) {
+        row++; // south
+    } else if (partyY > maxPartyAxisDistance) {
+        row--; // north
+    }
+    if (column == fileName[3] && row == fileName[4])
+        return MAP_INVALID;
     if (column < 'a' || column > 'e' || row < '1' || row > '3')
         return MAP_INVALID;
 
@@ -321,6 +327,13 @@ MapId OutdoorLocation::getTravelDestination(int partyX, int partyY) {
     if (!isMapOutdoor(currentMap))
         return MAP_INVALID;
 
+    // The foot-travel tables below and the Avlee/Shoals special cases are keyed by MM7 map
+    // ids, which MM6 map ids collide with (MM6 id 15 = New Sorpigal is MAP_SHOALS). MM6 also
+    // checks both axes independently (diagonal corner crossings), so it doesn't use the
+    // single-direction logic below.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return getTravelDestinationMm6(currentMap, partyX, partyY);
+
     // Check which side of the map
     if (partyX < -maxPartyAxisDistance)
         direction = 3; // west
@@ -332,11 +345,6 @@ MapId OutdoorLocation::getTravelDestination(int partyX, int partyY) {
         direction = 0; // north
     else
         return MAP_INVALID;
-
-    // The foot-travel tables below and the Avlee/Shoals special cases are keyed by MM7 map
-    // ids, which MM6 map ids collide with (MM6 id 15 = New Sorpigal is MAP_SHOALS).
-    if (engine->gameVersion() == GAME_VERSION_MM6)
-        return getTravelDestinationMm6(currentMap, direction);
 
     if (currentMap == MAP_AVLEE && direction == 3) {  // to Shoals
         bool wholePartyUnderwaterSuitEquipped = true;

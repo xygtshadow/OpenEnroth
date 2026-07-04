@@ -2300,12 +2300,20 @@ GAME_TEST(Mm6, FootTravelAcrossBorders) {
     // west to D3 (Castle Ironfist) and north to E2 (Misty Islands); east and south are off-grid.
     MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
     MapId mist = pMapStats->GetMapInfo("oute2.odm");
+    MapId bootlegBay = pMapStats->GetMapInfo("outd2.odm");
     ASSERT_NE(ironfist, MAP_INVALID);
     ASSERT_NE(mist, MAP_INVALID);
+    ASSERT_NE(bootlegBay, MAP_INVALID);
     EXPECT_EQ(pOutdoor->getTravelDestination(-23000, 0), ironfist);
     EXPECT_EQ(pOutdoor->getTravelDestination(23000, 0), MAP_INVALID);
     EXPECT_EQ(pOutdoor->getTravelDestination(0, 23000), mist);
     EXPECT_EQ(pOutdoor->getTravelDestination(0, -23000), MAP_INVALID);
+    // Both axes are checked independently, so corner crossings go diagonally: off the
+    // northwest corner of E3 lies D2 (Bootleg Bay); the other three corners are off-grid.
+    EXPECT_EQ(pOutdoor->getTravelDestination(-23000, 23000), bootlegBay);
+    EXPECT_EQ(pOutdoor->getTravelDestination(23000, 23000), MAP_INVALID);
+    EXPECT_EQ(pOutdoor->getTravelDestination(-23000, -23000), MAP_INVALID);
+    EXPECT_EQ(pOutdoor->getTravelDestination(23000, -23000), MAP_INVALID);
     EXPECT_EQ(getTravelTime(), 5); // Walking always takes 5 days in MM6.
 
     // Find dry land on the west border - the travel prompt won't open over water.
