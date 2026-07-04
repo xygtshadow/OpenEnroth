@@ -1131,41 +1131,37 @@ void Actor::AddOnDamageOverlay(unsigned int uActorID, int overlayType, signed in
     switch (overlayType) {
         case 1:
             if (damage)
-                pActiveOverlayList->_4418B6(904, actorPID, 0_ticks,
-                                           (int)(sub_43AE12(damage) * 65536.0), 0);
+                pActiveOverlayList->addPidOverlay(904, actorPID, 0_ticks, (int)(sub_43AE12(damage) * 65536.0), 0);
             return;
         case 2:
             if (damage)
-                pActiveOverlayList->_4418B6(905, actorPID, 0_ticks,
-                                           (int)(sub_43AE12(damage) * 65536.0), 0);
+                pActiveOverlayList->addPidOverlay(905, actorPID, 0_ticks, (int)(sub_43AE12(damage) * 65536.0), 0);
             return;
         case 3:
             if (damage)
-                pActiveOverlayList->_4418B6(906, actorPID, 0_ticks,
-                                           (int)(sub_43AE12(damage) * 65536.0), 0);
+                pActiveOverlayList->addPidOverlay(906, actorPID, 0_ticks, (int)(sub_43AE12(damage) * 65536.0), 0);
             return;
         case 4:
             if (damage)
-                pActiveOverlayList->_4418B6(907, actorPID, 0_ticks,
-                                           (int)(sub_43AE12(damage) * 65536.0), 0);
+                pActiveOverlayList->addPidOverlay(907, actorPID, 0_ticks, (int)(sub_43AE12(damage) * 65536.0), 0);
             return;
         case 5:
-            pActiveOverlayList->_4418B6(901, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(901, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         case 6:
-            pActiveOverlayList->_4418B6(902, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(902, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         case 7:
-            pActiveOverlayList->_4418B6(903, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(903, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         case 8:
-            pActiveOverlayList->_4418B6(900, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(900, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         case 9:
-            pActiveOverlayList->_4418B6(909, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(909, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         case 10:
-            pActiveOverlayList->_4418B6(908, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
+            pActiveOverlayList->addPidOverlay(908, actorPID, 0_ticks, 0, 0); // 4th param was actorPID.
             return;
         default:
             return;
@@ -4569,7 +4565,7 @@ Actor *AllocateActor() {
         return &pActors.emplace_back(Actor(pActors.size()));
 
     // At the actor limit, try to reuse a removed slot. We scan starting from where we left off last time so that
-    // a freshly removed slot isn't immediately reused — this gives stale references (in projectiles, summonerId, etc.)
+    // a freshly removed slot isn't immediately reused Ã¢â‚¬â€ this gives stale references (in projectiles, summonerId, etc.)
     // more time to expire naturally.
     size_t size = pActors.size();
     for (size_t j = 0; j < size; j++) {

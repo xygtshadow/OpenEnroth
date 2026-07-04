@@ -162,6 +162,10 @@ void Engine::drawWorld() {
             }
 
             decal_builder->DrawBloodsplats();
+
+            pActiveOverlayList->prepareBillboards();
+            // TODO(captainurist): same time source question as in ParticleEngine::UpdateParticles.
+            pActiveOverlayList->update(!pMiscTimer->isPaused() ? pEventTimer->dt() : 0_ticks);
         }
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
     }
@@ -213,6 +217,7 @@ void Engine::DrawGUI() {
 
     if (!pMovie_Track) {
         spell_fx_renedrer->DrawPlayerBuffAnims();
+        pActiveOverlayList->drawScreenOverlays();
         turnBasedOverlay.draw();
         GameUI_DrawTorchlightAndWizardEye();
     }

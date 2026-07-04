@@ -463,26 +463,28 @@ void reconstruct(const NPCData_MM7 &src, NPCData *dst) {
 void snapshot(const ActiveOverlay &src, ActiveOverlay_MM7 *dst) {
     memzero(dst);
 
+    dst->field_0 = src.target;
     dst->indexToOverlayList = src.indexToOverlayList;
     dst->spriteFrameTime = src.spriteFrameTime;
     dst->animLength = src.animLength;
     dst->screenSpaceX = src.screenSpaceX;
     dst->screenSpaceY = src.screenSpaceY;
     dst->pid = src.pid.packed();
-    dst->projSize = src.projSize;
+    dst->projSize = src.flags;
     dst->fpDamageMod = src.fpDamageMod;
 }
 
 void reconstruct(const ActiveOverlay_MM7 &src, ActiveOverlay *dst) {
     memzero(dst);
 
+    dst->target = src.field_0;
     dst->indexToOverlayList = src.indexToOverlayList;
     dst->spriteFrameTime = src.spriteFrameTime;
     dst->animLength = src.animLength;
     dst->screenSpaceX = src.screenSpaceX;
     dst->screenSpaceY = src.screenSpaceY;
     dst->pid = Pid::fromPacked(src.pid);
-    dst->projSize = src.projSize;
+    dst->flags = src.projSize;
     dst->fpDamageMod = src.fpDamageMod;
 }
 

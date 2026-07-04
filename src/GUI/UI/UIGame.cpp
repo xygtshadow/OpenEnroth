@@ -20,6 +20,7 @@
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/AtlasLayout.h"
+#include "Engine/Graphics/Overlays.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Viewport.h"
@@ -1612,6 +1613,11 @@ void GameUI_DrawTorchlightAndWizardEye() {
         current_screen_type == SCREEN_BOOKS ||
         current_screen_type == SCREEN_BRANCHLESS_NPC_DIALOG ||
         current_screen_type == SCREEN_QUICK_REFERENCE) {
+        // MM6 shows party-buff indicators as an overlay-sprite row instead of the two MM7 icons.
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            drawMm6PartyBuffStatusOverlays();
+            return;
+        }
         // The animation ids are -1 when the icons are absent from dift.bin (MM6 has no "torch"/"wizeye"
         // HUD animations) - the buffs still work, only the HUD indicator is skipped.
         if (pParty->TorchlightActive() && game_ui_torchLight != -1) {

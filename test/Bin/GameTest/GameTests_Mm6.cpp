@@ -24,7 +24,9 @@
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
+#include "Engine/Graphics/Overlays.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
+#include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/CharacterEnumFunctions.h"
@@ -2555,4 +2557,71 @@ GAME_TEST(Mm6, DevLeftoverOpcodesAreNoOps) {
     eventProcessor(39, Pid(), 1, 0);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+GAME_TEST(Mm6, OverlaysRenderAndExpire) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6's doverlay.bin binds real sprite framesets (MM7 has the same 96 overlay ids, all pointing
+    // at the "null" sprite). Spot-check an impact spark, a portrait buff fx and two status icons.
+    auto descById = [](int overlayId) -> const OverlayDesc * {
+        for (const OverlayDesc &desc : pOverlayList->pOverlays)
+            if (desc.uOverlayID == overlayId)
+                return &desc;
+        return nullptr;
+    };
+    EXPECT_EQ(pOverlayList->pOverlays.size(), 96);
+    for (int overlayId : {904, 10000, 10009, 10015}) {
+        const OverlayDesc *desc = descById(overlayId);
+        ASSERT_NE(desc, nullptr);
+        ASSERT_NE(desc->uSpriteFramesetID, 0);
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(desc->uSpriteFramesetID, 0_ticks);
+        ASSERT_NE(frame, nullptr);
+        EXPECT_NE(frame->spriteName, "null");
+        ASSERT_NE(frame->sprites[0], nullptr);
+    }
+
+    // An elemental hit spawns a one-shot spark overlay attached to the actor; the per-frame update
+    // then animates it in the 3D view and frees the slot when the animation ends.
+    pActiveOverlayList->Reset();
+    ASSERT_FALSE(pActors.empty());
+    Actor::AddOnDamageOverlay(0, 1, 100); // Fire damage spark, overlay 904.
+    ActiveOverlay &spark = pActiveOverlayList->pOverlays[0];
+    EXPECT_EQ(spark.pid, Pid(OBJECT_Actor, 0));
+    EXPECT_GT(spark.animLength, 0);
+    EXPECT_GT(spark.fpDamageMod, 0);
+    EXPECT_EQ(spark.spriteFrameTime, 0);
+    game.tick(2);
+    EXPECT_GT(spark.spriteFrameTime, 0); // The draw loop ran and advanced the animation.
+    for (int i = 0; i < 100 && spark.animLength > 0; i++)
+        game.tick(1);
+    EXPECT_LE(spark.animLength, 0); // One-shot expired and freed its slot.
+    EXPECT_EQ(spark.pid, Pid());
+
+    // Screen-anchored buff fx: anchored over character 0's portrait, deduplicated per anchor, kept
+    // alive past its animation length until the owning SpellBuff resets the slot.
+    int slotIndex = pActiveOverlayList->addScreenOverlay(10000, 310, 0_ticks, 65536);
+    ASSERT_GT(slotIndex, 0);
+    ActiveOverlay &buffFx = pActiveOverlayList->pOverlays[slotIndex - 1];
+    EXPECT_EQ(buffFx.target, 310);
+    EXPECT_EQ(buffFx.screenSpaceX, 19);
+    EXPECT_EQ(buffFx.screenSpaceY, 456);
+    EXPECT_TRUE(buffFx.flags & OVERLAY_FLAG_BUFF_OWNED);
+    EXPECT_EQ(pActiveOverlayList->addScreenOverlay(10000, 310, 0_ticks, 65536), slotIndex);
+    game.tick(5);
+    EXPECT_GT(buffFx.animLength, 0); // Not expired by the update loop.
+    SpellBuff buff;
+    buff.Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 5, slotIndex, 0);
+    buff.Reset();
+    EXPECT_LE(buffFx.animLength, 0); // Freed together with the buff.
+
+    // Party-buff status icons (the y=254 row) draw while the buff is active - smoke-test the draw
+    // pass headless.
+    pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 5, 0, 0);
+    game.tick(3);
+    pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
 }
