@@ -40,6 +40,12 @@
 SavegameList *pSavegameList = new SavegameList;
 std::unordered_map<std::string, Blob> pMapDeltas;
 
+// Save files are named after the game version so MM6 and MM7 sessions don't see each other's
+// (mutually incompatible) saves. The save format itself is OpenEnroth's either way.
+static std::string saveFileExtension() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? ".mm6" : ".mm7";
+}
+
 void loadGame(int uSlot) {
     if (!pSavegameList->pSavegameUsedSlots[uSlot]) {
         pAudioPlayer->playUISound(SOUND_error);
@@ -227,13 +233,13 @@ SaveGameHeader saveGame(bool isAutoSave, bool resetWorld, std::string_view path,
 }
 
 void autoSave() {
-    saveGame(true, false, "saves/autosave.mm7");
+    saveGame(true, false, "saves/autosave" + saveFileExtension());
 }
 
 void doSavegame(int uSlot) {
     assert(engine->_currentLoadedMapId != MAP_ARENA); // Not Arena.
 
-    pSavegameList->pSavegameHeader[uSlot] = saveGame(false, false, fmt::format("saves/save{:03}.mm7", uSlot),
+    pSavegameList->pSavegameHeader[uSlot] = saveGame(false, false, fmt::format("saves/save{:03}{}", uSlot, saveFileExtension()),
                                                      pSavegameList->pSavegameHeader[uSlot].name);
 
     pSavegameList->selectedSlot = uSlot;
@@ -258,7 +264,7 @@ void SavegameList::Initialize() {
 
     if (ufs->exists("saves")) {
         for (const auto &entry : ufs->ls("saves")) {
-            if (entry.type == FILE_REGULAR && entry.name.ends_with(".mm7")) {
+            if (entry.type == FILE_REGULAR && entry.name.ends_with(saveFileExtension())) {
                 pSavegameList->pFileList[pSavegameList->numSavegameFiles++] = entry.name;
                 if (pSavegameList->numSavegameFiles == MAX_SAVE_SLOTS) {
                     break;
@@ -289,17 +295,27 @@ void SavegameList::Reset() {
 }
 
 void saveNewGame() {
-    engine->_currentLoadedMapId = MAP_EMERALD_ISLAND;
-    pParty->pos.x = 12552;
-    pParty->pos.y = 800;
-    pParty->pos.z = 193;
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // New Sorpigal start pose from new.lod's party.bin, MM6's new-game savegame template.
+        engine->_currentLoadedMapId = engine->_transitionMapId; // Set to the starting map by the new-game flow.
+        pParty->pos.x = -9728;
+        pParty->pos.y = -11319;
+        pParty->pos.z = 160;
 
-    pParty->uFallStartZ = 193;
+        pParty->uFallStartZ = 160;
+    } else {
+        engine->_currentLoadedMapId = MAP_EMERALD_ISLAND;
+        pParty->pos.x = 12552;
+        pParty->pos.y = 800;
+        pParty->pos.z = 193;
+
+        pParty->uFallStartZ = 193;
+    }
 
     pParty->_viewPitch = 0;
     pParty->_viewYaw = 512;
 
-    saveGame(true, true, "saves/autosave.mm7");
+    saveGame(true, true, "saves/autosave" + saveFileExtension());
 }
 
 void quickSaveGame() {
@@ -375,5 +391,5 @@ void quickLoadGame() {
 }
 
 std::string getCurrentQuickSave() {
-    return fmt::format("{}{}.mm7", engine->config->gameplay.QuickSaveName.value(), engine->config->gameplay.QuickSavesCount.value());
+    return fmt::format("{}{}{}", engine->config->gameplay.QuickSaveName.value(), engine->config->gameplay.QuickSavesCount.value(), saveFileExtension());
 }

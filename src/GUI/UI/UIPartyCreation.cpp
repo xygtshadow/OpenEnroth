@@ -202,7 +202,10 @@ void CreateParty_EventLoop() {
             break;
         case UIMSG_PlayerCreationClickOK:
             new OnButtonClick({580, 431}, {0, 0}, pPlayerCreationUI_BtnOK);
-            if (CharacterCreation_GetUnspentAttributePointCount() || !PlayerCreation_Choose4Skills()) {
+            // The MM6 default party's stats don't add up under MM7's point-buy rules, and MM6 has
+            // no skill picks at creation - don't validate until there's an MM6 creation UI model.
+            if (engine->gameVersion() != GAME_VERSION_MM6 &&
+                (CharacterCreation_GetUnspentAttributePointCount() || !PlayerCreation_Choose4Skills())) {
                 errorMessageExpireTime = pMiscTimer->time() + Duration::fromRealtimeSeconds(4); // show message for 4 seconds
             } else {
                 uGameState = GAME_STATE_STARTING_NEW_GAME;
@@ -269,7 +272,8 @@ bool PartyCreationUI_Loop() {
 
     pNPCStats->pNPCData = pNPCStats->pOriginalNPCData;
     pNPCStats->pGroups = pNPCStats->pOriginalGroups;
-    pNPCStats->pNPCData[3].flags |= NPC_HIRED; // Lady Margaret.
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        pNPCStats->pNPCData[3].flags |= NPC_HIRED; // Lady Margaret. MM6 npc 3 is an unrelated quest NPC.
 
     pGUIWindow_CurrentMenu = std::make_unique<GUIWindow_PartyCreation>();
     return !PartyCreationUI_LoopInternal();
@@ -704,6 +708,53 @@ GUIWindow_PartyCreation::~GUIWindow_PartyCreation() {
     main_menu_background = nullptr;
 }
 
+// Gives the four characters the MM6 starting gear from new.lod's party.bin template. Backpack
+// spell books are the second spell of each character's magic schools (the first is already known,
+// see Party::resetCharactersMm6()); the two enchanted rings carry the template's rolled bonuses.
+static void giveDefaultPartyItemsMm6() {
+    Character &roderick = pParty->pCharacters[0];
+    Item blessedRing = Item(static_cast<ItemId>(124)); // Blessed Ring "of Magic" +3.
+    blessedRing.standardEnchantment = ATTRIBUTE_MANA;
+    blessedRing.standardEnchantmentStrength = 3;
+    roderick.inventory.add(blessedRing);
+    roderick.inventory.add(Item(static_cast<ItemId>(345))); // Bless spell book.
+    roderick.inventory.add(Item(static_cast<ItemId>(505))); // The Letter - the opening delivery quest.
+    roderick.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(1))); // Longsword.
+    roderick.inventory.equip(ITEM_SLOT_OFF_HAND, Item(static_cast<ItemId>(84))); // Wooden Shield.
+    roderick.inventory.equip(ITEM_SLOT_ARMOUR, Item(static_cast<ItemId>(71))); // Chain Mail.
+
+    Character &alexis = pParty->pCharacters[1];
+    Item lunarRing = Item(static_cast<ItemId>(122)); // Lunar Ring "of Fire Resistance" +1.
+    lunarRing.standardEnchantment = ATTRIBUTE_RESIST_FIRE;
+    lunarRing.standardEnchantmentStrength = 1;
+    alexis.inventory.add(lunarRing);
+    alexis.inventory.add(Item(static_cast<ItemId>(312))); // Static Charge spell book.
+    alexis.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
+    alexis.inventory.add(Item(static_cast<ItemId>(160))); // Poppysnaps.
+    alexis.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(23))); // Hand Axe.
+    alexis.inventory.equip(ITEM_SLOT_BOW, Item(static_cast<ItemId>(47))); // Crossbow.
+
+    Character &serena = pParty->pCharacters[2];
+    serena.inventory.add(Item(static_cast<ItemId>(121))); // Sparkling Ring.
+    serena.inventory.add(Item(static_cast<ItemId>(356))); // Remove Fear spell book.
+    serena.inventory.add(Item(static_cast<ItemId>(367))); // First Aid spell book.
+    serena.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
+    serena.inventory.add(Item(static_cast<ItemId>(162))); // Widoweeps Berries.
+    serena.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(50))); // Mace.
+
+    Character &zoltan = pParty->pCharacters[3];
+    zoltan.inventory.add(Item(static_cast<ItemId>(122))); // Lunar Ring, unenchanted.
+    zoltan.inventory.add(Item(static_cast<ItemId>(301))); // Flame Arrow spell book.
+    zoltan.inventory.add(Item(static_cast<ItemId>(323))); // Cold Beam spell book.
+    zoltan.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
+    zoltan.inventory.add(Item(static_cast<ItemId>(160))); // Poppysnaps.
+    zoltan.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(15))); // Dagger.
+
+    for (Character &character : pParty->pCharacters)
+        for (InventoryEntry entry : character.inventory.entries())
+            entry->SetIdentified();
+}
+
 //----- (00497526) --------------------------------------------------------
 bool PartyCreationUI_LoopInternal() {
     Item item;
@@ -740,6 +791,14 @@ bool PartyCreationUI_LoopInternal() {
     }
 
     pGUIWindow_CurrentMenu = nullptr;
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 starting gear is fixed template data, not derived from picked skills - there are
+        // no skill picks at MM6 party creation.
+        giveDefaultPartyItemsMm6();
+        pAudioPlayer->stopSounds();
+        return party_not_creation_flag;
+    }
 
     item.Reset();
     for (unsigned i = 0; i < 4; ++i) {

@@ -376,12 +376,85 @@ unsigned int Party::getPartyFame() {
         UINT_MAX);  // min wasn't present, but could be incorrect without it
 }
 
+void Party::resetCharactersMm6() {
+    // The MM6 default party, byte-for-byte from new.lod's party.bin - MM6's new-game savegame
+    // template. Experience and birth years are the template's fixed values (birth years shifted
+    // by +3 so ages come out right against the engine's MM7 starting year of 1168 - MM6 starts
+    // in 1165, tracked in docs/pending). Every character knows the first spell of their magic
+    // schools; the books of the second are in their backpacks, see giveDefaultPartyItemsMm6().
+    struct Mm6DefaultCharacter {
+        LstrId name;
+        Class classType;
+        Sex sex;
+        int face;
+        std::array<int, 7> stats; // Might, Intellect, Personality, Endurance, Accuracy, Speed, Luck.
+        std::array<Skill, 4> skills;
+        std::initializer_list<SpellId> spells;
+        int experience;
+        int birthYear;
+    };
+    static const std::array<Mm6DefaultCharacter, 4> defaults = {{
+        {LSTR_NAME_RODERICK, CLASS_PALADIN, SEX_MALE, 0, {17, 5, 15, 15, 15, 13, 6},
+         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {static_cast<SpellId>(45)}, 343, 1147},
+        {LSTR_NAME_ALEXIS, CLASS_ARCHER, SEX_FEMALE, 11, {14, 15, 5, 15, 17, 13, 6},
+         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {static_cast<SpellId>(12)}, 291, 1147},
+        {LSTR_NAME_SERENA, CLASS_CLERIC, SEX_FEMALE, 9, {11, 7, 17, 15, 13, 11, 12},
+         {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION},
+         {static_cast<SpellId>(56), static_cast<SpellId>(67)}, 266, 1146},
+        {LSTR_NAME_ZOLTAN, CLASS_SORCERER, SEX_MALE, 7, {11, 17, 7, 15, 13, 13, 9},
+         {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION},
+         {static_cast<SpellId>(1), static_cast<SpellId>(23)}, 336, 1143},
+    }};
+
+    for (int i = 0; i < 4; i++) {
+        const Mm6DefaultCharacter &def = defaults[i];
+        Character &character = pCharacters[i];
+        character.ChangeClass(def.classType);
+        character.experience = def.experience;
+        character.uBirthYear = def.birthYear;
+        character.name = localization->str(def.name);
+        character.uSex = def.sex;
+        character.uPrevFace = def.face;
+        character.uCurrentFace = def.face;
+        character.uPrevVoiceID = def.face;
+        character.uVoiceID = def.face;
+        for (int stat = 0; stat < 7; stat++)
+            character._stats[static_cast<Attribute>(stat)] = def.stats[stat];
+        for (Skill skill : allSkills()) // MM6 skill sets don't follow the MM7 class table ChangeClass used.
+            character.setSkillValue(skill, CombinedSkillValue());
+        for (Skill skill : def.skills)
+            character.setSkillValue(skill, CombinedSkillValue::novice());
+        character.bHaveSpell.fill(false);
+        for (SpellId spell : def.spells)
+            character.bHaveSpell[spell] = true;
+    }
+}
+
 void Party::createDefaultParty() {
     pHireling1Name[0] = 0;
     pHireling2Name[0] = 0;
     this->hirelingScrollPosition = 0;
     pHirelings.fill(NPCData());
     pHirelingsSacrifice.fill(NPCSacrificeStatus());
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        resetCharactersMm6();
+
+        for (Character &character : pCharacters) {
+            character.lastOpenedSpellbookPage = MAGIC_SCHOOL_FIRE;
+            for (MagicSchool page : allMagicSchools()) {
+                if (character.pActiveSkills[skillForMagicSchool(page)]) {
+                    character.lastOpenedSpellbookPage = page;
+                    break;
+                }
+            }
+
+            character.portraitTimePassed = 0_ticks;
+            character.health = character.GetMaxHealth();
+            character.mana = character.GetMaxMana();
+        }
+        return;
+    }
 
     this->pCharacters[0].name = localization->str(LSTR_NAME_ZOLTAN);
     this->pCharacters[0].uPrevFace = 17;
@@ -488,37 +561,41 @@ void Party::Reset() {
 
     _activeCharacter = 1;
 
-    pCharacters[0].ChangeClass(CLASS_KNIGHT);
-    pCharacters[0].uCurrentFace = 17;
-    pCharacters[0].uPrevVoiceID = 17;
-    pCharacters[0].uVoiceID = 17;
-    pCharacters[0].SetInitialStats();
-    pCharacters[0].uSex = pCharacters[0].GetSexByVoice();
-    pCharacters[0].name = localization->str(LSTR_NAME_ZOLTAN);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        resetCharactersMm6();
+    } else {
+        pCharacters[0].ChangeClass(CLASS_KNIGHT);
+        pCharacters[0].uCurrentFace = 17;
+        pCharacters[0].uPrevVoiceID = 17;
+        pCharacters[0].uVoiceID = 17;
+        pCharacters[0].SetInitialStats();
+        pCharacters[0].uSex = pCharacters[0].GetSexByVoice();
+        pCharacters[0].name = localization->str(LSTR_NAME_ZOLTAN);
 
-    pCharacters[1].ChangeClass(CLASS_THIEF);
-    pCharacters[1].uCurrentFace = 3;
-    pCharacters[1].uPrevVoiceID = 3;
-    pCharacters[1].uVoiceID = 3;
-    pCharacters[1].SetInitialStats();
-    pCharacters[1].uSex = pCharacters[1].GetSexByVoice();
-    pCharacters[1].name = localization->str(LSTR_NAME_RODERICK);
+        pCharacters[1].ChangeClass(CLASS_THIEF);
+        pCharacters[1].uCurrentFace = 3;
+        pCharacters[1].uPrevVoiceID = 3;
+        pCharacters[1].uVoiceID = 3;
+        pCharacters[1].SetInitialStats();
+        pCharacters[1].uSex = pCharacters[1].GetSexByVoice();
+        pCharacters[1].name = localization->str(LSTR_NAME_RODERICK);
 
-    pCharacters[2].ChangeClass(CLASS_CLERIC);
-    pCharacters[2].uCurrentFace = 14;
-    pCharacters[2].uPrevVoiceID = 14;
-    pCharacters[2].uVoiceID = 14;
-    pCharacters[2].SetInitialStats();
-    pCharacters[2].uSex = pCharacters[3].GetSexByVoice();
-    pCharacters[2].name = localization->str(LSTR_NAME_SERENA);
+        pCharacters[2].ChangeClass(CLASS_CLERIC);
+        pCharacters[2].uCurrentFace = 14;
+        pCharacters[2].uPrevVoiceID = 14;
+        pCharacters[2].uVoiceID = 14;
+        pCharacters[2].SetInitialStats();
+        pCharacters[2].uSex = pCharacters[3].GetSexByVoice();
+        pCharacters[2].name = localization->str(LSTR_NAME_SERENA);
 
-    pCharacters[3].ChangeClass(CLASS_SORCERER);
-    pCharacters[3].uCurrentFace = 10;
-    pCharacters[3].uPrevVoiceID = 10;
-    pCharacters[3].uVoiceID = 10;
-    pCharacters[3].SetInitialStats();
-    pCharacters[3].uSex = pCharacters[3].GetSexByVoice();
-    pCharacters[3].name = localization->str(LSTR_NAME_ALEXIS);
+        pCharacters[3].ChangeClass(CLASS_SORCERER);
+        pCharacters[3].uCurrentFace = 10;
+        pCharacters[3].uPrevVoiceID = 10;
+        pCharacters[3].uVoiceID = 10;
+        pCharacters[3].SetInitialStats();
+        pCharacters[3].uSex = pCharacters[3].GetSexByVoice();
+        pCharacters[3].name = localization->str(LSTR_NAME_ALEXIS);
+    }
 
     for (Character &player : this->pCharacters) {
         player.timeToRecovery = 0_ticks;
@@ -542,12 +619,18 @@ void Party::Reset() {
     _autonoteBits.reset();
 
     _questBits.reset();
-    _questBits.set(QBIT_EMERALD_ISLAND_RED_POTION_ACTIVE);
-    _questBits.set(QBIT_EMERALD_ISLAND_SEASHELL_ACTIVE);
-    _questBits.set(QBIT_EMERALD_ISLAND_LONGBOW_ACTIVE);
-    _questBits.set(QBIT_EMERALD_ISLAND_PLATE_ACTIVE);
-    _questBits.set(QBIT_EMERALD_ISLAND_LUTE_ACTIVE);
-    _questBits.set(QBIT_EMERALD_ISLAND_HAT_ACTIVE);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // The quest bits set in new.lod's party.bin template.
+        _questBits.set(static_cast<QuestBit>(81)); // The Letter delivery quest (Andover Potbello, global event 1) is active.
+        _questBits.set(static_cast<QuestBit>(181)); // Set in the template; purpose not identified yet.
+    } else {
+        _questBits.set(QBIT_EMERALD_ISLAND_RED_POTION_ACTIVE);
+        _questBits.set(QBIT_EMERALD_ISLAND_SEASHELL_ACTIVE);
+        _questBits.set(QBIT_EMERALD_ISLAND_LONGBOW_ACTIVE);
+        _questBits.set(QBIT_EMERALD_ISLAND_PLATE_ACTIVE);
+        _questBits.set(QBIT_EMERALD_ISLAND_LUTE_ACTIVE);
+        _questBits.set(QBIT_EMERALD_ISLAND_HAT_ACTIVE);
+    }
 
     pIsArtifactFound.fill(false);
 

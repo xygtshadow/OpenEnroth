@@ -72,6 +72,11 @@ struct Party {
      * @offset 0x49137D
      */
     void createDefaultParty();
+
+    /**
+     * Resets the four characters to the MM6 default party from new.lod's party.bin template.
+     */
+    void resetCharactersMm6();
     void Reset();
     void ResetPosMiscAndSpellBuffs();
 

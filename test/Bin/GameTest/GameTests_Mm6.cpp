@@ -12,6 +12,7 @@
 #include "Engine/MapEnumFunctions.h"
 #include "Engine/MapInfo.h"
 #include "Engine/Party.h"
+#include "Engine/Resources/EngineFileSystem.h"
 #include "Engine/Resources/ResourceManager.h"
 #include "Engine/mm7_data.h"
 
@@ -22,7 +23,9 @@
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Actor.h"
+#include "Engine/Objects/CharacterEnumFunctions.h"
 #include "Engine/Objects/Chest.h"
+#include "Engine/Objects/ItemEnumFunctions.h"
 #include "Engine/Objects/CombinedSkillValue.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/Monsters.h"
@@ -73,7 +76,125 @@ GAME_TEST(Mm6, NewGame) {
     game.tick(10); // And the game loop should be able to run for a bit without crashing.
 }
 
+GAME_TEST(Mm6, NewGameDefaults) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // The authoritative MM6 new-game state lives in new.lod's party.bin, a savegame template:
+    // 200 gold, 7 food, quest bits 81 (The Letter delivery quest active) and 181 set, and the
+    // default party Roderick/Alexis/Serena/Zoltan with fixed stats, skills, spells and gear.
+    EXPECT_EQ(pParty->GetGold(), 200);
+    EXPECT_EQ(pParty->GetFood(), 7);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(81)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(181)]);
+    EXPECT_FALSE(pParty->_questBits[QBIT_EMERALD_ISLAND_RED_POTION_ACTIVE]); // No MM7 leakage.
+
+    // The party.bin start pose: New Sorpigal, facing north.
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
+    EXPECT_EQ(pParty->pos.x, -9728);
+    EXPECT_EQ(pParty->pos.y, -11319);
+    EXPECT_NEAR(pParty->pos.z, 160, 1);
+    EXPECT_EQ(pParty->_viewYaw, 512);
+
+    // The autosave is named after the game version, so MM6 and MM7 saves don't mix.
+    EXPECT_TRUE(ufs->exists("saves/autosave.mm6"));
+    EXPECT_FALSE(ufs->exists("saves/autosave.mm7"));
+
+    struct DefaultCharacter {
+        const char *name;
+        Class classType;
+        Sex sex;
+        int face;
+        std::array<int, 7> stats; // Might, Intellect, Personality, Endurance, Accuracy, Speed, Luck.
+        std::array<Skill, 4> skills;
+        std::vector<int> spells;
+        int experience;
+        int age;
+        std::vector<int> backpack;
+        int mainHand;
+    };
+    // Every caster knows the first spell of their school and carries the book of the second.
+    std::array<DefaultCharacter, 4> expected = {{
+        {"Roderick", CLASS_PALADIN, SEX_MALE, 0, {17, 5, 15, 15, 15, 13, 6},
+         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {45}, 343, 21,
+         {124, 345, 505}, 1}, // Blessed Ring, Bless book, The Letter; Longsword.
+        {"Alexis", CLASS_ARCHER, SEX_FEMALE, 11, {14, 15, 5, 15, 17, 13, 6},
+         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {12}, 291, 21,
+         {122, 312, 163, 160}, 23}, // Lunar Ring, Static Charge book, bottle, Poppysnaps; Hand Axe.
+        {"Serena", CLASS_CLERIC, SEX_FEMALE, 9, {11, 7, 17, 15, 13, 11, 12},
+         {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION}, {56, 67}, 266, 22,
+         {121, 356, 367, 163, 162}, 50}, // Sparkling Ring, 2 books, bottle, Widoweeps Berries; Mace.
+        {"Zoltan", CLASS_SORCERER, SEX_MALE, 7, {11, 17, 7, 15, 13, 13, 9},
+         {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION}, {1, 23}, 336, 25,
+         {122, 301, 323, 163, 160}, 15}, // Lunar Ring, 2 books, bottle, Poppysnaps; Dagger.
+    }};
+
+    for (int i = 0; i < 4; i++) {
+        const DefaultCharacter &want = expected[i];
+        const Character &have = pParty->pCharacters[i];
+        EXPECT_EQ(have.name, want.name);
+        EXPECT_EQ(have.classType, want.classType) << want.name;
+        EXPECT_EQ(have.uSex, want.sex) << want.name;
+        EXPECT_EQ(have.uCurrentFace, want.face) << want.name;
+        EXPECT_EQ(have.uLevel, 1) << want.name;
+        EXPECT_EQ(have.experience, want.experience) << want.name;
+        EXPECT_EQ(have.GetBaseAge(), want.age) << want.name;
+
+        for (int s = 0; s < 7; s++)
+            EXPECT_EQ(have._stats[static_cast<Attribute>(s)], want.stats[s]) << want.name << " stat " << s;
+
+        int activeSkills = 0;
+        for (Skill skill : allSkills())
+            activeSkills += static_cast<bool>(have.pActiveSkills[skill]);
+        EXPECT_EQ(activeSkills, 4) << want.name;
+        for (Skill skill : want.skills)
+            EXPECT_EQ(have.getSkillValue(skill), CombinedSkillValue::novice()) << want.name;
+
+        int knownSpells = 0;
+        for (SpellId spell : have.bHaveSpell.indices())
+            knownSpells += have.bHaveSpell[spell];
+        EXPECT_EQ(knownSpells, static_cast<int>(want.spells.size())) << want.name;
+        for (int spell : want.spells)
+            EXPECT_TRUE(have.bHaveSpell[static_cast<SpellId>(spell)]) << want.name << " spell " << spell;
+
+        InventoryConstEntry mainHand = have.inventory.entry(ITEM_SLOT_MAIN_HAND);
+        ASSERT_TRUE(mainHand) << want.name;
+        EXPECT_EQ(mainHand->itemId, static_cast<ItemId>(want.mainHand)) << want.name;
+        for (int itemId : want.backpack)
+            EXPECT_TRUE(have.inventory.find(static_cast<ItemId>(itemId))) << want.name << " item " << itemId;
+        for (InventoryConstEntry entry : have.inventory.entries())
+            EXPECT_TRUE(entry->IsIdentified()) << want.name;
+
+        EXPECT_EQ(have.health, have.GetMaxHealth()) << want.name;
+        EXPECT_EQ(have.mana, have.GetMaxMana()) << want.name;
+    }
+
+    // Roderick's shield hand, armor, and his ring's rolled enchantment ("of Magic" +3).
+    EXPECT_EQ(pParty->pCharacters[0].inventory.entry(ITEM_SLOT_OFF_HAND)->itemId, static_cast<ItemId>(84));
+    EXPECT_EQ(pParty->pCharacters[0].inventory.entry(ITEM_SLOT_ARMOUR)->itemId, static_cast<ItemId>(71));
+    InventoryConstEntry blessedRing = pParty->pCharacters[0].inventory.find(static_cast<ItemId>(124));
+    ASSERT_TRUE(blessedRing);
+    EXPECT_EQ(blessedRing->standardEnchantment, ATTRIBUTE_MANA);
+    EXPECT_EQ(blessedRing->standardEnchantmentStrength, 3);
+
+    // Alexis' bow slot and her ring's enchantment ("of Fire Resistance" +1).
+    EXPECT_EQ(pParty->pCharacters[1].inventory.entry(ITEM_SLOT_BOW)->itemId, static_cast<ItemId>(47));
+    InventoryConstEntry lunarRing = pParty->pCharacters[1].inventory.find(static_cast<ItemId>(122));
+    ASSERT_TRUE(lunarRing);
+    EXPECT_EQ(lunarRing->standardEnchantment, ATTRIBUTE_RESIST_FIRE);
+    EXPECT_EQ(lunarRing->standardEnchantmentStrength, 1);
+
+    // Zoltan's ring rolled no enchantment.
+    InventoryConstEntry plainRing = pParty->pCharacters[3].inventory.find(static_cast<ItemId>(122));
+    ASSERT_TRUE(plainRing);
+    EXPECT_EQ(plainRing->standardEnchantment, std::nullopt);
+}
+
 GAME_TEST(Mm6, WalkAndInteract) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
@@ -807,10 +928,12 @@ GAME_TEST(Mm6, CompleteLetterQuestDelivery) {
     EXPECT_EQ(pNPCTopics[1].pTopic, "The Letter");
     EXPECT_EQ(pItemTable->items[ItemId(505)].name, "The Letter");
 
-    // In the original game a new party starts with the letter and quest bit 81 already set; new-game
-    // defaults are not MM6-aware yet, so arrange that state by hand - minus the letter, to exercise
-    // the refusal branch first.
-    pParty->_questBits.set(static_cast<QuestBit>(81));
+    // A new MM6 party starts with quest bit 81 set and The Letter in Roderick's backpack
+    // (Mm6.NewGameDefaults); take the letter away to exercise the refusal branch first.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(81)]);
+    InventoryEntry letter = pParty->pCharacters[0].inventory.find(ItemId(505));
+    ASSERT_TRUE(letter);
+    pParty->pCharacters[0].inventory.take(letter);
 
     enterLonelyKnightTavern(game);
 
@@ -1464,6 +1587,13 @@ GAME_TEST(Mm6, ArtifactPowers) {
 
     game.startNewGame();
     game.tick(1);
+
+    // The MM6 default party starts with gear equipped (Mm6.NewGameDefaults); strip it so the
+    // item bonus checks below see only the artifact under test.
+    for (Character &character : pParty->pCharacters)
+        for (ItemSlot slot : allItemSlots())
+            if (InventoryEntry equipped = character.inventory.entry(slot))
+                character.inventory.take(equipped);
 
     Character &knight = pParty->pCharacters[0];
     int casterIndex = -1; // Someone whose class has spell points, for the +N spell point powers.

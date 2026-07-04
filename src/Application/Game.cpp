@@ -179,10 +179,11 @@ bool Game::loop() {
             assert(engine->_transitionMapId != MAP_INVALID);
 
             bFlashQuestBook = true;
-            pMediaPlayer->PlayFullscreenMovie("Intro Post");
+            if (engine->gameVersion() != GAME_VERSION_MM6) // "Intro Post" is an MM7 video; MM6's post-creation video is tracked in docs/pending.
+                pMediaPlayer->PlayFullscreenMovie("Intro Post");
             saveNewGame();
-            if (engine->config->debug.NoMargaret.value()) {
-                pParty->_questBits.set(QBIT_EMERALD_ISLAND_MARGARETH_OFF);
+            if (engine->gameVersion() != GAME_VERSION_MM6 && engine->config->debug.NoMargaret.value()) {
+                pParty->_questBits.set(QBIT_EMERALD_ISLAND_MARGARETH_OFF); // The qbit value collides with an unrelated MM6 quest bit.
             }
 
             gameLoop();
