@@ -1137,7 +1137,10 @@ GAME_TEST(Mm6, DrinkPotions) {
         pParty->setHoldingItem(Item(ItemId(itemId)));
         pParty->pCharacters[0].useItem(targetCharacter, true);
         game.tick(1);
-        EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL); // Drunk & consumed.
+        // Drinking changes the held potion into an empty Potion Bottle (useitems.txt:
+        // "Change Item to 163").
+        EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(163));
+        pParty->takeHoldingItem();
     };
 
     // P1 Cure Wounds heals 10, via the real right-click-portrait path.
@@ -1149,7 +1152,8 @@ GAME_TEST(Mm6, DrinkPotions) {
     pParty->setHoldingItem(Item(ItemId(164)));
     game.pressAndReleaseButton(BUTTON_RIGHT, 50, 420);
     game.tick(3);
-    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(163)); // Left an empty bottle in hand.
+    pParty->takeHoldingItem();
     EXPECT_EQ(knight.health, hpBefore + 10);
 
     // P2 Magic restores 10 spell points.
@@ -1277,6 +1281,181 @@ GAME_TEST(Mm6, DrinkPotions) {
     EXPECT_EQ(knight.sAgeModifier, 0);
     for (Attribute stat : knight._stats.indices())
         EXPECT_EQ(knight._stats[stat], statsBefore[stat] - 1);
+}
+
+GAME_TEST(Mm6, EatHerbs) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 herbs are edible reagents (useitems.txt): Poppysnaps (160) set weak poison, Phirna
+    // Root (161) restores 2 spell points, Widoweeps Berries (162) heal 2 hit points, and the
+    // herb is consumed. MM7's useItem carries a broken remnant of exactly this mechanic.
+    ASSERT_EQ(pItemTable->items[ItemId(160)].type, ITEM_TYPE_REAGENT);
+    ASSERT_EQ(pItemTable->items[ItemId(161)].type, ITEM_TYPE_REAGENT);
+    ASSERT_EQ(pItemTable->items[ItemId(162)].type, ITEM_TYPE_REAGENT);
+
+    Character &knight = pParty->pCharacters[0]; // Character 1, portrait at (50,420).
+    for (int i = 0; i < 100 && knight.timeToRecovery != 0_ticks; i++)
+        game.tick(1);
+
+    // Widoweeps Berries heal 2, via the real right-click-portrait path.
+    ASSERT_GT(knight.health, 5);
+    knight.health -= 5;
+    int hpBefore = knight.health;
+    pParty->setHoldingItem(Item(ItemId(162)));
+    game.pressAndReleaseButton(BUTTON_RIGHT, 50, 420);
+    game.tick(3);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL); // Eaten.
+    EXPECT_EQ(knight.health, hpBefore + 2);
+
+    // Phirna Root restores 2 spell points - eaten by a character who has any.
+    int casterIndex = -1;
+    for (int i = 0; i < pParty->pCharacters.size(); i++) {
+        if (pParty->pCharacters[i].GetMaxMana() >= 2) {
+            casterIndex = i;
+            break;
+        }
+    }
+    ASSERT_NE(casterIndex, -1);
+    Character &caster = pParty->pCharacters[casterIndex];
+    caster.mana = 0;
+    pParty->setHoldingItem(Item(ItemId(161)));
+    pParty->pCharacters[0].useItem(casterIndex, true);
+    game.tick(1);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    EXPECT_EQ(caster.mana, 2);
+
+    // Poppysnaps poison the eater.
+    EXPECT_FALSE(knight.conditions.has(CONDITION_POISON_WEAK));
+    pParty->setHoldingItem(Item(ItemId(160)));
+    pParty->pCharacters[0].useItem(0, true);
+    game.tick(1);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    EXPECT_TRUE(knight.conditions.has(CONDITION_POISON_WEAK));
+}
+
+GAME_TEST(Mm6, MixPotions) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 potion mixing is recipe-less: the full combination matrix ships in useitems.txt.
+    // mm6PotionCombination returns ITEM_NULL when nothing happens, ItemId(1..4) for the E1..E4
+    // explosion tiers (the same encoding MM7's potion.txt parse uses - MM7 inherited MM6's
+    // explosion code verbatim), or the resulting item id.
+    auto mix = [](int held, int target) {
+        return std::to_underlying(mm6PotionCombination(ItemId(held), ItemId(target)));
+    };
+
+    // The matrix is symmetric.
+    for (int a = 160; a <= 188; a++)
+        for (int b = 160; b <= 188; b++)
+            EXPECT_EQ(mix(a, b), mix(b, a)) << "a=" << a << " b=" << b;
+
+    // Herbs fill an empty Potion Bottle (163) and combine with nothing else.
+    EXPECT_EQ(mix(160, 163), 166); // Poppysnaps -> Energy.
+    EXPECT_EQ(mix(161, 163), 165); // Phirna Root -> Magic.
+    EXPECT_EQ(mix(162, 163), 164); // Widoweeps Berries -> Cure Wounds.
+    EXPECT_EQ(mix(160, 161), 0);
+    EXPECT_EQ(mix(160, 164), 0);
+    EXPECT_EQ(mix(160, 178), 0);
+
+    // The 22 potion recipes of the useitems.txt matrix.
+    EXPECT_EQ(mix(164, 165), 169); // Cure Wounds + Magic = Cure Poison.
+    EXPECT_EQ(mix(164, 166), 167); // Cure Wounds + Energy = Protection.
+    EXPECT_EQ(mix(164, 167), 174); // Cure Wounds + Protection = Heroism.
+    EXPECT_EQ(mix(164, 174), 181); // Cure Wounds + Heroism = Pure Might.
+    EXPECT_EQ(mix(164, 175), 186); // Cure Wounds + Haste = Pure Speed.
+    EXPECT_EQ(mix(165, 166), 168); // Magic + Energy = Resistance.
+    EXPECT_EQ(mix(165, 167), 176); // Magic + Protection = Stone Skin.
+    EXPECT_EQ(mix(165, 168), 173); // Magic + Resistance = Super Resistance.
+    EXPECT_EQ(mix(165, 169), 177); // Magic + Cure Poison = Bless.
+    EXPECT_EQ(mix(165, 171), 183); // Magic + Restoration = Pure Personality.
+    EXPECT_EQ(mix(165, 176), 182); // Magic + Stone Skin = Pure Intellect.
+    EXPECT_EQ(mix(166, 167), 172); // Energy + Protection = Extreme Energy.
+    EXPECT_EQ(mix(166, 168), 175); // Energy + Resistance = Haste.
+    EXPECT_EQ(mix(166, 170), 184); // Energy + Supreme Protection = Pure Endurance.
+    EXPECT_EQ(mix(166, 177), 185); // Energy + Bless = Pure Accuracy.
+    EXPECT_EQ(mix(167, 168), 170); // Protection + Resistance = Supreme Protection.
+    EXPECT_EQ(mix(167, 171), 179); // Protection + Restoration = Divine Cure.
+    EXPECT_EQ(mix(168, 169), 171); // Resistance + Cure Poison = Restoration.
+    EXPECT_EQ(mix(168, 172), 188); // Resistance + Extreme Energy = Rejuvenation.
+    EXPECT_EQ(mix(168, 173), 180); // Resistance + Super Resistance = Divine Magic.
+    EXPECT_EQ(mix(169, 172), 178); // Cure Poison + Extreme Energy = Divine Power.
+    EXPECT_EQ(mix(169, 173), 187); // Cure Poison + Super Resistance = Pure Luck.
+
+    // Same potion, white+white, black+black and bottle+potion: nothing happens.
+    EXPECT_EQ(mix(164, 164), 0);
+    EXPECT_EQ(mix(170, 171), 0);
+    EXPECT_EQ(mix(174, 175), 0);
+    EXPECT_EQ(mix(178, 179), 0);
+    EXPECT_EQ(mix(163, 163), 0);
+    EXPECT_EQ(mix(163, 164), 0);
+    EXPECT_EQ(mix(163, 188), 0);
+
+    // Every other pair explodes, tier by category: colored+colored=E1, colored+white=E2,
+    // colored+black=E3, white+black=E4.
+    EXPECT_EQ(mix(164, 168), 1);
+    EXPECT_EQ(mix(164, 169), 1);
+    EXPECT_EQ(mix(166, 169), 1);
+    EXPECT_EQ(mix(164, 170), 2);
+    EXPECT_EQ(mix(169, 176), 2);
+    EXPECT_EQ(mix(164, 178), 3);
+    EXPECT_EQ(mix(169, 188), 3);
+    EXPECT_EQ(mix(170, 178), 4);
+    EXPECT_EQ(mix(177, 188), 4);
+
+    // End-to-end through the inventory right-click path: Magic onto Cure Wounds makes Cure
+    // Poison and returns a spare empty bottle to the inventory.
+    game.pressAndReleaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+    Character &active = pParty->activeCharacter();
+    InventoryEntry red = active.inventory.add(Item(ItemId(164)));
+    ASSERT_TRUE(red);
+    Pointi gridPos = red.geometry().topLeft();
+    auto countBottles = [&] {
+        int count = 0;
+        for (InventoryEntry e : active.inventory.entries(ItemId(163)))
+            count++;
+        return count;
+    };
+    int bottlesBefore = countBottles();
+    pParty->setHoldingItem(Item(ItemId(165)));
+    // Right-click actions fire while the button is held (popup mode), so press, tick, release.
+    game.pressButton(BUTTON_RIGHT, 14 + 32 * gridPos.x + 16, 17 + 32 * gridPos.y + 16);
+    game.tick(2);
+    game.releaseButton(BUTTON_RIGHT, 14 + 32 * gridPos.x + 16, 17 + 32 * gridPos.y + 16);
+    game.tick(1);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    InventoryEntry mixed = active.inventory.entry(gridPos);
+    ASSERT_TRUE(mixed);
+    EXPECT_EQ(mixed->itemId, ItemId(169)); // Cure Poison.
+    EXPECT_EQ(countBottles(), bottlesBefore + 1);
+
+    // And the explosion path: Cure Wounds onto Resistance is E1 - 10-20 fire damage, both
+    // potions destroyed, no bottle back.
+    InventoryEntry green = active.inventory.add(Item(ItemId(168)));
+    ASSERT_TRUE(green);
+    Pointi greenPos = green.geometry().topLeft();
+    int bottlesBeforeExplosion = countBottles();
+    active.health = active.GetMaxHealth();
+    int hpBefore = active.health;
+    pParty->setHoldingItem(Item(ItemId(164)));
+    game.pressButton(BUTTON_RIGHT, 14 + 32 * greenPos.x + 16, 17 + 32 * greenPos.y + 16);
+    game.tick(2);
+    game.releaseButton(BUTTON_RIGHT, 14 + 32 * greenPos.x + 16, 17 + 32 * greenPos.y + 16);
+    game.tick(1);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    EXPECT_FALSE(active.inventory.entry(greenPos));
+    EXPECT_LT(active.health, hpBefore);
+    EXPECT_GE(active.health, hpBefore - 20);
+    EXPECT_EQ(countBottles(), bottlesBeforeExplosion);
 }
 
 GAME_TEST(Mm6, ArtifactPowers) {

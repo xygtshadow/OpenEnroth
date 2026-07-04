@@ -1974,6 +1974,37 @@ void UI_OnMouseRightClick(Pointi mousePos) {
 }
 
 //----- (00416196) --------------------------------------------------------
+// Blows up a potion mix in the active character's face: damage levels 1..4 are MM7's potion.txt
+// encoding and MM6's E1..E4 useitems.txt tiers - the games share the explosion mechanics.
+static void explodeFromPotionMixing(int damageLevel, InventoryEntry entry) {
+    pParty->activeCharacter().inventory.take(entry);
+
+    if (damageLevel == 1) {
+        pParty->activeCharacter().receiveDamage(grng->random(11) + 10, DAMAGE_FIRE);
+    } else if (damageLevel == 2) {
+        pParty->activeCharacter().receiveDamage(grng->random(71) + 30, DAMAGE_FIRE);
+        pParty->activeCharacter().ItemsPotionDmgBreak(1);  // break 1
+    } else if (damageLevel == 3) {
+        pParty->activeCharacter().receiveDamage(grng->random(201) + 50, DAMAGE_FIRE);
+        pParty->activeCharacter().ItemsPotionDmgBreak(5);  // break 5
+    } else if (damageLevel >= 4) {
+        pParty->activeCharacter().SetCondition(CONDITION_ERADICATED, 0);
+        pParty->activeCharacter().ItemsPotionDmgBreak(0);  // break everything
+    }
+
+    pAudioPlayer->playUISound(SOUND_fireBall);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 0, 0);
+
+    Vec3f pos = pParty->pos + Vec3f(0, 0, pParty->eyeLevel) + Vec3f::fromPolar(64, pParty->_viewYaw, pParty->_viewPitch);
+    SpriteObject::dropItemAt(SPRITE_SPELL_FIRE_FIREBALL_IMPACT, pos, 0);
+    if (pParty->activeCharacter().CanAct()) {
+        pParty->activeCharacter().playReaction(SPEECH_POTION_EXPLODE);
+    }
+    engine->_statusBar->setEvent(LSTR_OOOPS);
+    pParty->takeHoldingItem();
+    rightClickItemActionPerformed = true;
+}
+
 void Inventory_ItemPopupAndAlchemy() {
     if (rightClickItemActionPerformed) {
         // Forbid doing anything until right click has beed released
@@ -2059,6 +2090,48 @@ void Inventory_ItemPopupAndAlchemy() {
         return;
     }
 
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 has none of MM7's alchemy special cases (recharge/harden/enchanting potions,
+        // reagents brewed by power) - and MM6 item ids would collide with the MM7 potion ids
+        // those blocks check. Mixing follows the useitems.txt matrix: herbs fill empty bottles,
+        // potions combine recipe-lessly into better potions or explode.
+        Item &held = pParty->pPickedItem;
+        if ((held.isPotion() || held.isReagent()) && (entry->isPotion() || entry->isReagent())) {
+            ItemId result = mm6PotionCombination(held.itemId, entry->itemId);
+            if (result != ITEM_NULL) {
+                if (std::to_underlying(result) <= 4) { // E1..E4 explosion tiers.
+                    explodeFromPotionMixing(std::to_underlying(result), entry);
+                    return;
+                }
+                // Mixing two full bottles frees one of them; filling a bottle with a herb
+                // doesn't.
+                bool spareBottle = held.itemId != ItemId(163) && !held.isReagent() &&
+                                   entry->itemId != ItemId(163) && !entry->isReagent();
+                entry->itemId = result;
+                if (!pItemTable->items[entry->itemId].identifyAndRepairDifficulty)
+                    entry->flags |= ITEM_IDENTIFIED;
+                pParty->activeCharacter().playReaction(SPEECH_POTION_SUCCESS);
+                pParty->takeHoldingItem();
+                rightClickItemActionPerformed = true;
+                if (spareBottle) {
+                    InventoryEntry bottle = pParty->activeCharacter().inventory.tryAdd(Item(ItemId(163)));
+                    if (bottle) {
+                        bottle->flags = ITEM_IDENTIFIED;
+                    } else {
+                        // Can't fit the bottle in the inventory - place it in hand.
+                        Item spare;
+                        spare.itemId = ItemId(163);
+                        spare.flags = ITEM_IDENTIFIED;
+                        pParty->setHoldingItem(spare);
+                    }
+                }
+                return;
+            }
+        }
+        GameUI_DrawItemInfo(entry.get());
+        return;
+    }
+
     CombinedSkillValue alchemySkill = pParty->activeCharacter().getActualSkillValue(SKILL_ALCHEMY);
 
     if (pParty->pPickedItem.itemId == ITEM_POTION_BOTTLE) {
@@ -2111,32 +2184,7 @@ void Inventory_ItemPopupAndAlchemy() {
         }
 
         if (damage_level > 0) {
-            pParty->activeCharacter().inventory.take(entry);
-
-            if (damage_level == 1) {
-                pParty->activeCharacter().receiveDamage(grng->random(11) + 10, DAMAGE_FIRE);
-            } else if (damage_level == 2) {
-                pParty->activeCharacter().receiveDamage(grng->random(71) + 30, DAMAGE_FIRE);
-                pParty->activeCharacter().ItemsPotionDmgBreak(1);  // break 1
-            } else if (damage_level == 3) {
-                pParty->activeCharacter().receiveDamage(grng->random(201) + 50, DAMAGE_FIRE);
-                pParty->activeCharacter().ItemsPotionDmgBreak(5);  // break 5
-            } else if (damage_level >= 4) {
-                pParty->activeCharacter().SetCondition(CONDITION_ERADICATED, 0);
-                pParty->activeCharacter().ItemsPotionDmgBreak(0);  // break everything
-            }
-
-            pAudioPlayer->playUISound(SOUND_fireBall);
-            engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 0, 0);
-
-            Vec3f pos = pParty->pos + Vec3f(0, 0, pParty->eyeLevel) + Vec3f::fromPolar(64, pParty->_viewYaw, pParty->_viewPitch);
-            SpriteObject::dropItemAt(SPRITE_SPELL_FIRE_FIREBALL_IMPACT, pos, 0);
-            if (pParty->activeCharacter().CanAct()) {
-                pParty->activeCharacter().playReaction(SPEECH_POTION_EXPLODE);
-            }
-            engine->_statusBar->setEvent(LSTR_OOOPS);
-            pParty->takeHoldingItem();
-            rightClickItemActionPerformed = true;
+            explodeFromPotionMixing(damage_level, entry);
             return;
         } else {  // if ( damage_level == 0 )
             if (entry->itemId == ITEM_POTION_CATALYST && pParty->pPickedItem.itemId == ITEM_POTION_CATALYST) {

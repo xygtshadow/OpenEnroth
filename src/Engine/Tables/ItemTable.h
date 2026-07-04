@@ -97,3 +97,15 @@ struct ItemTable {
 };
 
 extern ItemTable *pItemTable;
+
+/**
+ * MM6 potion & herb combination lookup. MM6 mixing is recipe-less: the full matrix ships in
+ * useitems.txt (a dev-notes table in icons.lod), and this function encodes it.
+ *
+ * @return                              `ITEM_NULL` when nothing happens (same potion, two whites,
+ *                                      two blacks, a bottle on a potion, a herb on anything but a
+ *                                      bottle). Ids in `[1, 4]` denote the E1..E4 explosion tiers,
+ *                                      the same encoding MM7's potion.txt parse uses. Otherwise
+ *                                      the resulting item id.
+ */
+ItemId mm6PotionCombination(ItemId held, ItemId target);

@@ -369,6 +369,67 @@ Segment<ItemId> ItemTable::spawnableArtifacts() const {
     return {ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT};
 }
 
+ItemId mm6PotionCombination(ItemId held, ItemId target) {
+    // useitems.txt categories: herbs 160-162, empty Potion Bottle 163, colored potions 164-169,
+    // white potions 170-177, black potions 178-188. The matrix is symmetric.
+    int a = std::to_underlying(held);
+    int b = std::to_underlying(target);
+    if (a > b)
+        std::swap(a, b);
+    if (a < 160 || b > 188)
+        return ITEM_NULL;
+
+    if (a <= 162) { // Herbs fill an empty bottle and combine with nothing else.
+        if (b != 163)
+            return ITEM_NULL;
+        switch (a) {
+            case 160: return ItemId(166); // Poppysnaps -> Energy.
+            case 161: return ItemId(165); // Phirna Root -> Magic.
+            case 162: return ItemId(164); // Widoweeps Berries -> Cure Wounds.
+            default: assert(false); return ITEM_NULL;
+        }
+    }
+    if (a == 163 || a == b) // A bottle onto a potion, or two same potions: nothing happens.
+        return ITEM_NULL;
+
+    switch (a * 1000 + b) { // The 22 recipes.
+        case 164165: return ItemId(169); // Cure Wounds + Magic = Cure Poison.
+        case 164166: return ItemId(167); // Cure Wounds + Energy = Protection.
+        case 164167: return ItemId(174); // Cure Wounds + Protection = Heroism.
+        case 164174: return ItemId(181); // Cure Wounds + Heroism = Pure Might.
+        case 164175: return ItemId(186); // Cure Wounds + Haste = Pure Speed.
+        case 165166: return ItemId(168); // Magic + Energy = Resistance.
+        case 165167: return ItemId(176); // Magic + Protection = Stone Skin.
+        case 165168: return ItemId(173); // Magic + Resistance = Super Resistance.
+        case 165169: return ItemId(177); // Magic + Cure Poison = Bless.
+        case 165171: return ItemId(183); // Magic + Restoration = Pure Personality.
+        case 165176: return ItemId(182); // Magic + Stone Skin = Pure Intellect.
+        case 166167: return ItemId(172); // Energy + Protection = Extreme Energy.
+        case 166168: return ItemId(175); // Energy + Resistance = Haste.
+        case 166170: return ItemId(184); // Energy + Supreme Protection = Pure Endurance.
+        case 166177: return ItemId(185); // Energy + Bless = Pure Accuracy.
+        case 167168: return ItemId(170); // Protection + Resistance = Supreme Protection.
+        case 167171: return ItemId(179); // Protection + Restoration = Divine Cure.
+        case 168169: return ItemId(171); // Resistance + Cure Poison = Restoration.
+        case 168172: return ItemId(188); // Resistance + Extreme Energy = Rejuvenation.
+        case 168173: return ItemId(180); // Resistance + Super Resistance = Divine Magic.
+        case 169172: return ItemId(178); // Cure Poison + Extreme Energy = Divine Power.
+        case 169173: return ItemId(187); // Cure Poison + Super Resistance = Pure Luck.
+        default: break;
+    }
+
+    // Everything else explodes, tier by category - except two whites or two blacks, which
+    // don't react at all.
+    auto category = [](int id) { return id <= 169 ? 0 : id <= 177 ? 1 : 2; };
+    int categoryA = category(a);
+    int categoryB = category(b);
+    if (categoryA == categoryB)
+        return categoryA == 0 ? ItemId(1) : ITEM_NULL; // Two colored: E1.
+    if (categoryA == 0)
+        return categoryB == 1 ? ItemId(2) : ItemId(3); // Colored + white: E2; colored + black: E3.
+    return ItemId(4); // White + black: E4.
+}
+
 //----- (00456D84) --------------------------------------------------------
 void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version) {
     this->version = version;
@@ -392,8 +453,9 @@ void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version
     }
     LoadItemSizes();
 
-    // Patch up the data - we want wetsuits to be armor.
-    items[ITEM_QUEST_WETSUIT].type = ITEM_TYPE_ARMOUR;
+    // Patch up the data - we want wetsuits to be armor. Item 604 is an empty slot in MM6.
+    if (version != GAME_VERSION_MM6)
+        items[ITEM_QUEST_WETSUIT].type = ITEM_TYPE_ARMOUR;
 }
 
 //----- (00453B3C) --------------------------------------------------------

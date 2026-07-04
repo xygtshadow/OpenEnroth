@@ -3211,17 +3211,20 @@ void Character::useItem(int targetCharacter, bool isPortraitClick) {
         return;
     }
     if (pParty->pPickedItem.isReagent()) {
-        // TODO(Nik-RE-dev): this looks like some artifact from MM6 (where you can eat reagents)
-        // In MM7 these item IDs are invalid (plus index 161 used twice which is wrong)
-        if (pParty->pPickedItem.itemId == ITEM_161) {
+        // MM6 herbs are edible (useitems.txt): Poppysnaps set weak poison, Phirna Root restores
+        // 2 spell points, Widoweeps Berries heal 2 hit points. MM7 reagents are not edible -
+        // this code used to be a broken remnant of the MM6 mechanic (MM7-invalid item ids, with
+        // id 161 checked twice).
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        if (isMm6 && pParty->pPickedItem.itemId == ItemId(160)) { // Poppysnaps.
             playerAffected->SetCondition(CONDITION_POISON_WEAK, 1);
-        } else if (pParty->pPickedItem.itemId == ITEM_161) {
+        } else if (isMm6 && pParty->pPickedItem.itemId == ItemId(161)) { // Phirna Root.
             playerAffected->mana += 2;
             if (playerAffected->mana > playerAffected->GetMaxMana()) {
                 playerAffected->mana = playerAffected->GetMaxMana();
             }
             playerAffected->playReaction(SPEECH_DRINK_POTION);
-        } else if (pParty->pPickedItem.itemId == ITEM_162) {
+        } else if (isMm6 && pParty->pPickedItem.itemId == ItemId(162)) { // Widoweeps Berries.
             playerAffected->Heal(2);
             playerAffected->playReaction(SPEECH_DRINK_POTION);
         } else {
@@ -3268,7 +3271,13 @@ void Character::useItem(int targetCharacter, bool isPortraitClick) {
         } else {
             this->SetRecoveryTime(debug_non_combat_recovery_mul * flt_debugrecmod3 * 100_ticks);
         }
+        // Drinking changes the held potion into an empty Potion Bottle (useitems.txt:
+        // "Change Item to 163").
         pParty->takeHoldingItem();
+        Item bottle;
+        bottle.itemId = ItemId(163);
+        bottle.flags = ITEM_IDENTIFIED;
+        pParty->setHoldingItem(bottle);
         return;
     }
 
