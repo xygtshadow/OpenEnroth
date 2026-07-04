@@ -380,7 +380,8 @@ bool enterHouse(HouseId uHouseID) {
             playHouseSound(uHouseID, HOUSE_SOUND_MAGIC_GUILD_MEMBERS_ONLY);
             return true;
         }
-    } else if ((isStable(uHouseID) || isBoat(uHouseID)) && !isTravelAvailable(uHouseID)) {
+    } else if ((houseTable[uHouseID].uType == HOUSE_TYPE_STABLE || houseTable[uHouseID].uType == HOUSE_TYPE_BOAT) && !isTravelAvailable(uHouseID)) {
+        // Type-based check: MM6 transport house ids (48-68) collide with unrelated MM7 id ranges.
         return true;
     }
     playHouseSound(uHouseID, HOUSE_SOUND_GENERAL_GREETING);

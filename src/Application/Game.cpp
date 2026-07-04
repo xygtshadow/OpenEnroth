@@ -754,6 +754,23 @@ void Game::processQueuedMessages() {
                     autoSave();
                     uGameState = GAME_STATE_CHANGE_LOCATION;
                     engine->_transitionMapId = travelMapId;
+                    if (engine->gameVersion() == GAME_VERSION_MM6) {
+                        // MM6 border travel keeps the party position and flips the crossed axis to
+                        // the opposite border of the destination map. Passing z = 0 keeps the
+                        // "Party Start" z, the engine then settles the party onto the floor.
+                        Vec3f arrival = pParty->pos;
+                        constexpr float borderInset = 256.0f;
+                        if (pParty->pos.x < -maxPartyAxisDistance)
+                            arrival.x = maxPartyAxisDistance - borderInset;
+                        else if (pParty->pos.x > maxPartyAxisDistance)
+                            arrival.x = -maxPartyAxisDistance + borderInset;
+                        if (pParty->pos.y < -maxPartyAxisDistance)
+                            arrival.y = maxPartyAxisDistance - borderInset;
+                        else if (pParty->pos.y > maxPartyAxisDistance)
+                            arrival.y = -maxPartyAxisDistance + borderInset;
+                        arrival.z = 0.0f;
+                        engine->_teleportPoint.setTeleportTarget(arrival, -1, 0, 0);
+                    }
                     // TODO(Nik-RE-dev): rest and heal uncoditionally even if party does not have food?
                     restAndHeal(Duration::fromDays(getTravelTime()));
                     if (pParty->GetFood() > 0) {

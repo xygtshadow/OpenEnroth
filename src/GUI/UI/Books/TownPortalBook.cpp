@@ -85,6 +85,54 @@ static std::array<Recti, TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS> townPortalBu
     { 19, 243, 39, 36}, // Gloaming throne room
 }};
 
+// MM6 town portal destinations, from MM6.EXE 0x4C1F98 (TownPortalInfo[6], mapstats map ids)
+// and 0x4BCAE4.. (the six button rects over MM6's own "townport" map image). MM6 town portal
+// has no unlock quest bits.
+// TODO(rtaylor): MM6 skill fidelity - Normal teleports to the last town visited with a
+// 10%-per-skill-point success chance and works outdoors only; only Master gives this choice.
+static const std::array<TownPortalData, TOWN_PORTAL_DESTINATION_COUNT> townPortalListMm6 = {{
+    {Vec3f(-15079,  12878,  161), 1536, 0, static_cast<MapId>(5),  QBIT_INVALID}, // Blackshire
+    {Vec3f(  6991,  13438,   97),    0, 0, static_cast<MapId>(8),  QBIT_INVALID}, // Free Haven
+    {Vec3f(  3489, -14582,  257),    0, 0, static_cast<MapId>(14), QBIT_INVALID}, // Mist, Misty Islands
+    {Vec3f( -9705,  -6858,  161), 1536, 0, static_cast<MapId>(15), QBIT_INVALID}, // New Sorpigal
+    {Vec3f( 13146,  -9194,    1),    0, 0, static_cast<MapId>(10), QBIT_INVALID}, // Silver Cove
+    {Vec3f( -9138,  14518,   97),    0, 0, static_cast<MapId>(7),  QBIT_INVALID}, // White Cap, Frozen Highlands
+}};
+
+static const std::array<Recti, TOWN_PORTAL_DESTINATION_COUNT> townPortalButtonsPosMm6 = {{
+    {346, 280, 62, 31}, // Blackshire
+    {360, 186, 46, 42}, // Free Haven
+    {318, 121, 52, 26}, // Mist
+    {223, 156, 51, 30}, // New Sorpigal
+    {113, 150, 51, 33}, // Silver Cove
+    {192,  81, 54, 30}, // White Cap
+}};
+
+static const TownPortalData &townPortalDestination(int townId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return townPortalListMm6[townId];
+    return townPortalList[townId];
+}
+
+static const Recti &townPortalButtonPos(int townId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return townPortalButtonsPosMm6[townId];
+    return townPortalButtonsPos[townId];
+}
+
+static int townPortalDestinationCount() {
+    if (engine->gameVersion() != GAME_VERSION_MM6 && engine->config->debug.TownPortal.value())
+        return TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS;
+    return TOWN_PORTAL_DESTINATION_COUNT;
+}
+
+static bool townPortalUnlocked(int townId) {
+    if (engine->config->debug.TownPortal.value())
+        return true;
+    QuestBit qBit = townPortalDestination(townId).qBit;
+    return qBit == QBIT_INVALID || pParty->_questBits[qBit];
+}
+
 static std::array<GraphicsImage *, TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS> ui_book_townportal_icons;
 
 GraphicsImage *ui_book_townportal_background = nullptr;
@@ -96,25 +144,24 @@ GUIWindow_TownPortalBook::GUIWindow_TownPortalBook(Pid casterPid, SpellCastFlags
 
     ui_book_townportal_background = assets->getImage_Solid("townport");
 
-    ui_book_townportal_icons[0] = assets->getImage_ColorKey("tpharmndy");
-    ui_book_townportal_icons[1] = assets->getImage_ColorKey("tpelf");
-    ui_book_townportal_icons[2] = assets->getImage_ColorKey("tpwarlock");
-    ui_book_townportal_icons[3] = assets->getImage_ColorKey("tpisland");
-    ui_book_townportal_icons[4] = assets->getImage_ColorKey("tpheaven");
-    ui_book_townportal_icons[5] = assets->getImage_ColorKey("tphell");
+    if (engine->gameVersion() != GAME_VERSION_MM6) {
+        // MM6's own "townport" map image has no per-town highlight overlays.
+        ui_book_townportal_icons[0] = assets->getImage_ColorKey("tpharmndy");
+        ui_book_townportal_icons[1] = assets->getImage_ColorKey("tpelf");
+        ui_book_townportal_icons[2] = assets->getImage_ColorKey("tpwarlock");
+        ui_book_townportal_icons[3] = assets->getImage_ColorKey("tpisland");
+        ui_book_townportal_icons[4] = assets->getImage_ColorKey("tpheaven");
+        ui_book_townportal_icons[5] = assets->getImage_ColorKey("tphell");
 
-    // cheat locations
-    ui_townportal_cheat_destination_icon = assets->getImage_ColorKey("tab-an-2a");
-    for (int i = TOWN_PORTAL_DESTINATION_COUNT; i < TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS; ++i) {
-        ui_book_townportal_icons[i] = assets->getImage_ColorKey("tab-an-2b");
+        // cheat locations
+        ui_townportal_cheat_destination_icon = assets->getImage_ColorKey("tab-an-2a");
+        for (int i = TOWN_PORTAL_DESTINATION_COUNT; i < TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS; ++i) {
+            ui_book_townportal_icons[i] = assets->getImage_ColorKey("tab-an-2b");
+        }
     }
 
-    int count = TOWN_PORTAL_DESTINATION_COUNT;
-    if (engine->config->debug.TownPortal.value()) {
-        count = TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS;
-    }
-    for (int i = 0; i < count; ++i) {
-        CreateButton(fmt::format("TownPortalBook_Marker{}", i), townPortalButtonsPos[i].topLeft(), townPortalButtonsPos[i].size(), BUTTON_TYPE_NORMAL, UIMSG_HintTownPortal, UIMSG_ClickTownInTP, i);
+    for (int i = 0; i < townPortalDestinationCount(); ++i) {
+        CreateButton(fmt::format("TownPortalBook_Marker{}", i), townPortalButtonPos(i).topLeft(), townPortalButtonPos(i).size(), BUTTON_TYPE_NORMAL, UIMSG_HintTownPortal, UIMSG_ClickTownInTP, i);
     }
 }
 
@@ -123,12 +170,12 @@ void GUIWindow_TownPortalBook::Update() {
 
     Pointi cursorPos = mouse->position();
     bool townPortalCheats = engine->config->debug.TownPortal.value();
-    int count = townPortalCheats ? TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS : TOWN_PORTAL_DESTINATION_COUNT;
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
     render->DrawQuad2D(ui_book_townportal_background, {8, 8});
     render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
 
-    if (townPortalCheats) {
+    if (townPortalCheats && !isMm6) {
         // draw grey icons for cheat locations
         // ordinary locations are in the background image already
         for (int i = TOWN_PORTAL_DESTINATION_COUNT; i < TOWN_PORTAL_DESTINATION_COUNT_WITH_CHEATS; ++i) {
@@ -136,11 +183,11 @@ void GUIWindow_TownPortalBook::Update() {
         }
     }
 
-    // highlight the covered location
-    for (int i = 0; i < count; ++i) {
-        if (townPortalCheats || pParty->_questBits[townPortalList[i].qBit]) {
-            if (townPortalButtonsPos[i].contains(cursorPos)) {
-                render->DrawQuad2D(ui_book_townportal_icons[i], townPortalButtonsPos[i].topLeft());
+    // highlight the covered location (MM6 has no highlight overlays)
+    for (int i = 0; i < townPortalDestinationCount() && !isMm6; ++i) {
+        if (townPortalUnlocked(i)) {
+            if (townPortalButtonPos(i).contains(cursorPos)) {
+                render->DrawQuad2D(ui_book_townportal_icons[i], townPortalButtonPos(i).topLeft());
             }
         }
     }
@@ -150,25 +197,27 @@ void GUIWindow_TownPortalBook::Update() {
 
 void GUIWindow_TownPortalBook::clickTown(int townId) {
     // check if tp location is unlocked
-    if (!engine->config->debug.TownPortal.value() && !pParty->_questBits[townPortalList[townId].qBit]) {
+    if (!townPortalUnlocked(townId)) {
         return;
     }
+
+    const TownPortalData &town = townPortalDestination(townId);
 
     // begin TP
     autoSave();
     // if in current map
     // TODO(Nik-RE-dev): need separate function for teleportation to other maps
-    if (engine->_currentLoadedMapId == townPortalList[townId].mapInfoID) {
-        pParty->pos = townPortalList[townId].pos;
+    if (engine->_currentLoadedMapId == town.mapInfoID) {
+        pParty->pos = town.pos;
         pParty->uFallStartZ = pParty->pos.z;
-        pParty->_viewYaw = townPortalList[townId].viewYaw;
-        pParty->_viewPitch = townPortalList[townId].viewPitch;
+        pParty->_viewYaw = town.viewYaw;
+        pParty->_viewPitch = town.viewPitch;
     } else {  // if change map
         onMapLeave();
         dword_6BE364_game_settings_1 |= GAME_SETTINGS_SKIP_WORLD_UPDATE;
         uGameState = GAME_STATE_CHANGE_LOCATION;
-        engine->_transitionMapId = townPortalList[townId].mapInfoID;
-        engine->_teleportPoint.setTeleportTarget(townPortalList[townId].pos, townPortalList[townId].viewYaw, townPortalList[townId].viewPitch, 0);
+        engine->_transitionMapId = town.mapInfoID;
+        engine->_teleportPoint.setTeleportTarget(town.pos, town.viewYaw, town.viewPitch, 0);
         Actor::InitializeActors();
     }
 
@@ -206,10 +255,10 @@ void GUIWindow_TownPortalBook::clickTown(int townId) {
 }
 
 void GUIWindow_TownPortalBook::hintTown(int townId) {
-    if (!engine->config->debug.TownPortal.value() && !pParty->_questBits[townPortalList[townId].qBit]) {
+    if (!townPortalUnlocked(townId)) {
         render->DrawQuad2D(game_ui_statusbar, {0, 352}); // TODO(captainurist): engine->_statusBar->smthSmth()???
         return;
     }
 
-    engine->_statusBar->setPermanent(LSTR_TOWN_PORTAL_TO_S, pMapStats->pInfos[townPortalList[townId].mapInfoID].name);
+    engine->_statusBar->setPermanent(LSTR_TOWN_PORTAL_TO_S, pMapStats->pInfos[townPortalDestination(townId).mapInfoID].name);
 }

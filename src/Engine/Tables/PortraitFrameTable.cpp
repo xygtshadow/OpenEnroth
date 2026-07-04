@@ -29,9 +29,13 @@ int PortraitFrameTable::animationFrameIndex(int animationId, Duration frameTime)
             Duration frameTime = this->pFrames[animationId].frameLength;
             if (time < frameTime)
                 break;
+            // MM6's dpft.bin has expressions whose declared animation length exceeds the sum of
+            // their frame lengths - stay on the last frame instead of running into the frames of
+            // the next portrait. MM7 data never takes this branch.
+            if (animationId + 1 >= static_cast<int>(this->pFrames.size()) || this->pFrames[animationId + 1].portrait != PORTRAIT_INVALID)
+                break;
             time -= frameTime;
             ++animationId;
-            assert(this->pFrames[animationId].portrait == PORTRAIT_INVALID); // Shouldn't jump into another portrait.
         }
     }
     return pFrames[animationId].textureIndex;

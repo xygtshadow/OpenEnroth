@@ -24,6 +24,7 @@
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
+#include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/CharacterEnumFunctions.h"
@@ -47,6 +48,7 @@
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/Houses/Shops.h"
+#include "GUI/UI/Houses/Transport.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -2286,4 +2288,217 @@ GAME_TEST(Mm6, DeathRespawnsInNewSorpigal) {
     EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
     EXPECT_EQ(pParty->pos.x, -9728);
     EXPECT_EQ(pParty->pos.y, -11319);
+}
+
+GAME_TEST(Mm6, FootTravelAcrossBorders) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame(); // New Sorpigal, oute3 = grid cell E3.
+
+    // MM6 border travel is grid arithmetic on the "out<column><row>.odm" file name: E3 connects
+    // west to D3 (Castle Ironfist) and north to E2 (Misty Islands); east and south are off-grid.
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    MapId mist = pMapStats->GetMapInfo("oute2.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    ASSERT_NE(mist, MAP_INVALID);
+    EXPECT_EQ(pOutdoor->getTravelDestination(-23000, 0), ironfist);
+    EXPECT_EQ(pOutdoor->getTravelDestination(23000, 0), MAP_INVALID);
+    EXPECT_EQ(pOutdoor->getTravelDestination(0, 23000), mist);
+    EXPECT_EQ(pOutdoor->getTravelDestination(0, -23000), MAP_INVALID);
+    EXPECT_EQ(getTravelTime(), 5); // Walking always takes 5 days in MM6.
+
+    // Find dry land on the west border - the travel prompt won't open over water.
+    float borderY = 0.0f;
+    float borderZ = 0.0f;
+    bool found = false;
+    for (int y = -20000; y <= 20000 && !found; y += 512) {
+        bool isOnWater = false;
+        int floorFaceId = -1;
+        float z = ODM_GetFloorLevel(Vec3f(-22400, y, 3000), &isOnWater, &floorFaceId);
+        if (!isOnWater) {
+            borderY = y;
+            borderZ = z;
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+
+    game.teleportTo(engine->_currentLoadedMapId, Vec3f(-22400, borderY, borderZ), 270);
+    game.tick(3);
+
+    // Step across the border - the on-foot travel prompt opens, Y confirms.
+    Time timeBefore = pParty->GetPlayingTime();
+    pParty->pos.x = -22700;
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_CHANGE_LOCATION);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(10);
+
+    // 5 days later the party is at the opposite (east) border of Castle Ironfist,
+    // north-south position preserved.
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "outd3.odm");
+    EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_OUTDOOR);
+    EXPECT_GT(pParty->pos.x, 20000);
+    EXPECT_NEAR(pParty->pos.y, borderY, 1500);
+    EXPECT_EQ((pParty->GetPlayingTime() - timeBefore).days(), 5);
+    game.tick(10);
+}
+
+// Walks up to the outdoor door face wired to the given local event and opens it with SPACE.
+static void enterHouseThroughDoor(EngineController &game, int eventId) {
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == eventId && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+}
+
+// Advances whole days until the given transport house has an active route today.
+static void advanceToTravelDay(EngineController &game, HouseId houseId) {
+    for (int i = 0; i < 8 && !isTravelAvailable(houseId); i++) {
+        pParty->GetPlayingTime() += Duration::fromDays(1);
+        game.tick(1);
+    }
+    ASSERT_TRUE(isTravelAvailable(houseId));
+}
+
+// Clicks the Nth transport schedule line in an open stables/dock dialogue. The option buttons
+// are re-laid-out to rendered-text metrics on draw, so locate them by message param.
+static void selectTransportSchedule(EngineController &game, DialogueId scheduleLine) {
+    ASSERT_NE(pDialogueWindow, nullptr);
+    const GUIButton *option = nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(scheduleLine))
+            option = button;
+    ASSERT_NE(option, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, option->rect.x + option->rect.w / 2,
+                               option->rect.y + option->rect.h / 2);
+    game.tick(2);
+}
+
+GAME_TEST(Mm6, TravelByCoachAndBoat) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->SetGold(2000);
+
+    // New Sorpigal's transport houses from 2dEvents: 48 = stables, 57 = dock.
+    ASSERT_EQ(houseTable[HouseId(48)].uType, HOUSE_TYPE_STABLE);
+    ASSERT_EQ(houseTable[HouseId(57)].uType, HOUSE_TYPE_BOAT);
+
+    // Ride the coach to Castle Ironfist (schedule entry 0: Mon/Wed/Fri, 2 days).
+    advanceToTravelDay(game, HouseId(48));
+    enterHouseThroughDoor(game, 15); // oute3 event 15 = EnterHouse(48), the stables door.
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    ASSERT_EQ(window_SpeakInHouse->houseId(), HouseId(48));
+
+    int goldBefore = pParty->GetGold();
+    Time timeBefore = pParty->GetPlayingTime();
+    selectTransportSchedule(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
+    game.tick(10);
+
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "outd3.odm"); // Castle Ironfist.
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_NEAR(pParty->pos.x, 14317, 8); // MM6.EXE TravelInfo[0] arrival pose.
+    EXPECT_NEAR(pParty->pos.y, 2696, 8);
+    EXPECT_LT(pParty->GetGold(), goldBefore);
+    EXPECT_EQ((pParty->GetPlayingTime() - timeBefore).days(), 2);
+
+    // Back to New Sorpigal and sail to the Misty Islands (schedule entry 15: Tue/Thu/Sat, 3 days).
+    // The dock's EnterHouse(57) event (oute3 event 29) isn't wired to a clickable building face,
+    // so enter the house directly through the same path EVENT_SpeakInHouse takes.
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-9728, -11319, 160), 0);
+    game.tick(2);
+    advanceToTravelDay(game, HouseId(57));
+    ASSERT_TRUE(enterHouse(HouseId(57)));
+    createHouseUI(HouseId(57));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    ASSERT_EQ(window_SpeakInHouse->houseId(), HouseId(57));
+
+    goldBefore = pParty->GetGold();
+    timeBefore = pParty->GetPlayingTime();
+    selectTransportSchedule(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
+    game.tick(10);
+
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute2.odm"); // Misty Islands.
+    EXPECT_NEAR(pParty->pos.x, -4225, 8); // MM6.EXE TravelInfo[15] arrival pose.
+    EXPECT_NEAR(pParty->pos.y, -14604, 8);
+    EXPECT_LT(pParty->GetGold(), goldBefore);
+    EXPECT_EQ((pParty->GetPlayingTime() - timeBefore).days(), 3);
+    game.tick(10);
+}
+
+GAME_TEST(Mm6, TownPortal) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Cast Town Portal (all six MM6 towns are open - MM6 has no unlock quest bits) and
+    // click Free Haven on MM6's own map image.
+    engine->config->debug.AllMagic.setValue(true);
+    game.castSpell(1, SPELL_WATER_TOWN_PORTAL);
+    game.tick(2);
+    game.pressGuiButton("TownPortalBook_Marker1"); // Free Haven.
+    game.tick(2);
+    game.skipLoadingScreen();
+    game.tick(10);
+
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "outc2.odm"); // Free Haven.
+    EXPECT_NEAR(pParty->pos.x, 6991, 8); // MM6.EXE TownPortalInfo[1] fountain pose.
+    EXPECT_NEAR(pParty->pos.y, 13438, 8);
+    game.tick(10);
+}
+
+GAME_TEST(Mm6, LloydBeaconSaveRoundtrip) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Beacons serialize their map as a games.lod file index (MM6: 1-based over the sorted map
+    // files); both an outdoor and an indoor map id must survive a save/load roundtrip.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+
+    LloydBeacon outdoorBeacon;
+    outdoorBeacon.uBeaconTime = pParty->GetPlayingTime() + Duration::fromDays(7);
+    outdoorBeacon._partyPos = Vec3f(-9728, -11319, 160);
+    outdoorBeacon._partyViewYaw = 512;
+    outdoorBeacon.mapId = newSorpigal;
+    outdoorBeacon.image = GraphicsImage::Create(render->MakeViewportScreenshot(92, 68));
+    pParty->pCharacters[0].vBeacons[0] = outdoorBeacon;
+
+    LloydBeacon indoorBeacon = outdoorBeacon;
+    indoorBeacon.mapId = goblinwatch;
+    pParty->pCharacters[0].vBeacons[4] = indoorBeacon;
+
+    Blob save = game.saveGame();
+    game.loadGame(save);
+    game.tick(2);
+
+    ASSERT_TRUE(pParty->pCharacters[0].vBeacons[0].has_value());
+    EXPECT_EQ(pParty->pCharacters[0].vBeacons[0]->mapId, newSorpigal);
+    EXPECT_EQ(pParty->pCharacters[0].vBeacons[0]->_partyPos, Vec3f(-9728, -11319, 160));
+    ASSERT_TRUE(pParty->pCharacters[0].vBeacons[4].has_value());
+    EXPECT_EQ(pParty->pCharacters[0].vBeacons[4]->mapId, goblinwatch);
 }

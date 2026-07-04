@@ -7,6 +7,7 @@
 
 #include "Engine/ArenaEnumFunctions.h"
 #include "Engine/Engine.h"
+#include "Engine/MapInfo.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
@@ -126,6 +127,44 @@ static const std::unordered_map<MapId, uint16_t> gamesLodIndexByMapId = {
     {MAP_HALL_OF_THE_PIT, 75},
 };
 static const std::unordered_map<uint16_t, MapId> mapIdByGamesLodIndex = inverted(gamesLodIndexByMapId);
+
+/**
+ * MM6 beacons store a 1-based file index into games.lod. The MM6 games.lod directory holds
+ * the 67 map files first, sorted case-insensitively by file name (the delta files follow),
+ * so the index is exactly the case-insensitive rank of the map's file name among all
+ * mapstats entries. Computed from mapstats data instead of a hardcoded table.
+ */
+static uint16_t mm6GamesLodIndexByMapId(MapId mapId) {
+    if (mapId == MAP_INVALID || pMapStats->pInfos[mapId].fileName.empty())
+        return -1;
+    std::string fileName = ascii::toLower(pMapStats->pInfos[mapId].fileName);
+    uint16_t rank = 1;
+    for (MapId id : pMapStats->pInfos.indices()) {
+        std::string other = ascii::toLower(pMapStats->pInfos[id].fileName);
+        if (!other.empty() && other < fileName)
+            rank++;
+    }
+    return rank;
+}
+
+static MapId mm6MapIdByGamesLodIndex(uint16_t index) {
+    for (MapId id : pMapStats->pInfos.indices())
+        if (!pMapStats->pInfos[id].fileName.empty() && mm6GamesLodIndexByMapId(id) == index)
+            return id;
+    return MAP_INVALID;
+}
+
+static uint16_t gamesLodIndexForBeacon(MapId mapId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return mm6GamesLodIndexByMapId(mapId);
+    return valueOr(gamesLodIndexByMapId, mapId, static_cast<uint16_t>(-1));
+}
+
+static MapId beaconMapIdByGamesLodIndex(uint16_t index) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return mm6MapIdByGamesLodIndex(index);
+    return valueOr(mapIdByGamesLodIndex, index, MAP_INVALID);
+}
 
 static void snapshot(const Time &src, int64_t *dst) {
     *dst = src.ticks();
@@ -918,7 +957,7 @@ void snapshot(const Character &src, Character_MM7 *dst) {
         dst->installedBeacons[i].partyPosZ = src.vBeacons[i]->_partyPos.z;
         dst->installedBeacons[i].partyViewYaw = src.vBeacons[i]->_partyViewYaw;
         dst->installedBeacons[i].partyViewPitch = src.vBeacons[i]->_partyViewPitch;
-        dst->installedBeacons[i].mapIndexInGamesLod = valueOr(gamesLodIndexByMapId, src.vBeacons[i]->mapId, -1);
+        dst->installedBeacons[i].mapIndexInGamesLod = gamesLodIndexForBeacon(src.vBeacons[i]->mapId);
     }
 
     dst->numDivineInterventionCasts = src.uNumDivineInterventionCastsThisDay;
@@ -1160,7 +1199,7 @@ void reconstruct(const Character_MM7 &src, Character *dst, ContextTag<int> chara
             beacon._partyPos.z = src.installedBeacons[i].partyPosZ;
             beacon._partyViewYaw = src.installedBeacons[i].partyViewYaw;
             beacon._partyViewPitch = src.installedBeacons[i].partyViewPitch;
-            beacon.mapId = valueOr(mapIdByGamesLodIndex, src.installedBeacons[i].mapIndexInGamesLod, MAP_INVALID);
+            beacon.mapId = beaconMapIdByGamesLodIndex(src.installedBeacons[i].mapIndexInGamesLod);
             dst->vBeacons[i] = beacon;
         }
     }

@@ -280,17 +280,45 @@ bool OutdoorLocation::Initialize(std::string_view filename, int days_played,
     return false;
 }
 
+// MM6 has no foot-travel tables: the 15 outdoor maps form a 5x3 grid encoded right in the
+// map file names ("out<column><row>.odm", columns 'a'..'e' west to east, rows '1'..'3' north
+// to south), and MM6.EXE derives the destination by stepping to the adjacent grid cell
+// (sub_47BCA0). Any grid-adjacent crossing is allowed - map geometry alone gates the rest.
+// Crossing always takes 5 days, and the party keeps its position with the crossed axis
+// flipped to the opposite border (MM6 has no per-edge arrival points - its ddeclist.bin
+// only knows "Party Start").
+static MapId getTravelDestinationMm6(MapId currentMap, int direction) {
+    std::string fileName = ascii::toLower(pMapStats->pInfos[currentMap].fileName);
+    if (fileName.size() != 9 || !fileName.starts_with("out"))
+        return MAP_INVALID;
+
+    char column = fileName[3]; // 'a'..'e', west to east.
+    char row = fileName[4]; // '1'..'3', north to south.
+    switch (direction) {
+        case 0: row--; break; // north
+        case 1: row++; break; // south
+        case 2: column++; break; // east
+        case 3: column--; break; // west
+        default: assert(false); break;
+    }
+    if (column < 'a' || column > 'e' || row < '1' || row > '3')
+        return MAP_INVALID;
+
+    MapId destinationMap = pMapStats->GetMapInfo(fmt::format("out{}{}.odm", column, row));
+    if (destinationMap == MAP_INVALID)
+        return MAP_INVALID;
+
+    uDefaultTravelTime_ByFoot = 5;
+    uLevel_StartingPointType = MAP_START_POINT_PARTY;
+    return destinationMap;
+}
+
 MapId OutdoorLocation::getTravelDestination(int partyX, int partyY) {
     int direction;
     MapId currentMap = engine->_currentLoadedMapId;
     MapId destinationMap;
 
     if (!isMapOutdoor(currentMap))
-        return MAP_INVALID;
-
-    // The foot-travel tables below are keyed by MM7 map ids, which MM6 map ids collide with.
-    // MM6 border travel is a separate model and is not implemented yet.
-    if (engine->gameVersion() != GAME_VERSION_MM7)
         return MAP_INVALID;
 
     // Check which side of the map
@@ -304,6 +332,11 @@ MapId OutdoorLocation::getTravelDestination(int partyX, int partyY) {
         direction = 0; // north
     else
         return MAP_INVALID;
+
+    // The foot-travel tables below and the Avlee/Shoals special cases are keyed by MM7 map
+    // ids, which MM6 map ids collide with (MM6 id 15 = New Sorpigal is MAP_SHOALS).
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return getTravelDestinationMm6(currentMap, direction);
 
     if (currentMap == MAP_AVLEE && direction == 3) {  // to Shoals
         bool wholePartyUnderwaterSuitEquipped = true;
