@@ -18,6 +18,7 @@ class Character;
 struct Item {
     static void PopulateSpecialBonusMap();
     static void PopulateArtifactBonusMap();
+    static void PopulateArtifactBonusMapMm6();
 
     void GetItemBonusArtifact(const Character *owner, Attribute attrToGet, int *bonusSum) const;
     void GetItemBonusSpecialEnchantment(const Character *owner, Attribute attrToGet, int *additiveBonus, int *halfSkillBonus) const;

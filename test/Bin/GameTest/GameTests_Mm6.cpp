@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <string>
 #include <utility>
@@ -1274,4 +1275,124 @@ GAME_TEST(Mm6, DrinkPotions) {
     EXPECT_EQ(knight.sAgeModifier, 0);
     for (Attribute stat : knight._stats.indices())
         EXPECT_EQ(knight._stats[stat], statsBefore[stat] - 1);
+}
+
+GAME_TEST(Mm6, ArtifactPowers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &knight = pParty->pCharacters[0];
+    int casterIndex = -1; // Someone whose class has spell points, for the +N spell point powers.
+    for (int i = 0; i < pParty->pCharacters.size(); i++) {
+        if (pParty->pCharacters[i].GetMaxMana() >= 10) {
+            casterIndex = i;
+            break;
+        }
+    }
+    ASSERT_NE(casterIndex, -1);
+    Character &caster = pParty->pCharacters[casterIndex];
+
+    // Equips an MM6 artifact into its natural slot (freeing the slot first), runs the checks,
+    // and removes it again. The artifact bonus lookup iterates all equipped items, so freeing
+    // the slot only matters for the equip() free-slot precondition, not for the bonuses.
+    auto withEquipped = [&](Character &character, ItemSlot slot, int itemId, auto &&checks) {
+        if (InventoryEntry existing = character.inventory.entry(slot))
+            character.inventory.take(existing);
+        InventoryEntry entry = character.inventory.equip(slot, Item(ItemId(itemId)));
+        checks();
+        character.inventory.take(entry);
+    };
+
+    // Excalibur: +30 Might.
+    ASSERT_EQ(pItemTable->items[ItemId(403)].name, "Excalibur");
+    ASSERT_EQ(pItemTable->items[ItemId(403)].rarity, RARITY_ARTIFACT);
+    int mightBefore = knight.GetActualMight();
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 403, [&] {
+        EXPECT_EQ(knight.GetActualMight(), mightBefore + 30);
+    });
+    EXPECT_EQ(knight.GetActualMight(), mightBefore); // Gone once unequipped.
+
+    // Mordred is Vampiric only - no stat entries must have crept in.
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 400, [&] {
+        EXPECT_EQ(knight.GetActualMight(), mightBefore);
+    });
+
+    // Arthur: 'of the Gods' (+10 to all seven stats) and +25 spell points.
+    IndexedArray<int, ATTRIBUTE_FIRST_STAT, ATTRIBUTE_LAST_STAT> statsBefore;
+    for (Attribute stat : statsBefore.indices())
+        statsBefore[stat] = caster.GetActualStat(stat);
+    int manaBefore = caster.GetMaxMana();
+    withEquipped(caster, ITEM_SLOT_HELMET, 409, [&] {
+        for (Attribute stat : statsBefore.indices())
+            EXPECT_EQ(caster.GetActualStat(stat), statsBefore[stat] + 10);
+        // +10 to the mana stats bumps their step-function parameter bonus too, so the max
+        // spell points delta is at least the flat +25 the crown grants.
+        EXPECT_GE(caster.GetMaxMana(), manaBefore + 25);
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_MANA), 25);
+    });
+
+    // Galahad: 'of Protection' (+10 to the five MM6 resistances) and +25 hit points. MM6
+    // Elec/Cold/Poison map onto Air/Water/Earth and "Magic" fans out to Mind/Spirit/Body,
+    // like the potion and monsters.txt resistance mappings.
+    const std::array<Attribute, 7> allResistances = {
+        ATTRIBUTE_RESIST_FIRE, ATTRIBUTE_RESIST_AIR, ATTRIBUTE_RESIST_WATER,
+        ATTRIBUTE_RESIST_EARTH, ATTRIBUTE_RESIST_MIND, ATTRIBUTE_RESIST_SPIRIT,
+        ATTRIBUTE_RESIST_BODY};
+    std::array<int, 7> resistancesBefore;
+    for (size_t i = 0; i < allResistances.size(); i++)
+        resistancesBefore[i] = knight.GetActualResistance(allResistances[i]);
+    int healthBefore = knight.GetMaxHealth();
+    withEquipped(knight, ITEM_SLOT_ARMOUR, 406, [&] {
+        for (size_t i = 0; i < allResistances.size(); i++)
+            EXPECT_EQ(knight.GetActualResistance(allResistances[i]), resistancesBefore[i] + 10);
+        EXPECT_EQ(knight.GetMaxHealth(), healthBefore + 25);
+    });
+
+    // Odin: +50 to resistances at -40 Speed - relics carry downsides.
+    ASSERT_EQ(pItemTable->items[ItemId(424)].rarity, RARITY_RELIC);
+    int speedBefore = knight.GetActualSpeed();
+    withEquipped(knight, ITEM_SLOT_HELMET, 424, [&] {
+        for (size_t i = 0; i < allResistances.size(); i++)
+            EXPECT_EQ(knight.GetActualResistance(allResistances[i]), resistancesBefore[i] + 50);
+        EXPECT_EQ(knight.GetActualSpeed(), speedBefore - 40);
+    });
+
+    // Poseidon: +20 Might/Endurance/Accuracy, -10 AC and Speed. Armor class is checked via
+    // the item bonus - actual AC also moves with the speed parameter bonus.
+    int enduranceBefore = knight.GetActualEndurance();
+    int accuracyBefore = knight.GetActualAccuracy();
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 417, [&] {
+        EXPECT_EQ(knight.GetActualMight(), mightBefore + 20);
+        EXPECT_EQ(knight.GetActualEndurance(), enduranceBefore + 20);
+        EXPECT_EQ(knight.GetActualAccuracy(), accuracyBefore + 20);
+        EXPECT_EQ(knight.GetItemsBonus(ATTRIBUTE_AC_BONUS), -10);
+        EXPECT_EQ(knight.GetActualSpeed(), speedBefore - 10);
+    });
+
+    // Hera: +50 hit points, spell points and Luck for -50 Personality.
+    int casterHealthBefore = caster.GetMaxHealth();
+    int luckBefore = caster.GetActualLuck();
+    int personalityBefore = caster.GetActualPersonality();
+    withEquipped(caster, ITEM_SLOT_AMULET, 429, [&] {
+        EXPECT_EQ(caster.GetMaxHealth(), casterHealthBefore + 50);
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_MANA), 50);
+        EXPECT_EQ(caster.GetActualLuck(), luckBefore + 50);
+        EXPECT_EQ(caster.GetActualPersonality(), personalityBefore - 50);
+    });
+
+    // Guinevere: +30 spell points, 'of Light Magic' and 'of Dark Magic' - the school boosts
+    // add half the character's skill level to the effective skill, like MM7's Ruler's Ring.
+    caster.pActiveSkills[SKILL_LIGHT] = CombinedSkillValue(10, MASTERY_EXPERT);
+    caster.pActiveSkills[SKILL_DARK] = CombinedSkillValue(7, MASTERY_EXPERT);
+    withEquipped(caster, ITEM_SLOT_RING1, 412, [&] {
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_MANA), 30);
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_SKILL_LIGHT), 5);
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_SKILL_DARK), 3);
+        EXPECT_EQ(caster.GetItemsBonus(ATTRIBUTE_SKILL_FIRE), 0); // Only the two bound schools.
+    });
+    caster.pActiveSkills[SKILL_LIGHT] = CombinedSkillValue();
+    caster.pActiveSkills[SKILL_DARK] = CombinedSkillValue();
 }

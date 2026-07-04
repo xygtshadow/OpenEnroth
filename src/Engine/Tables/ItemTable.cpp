@@ -383,7 +383,13 @@ void ItemTable::Initialize(ResourceManager *resourceManager, GameVersion version
     LoadRandomItems(resourceManager->eventsData("rnditems.txt"), version);
 
     Item::PopulateSpecialBonusMap();
-    Item::PopulateArtifactBonusMap();
+    // The artifact bonus maps are keyed by item id, and the games' artifact id spaces differ
+    // (MM6: 400-429, MM7: 500-528), so each version populates its own set of entries.
+    if (version == GAME_VERSION_MM6) {
+        Item::PopulateArtifactBonusMapMm6();
+    } else {
+        Item::PopulateArtifactBonusMap();
+    }
     LoadItemSizes();
 
     // Patch up the data - we want wetsuits to be armor.

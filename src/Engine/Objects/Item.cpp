@@ -584,6 +584,149 @@ void Item::PopulateArtifactBonusMap() {
     AddToMap(artifactBonusMap, ITEM_ARTIFACT_LADYS_ESCORT, ATTRIBUTE_RESIST_BODY, 10);
 }
 
+// MM6 artifacts (ids 400-414) and relics (415-429) - a different id space and item set from
+// MM7's, so ItemId(N) here means MM6's item N. Stat numbers follow the items.txt descriptions,
+// which the community references confirm match the original engine. Only stat-style bonuses
+// live in this map; the behavioral powers (Mordred's Vampiric, Thor's Force, Conan's slaying,
+// Merlin/Percival's Swiftness, Percival's Carnage, Pellinore's hit recovery & regeneration,
+// Valeria/Aegis' Shielding, Pendragon/Hades' Thievery, the poison/stone immunities, Hades'
+// negative regeneration and the weapon elemental damage) are tracked in
+// docs/pending/mm6-item-model.md.
+void Item::PopulateArtifactBonusMapMm6() {
+    // MM6's five resistances: Elec/Cold/Poison map onto Air/Water/Earth and the single
+    // non-elemental "Magic" one fans out to Mind/Spirit/Body, mirroring the monsters.txt
+    // and potion resistance mappings.
+    const auto addToAllResistances = [](ItemId itemId, int bonusValue) {
+        for (Attribute attribute : {ATTRIBUTE_RESIST_FIRE, ATTRIBUTE_RESIST_AIR,
+                                    ATTRIBUTE_RESIST_WATER, ATTRIBUTE_RESIST_EARTH,
+                                    ATTRIBUTE_RESIST_MIND, ATTRIBUTE_RESIST_SPIRIT,
+                                    ATTRIBUTE_RESIST_BODY})
+            AddToMap(artifactBonusMap, itemId, attribute, bonusValue);
+    };
+
+    // Mordred (400) is Vampiric, Thor (401) is Force and Conan (402) is Devil and Dragon
+    // Slaying - behavioral powers only, no stat entries.
+
+    // Excalibur: +30 Might.
+    AddToMap(artifactBonusMap, ItemId(403), ATTRIBUTE_MIGHT, 30);
+
+    // Merlin: Swiftness and +40 Spell Points.
+    AddToMap(artifactBonusMap, ItemId(404), ATTRIBUTE_MANA, 40);
+
+    // Percival (405) is Swiftness and Carnage - no stat entries.
+
+    // Galahad: Protection (+10 to resistances) and +25 Hit Points.
+    AddToMap(artifactBonusMap, ItemId(406), ATTRIBUTE_HEALTH, 25);
+    addToAllResistances(ItemId(406), 10);
+
+    // Pellinore: +30 Endurance, Hit Recovery and Hit Point Regeneration.
+    AddToMap(artifactBonusMap, ItemId(407), ATTRIBUTE_ENDURANCE, 30);
+
+    // Valeria: Shielding and +30 Accuracy.
+    AddToMap(artifactBonusMap, ItemId(408), ATTRIBUTE_ACCURACY, 30);
+
+    // Arthur: 'of the Gods' (+10 to all seven statistics) and +25 Spell Points.
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_MIGHT, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_INTELLIGENCE, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_PERSONALITY, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_ENDURANCE, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_ACCURACY, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_SPEED, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_LUCK, 10);
+    AddToMap(artifactBonusMap, ItemId(409), ATTRIBUTE_MANA, 25);
+
+    // Pendragon: +30 Luck, Thievery and Immunity to Poison.
+    AddToMap(artifactBonusMap, ItemId(410), ATTRIBUTE_LUCK, 30);
+
+    // Lucius: +30 Speed.
+    AddToMap(artifactBonusMap, ItemId(411), ATTRIBUTE_SPEED, 30);
+
+    // Guinevere: +30 Spell Points, 'of Light Magic' and 'of Dark Magic' - the school powers
+    // add half the character's skill level to the effective skill, as in MM7.
+    AddToMap(artifactBonusMap, ItemId(412), ATTRIBUTE_MANA, 30);
+    AddToMap(artifactBonusMap, ItemId(412), ATTRIBUTE_SKILL_LIGHT, 0, SKILL_LIGHT);
+    AddToMap(artifactBonusMap, ItemId(412), ATTRIBUTE_SKILL_DARK, 0, SKILL_DARK);
+
+    // Igraine: +25 Spell Points and 'of Body, Mind, and Spirit Magic'.
+    AddToMap(artifactBonusMap, ItemId(413), ATTRIBUTE_MANA, 25);
+    AddToMap(artifactBonusMap, ItemId(413), ATTRIBUTE_SKILL_BODY, 0, SKILL_BODY);
+    AddToMap(artifactBonusMap, ItemId(413), ATTRIBUTE_SKILL_MIND, 0, SKILL_MIND);
+    AddToMap(artifactBonusMap, ItemId(413), ATTRIBUTE_SKILL_SPIRIT, 0, SKILL_SPIRIT);
+
+    // Morgan: +20 Spell Points and 'of Fire, Air, Water, and Earth Magic'.
+    AddToMap(artifactBonusMap, ItemId(414), ATTRIBUTE_MANA, 20);
+    AddToMap(artifactBonusMap, ItemId(414), ATTRIBUTE_SKILL_FIRE, 0, SKILL_FIRE);
+    AddToMap(artifactBonusMap, ItemId(414), ATTRIBUTE_SKILL_AIR, 0, SKILL_AIR);
+    AddToMap(artifactBonusMap, ItemId(414), ATTRIBUTE_SKILL_WATER, 0, SKILL_WATER);
+    AddToMap(artifactBonusMap, ItemId(414), ATTRIBUTE_SKILL_EARTH, 0, SKILL_EARTH);
+
+    // Hades: +20 Poison Damage, +20 Luck, Thievery and Negative Regeneration.
+    AddToMap(artifactBonusMap, ItemId(415), ATTRIBUTE_LUCK, 20);
+
+    // Ares: +30 Fire Damage and +25 Fire Resistance.
+    AddToMap(artifactBonusMap, ItemId(416), ATTRIBUTE_RESIST_FIRE, 25);
+
+    // Poseidon: +20 Might, +20 Endurance, +20 Accuracy, -10 Armor Class and -10 Speed.
+    AddToMap(artifactBonusMap, ItemId(417), ATTRIBUTE_MIGHT, 20);
+    AddToMap(artifactBonusMap, ItemId(417), ATTRIBUTE_ENDURANCE, 20);
+    AddToMap(artifactBonusMap, ItemId(417), ATTRIBUTE_ACCURACY, 20);
+    AddToMap(artifactBonusMap, ItemId(417), ATTRIBUTE_AC_BONUS, -10);
+    AddToMap(artifactBonusMap, ItemId(417), ATTRIBUTE_SPEED, -10);
+
+    // Cronos: +100 Hit Points and -50 Luck.
+    AddToMap(artifactBonusMap, ItemId(418), ATTRIBUTE_HEALTH, 100);
+    AddToMap(artifactBonusMap, ItemId(418), ATTRIBUTE_LUCK, -50);
+
+    // Hercules: +50 Might, +20 Endurance and -30 Intellect.
+    AddToMap(artifactBonusMap, ItemId(419), ATTRIBUTE_MIGHT, 50);
+    AddToMap(artifactBonusMap, ItemId(419), ATTRIBUTE_ENDURANCE, 20);
+    AddToMap(artifactBonusMap, ItemId(419), ATTRIBUTE_INTELLIGENCE, -30);
+
+    // Artemis: +20 Electricity damage and -10 to Resistances.
+    addToAllResistances(ItemId(420), -10);
+
+    // Apollo: +20 to Resistances, +20 Luck and -30 Endurance.
+    addToAllResistances(ItemId(421), 20);
+    AddToMap(artifactBonusMap, ItemId(421), ATTRIBUTE_LUCK, 20);
+    AddToMap(artifactBonusMap, ItemId(421), ATTRIBUTE_ENDURANCE, -30);
+
+    // Zeus: +50 Hit Points, +50 Spell Points, +50 Luck and -50 Intellect.
+    AddToMap(artifactBonusMap, ItemId(422), ATTRIBUTE_HEALTH, 50);
+    AddToMap(artifactBonusMap, ItemId(422), ATTRIBUTE_MANA, 50);
+    AddToMap(artifactBonusMap, ItemId(422), ATTRIBUTE_LUCK, 50);
+    AddToMap(artifactBonusMap, ItemId(422), ATTRIBUTE_INTELLIGENCE, -50);
+
+    // Aegis: Immunity to Flesh to Stone, Shielding, +20 Luck and -20 Speed.
+    AddToMap(artifactBonusMap, ItemId(423), ATTRIBUTE_LUCK, 20);
+    AddToMap(artifactBonusMap, ItemId(423), ATTRIBUTE_SPEED, -20);
+
+    // Odin: +50 to Resistances and -40 Speed.
+    addToAllResistances(ItemId(424), 50);
+    AddToMap(artifactBonusMap, ItemId(424), ATTRIBUTE_SPEED, -40);
+
+    // Atlas: +100 Might and -40 Speed.
+    AddToMap(artifactBonusMap, ItemId(425), ATTRIBUTE_MIGHT, 100);
+    AddToMap(artifactBonusMap, ItemId(425), ATTRIBUTE_SPEED, -40);
+
+    // Hermes: +100 Speed and -40 Accuracy.
+    AddToMap(artifactBonusMap, ItemId(426), ATTRIBUTE_SPEED, 100);
+    AddToMap(artifactBonusMap, ItemId(426), ATTRIBUTE_ACCURACY, -40);
+
+    // Aphrodite: +100 Personality and -40 Luck.
+    AddToMap(artifactBonusMap, ItemId(427), ATTRIBUTE_PERSONALITY, 100);
+    AddToMap(artifactBonusMap, ItemId(427), ATTRIBUTE_LUCK, -40);
+
+    // Athena: +100 Intellect and -40 Might.
+    AddToMap(artifactBonusMap, ItemId(428), ATTRIBUTE_INTELLIGENCE, 100);
+    AddToMap(artifactBonusMap, ItemId(428), ATTRIBUTE_MIGHT, -40);
+
+    // Hera: +50 Hit Points, +50 Spell Points, +50 Luck and -50 Personality.
+    AddToMap(artifactBonusMap, ItemId(429), ATTRIBUTE_HEALTH, 50);
+    AddToMap(artifactBonusMap, ItemId(429), ATTRIBUTE_MANA, 50);
+    AddToMap(artifactBonusMap, ItemId(429), ATTRIBUTE_LUCK, 50);
+    AddToMap(artifactBonusMap, ItemId(429), ATTRIBUTE_PERSONALITY, -50);
+}
+
 void Item::GetItemBonusSpecialEnchantment(const Character *owner,
                                              Attribute attrToGet,
                                              int *additiveBonus,
