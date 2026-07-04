@@ -2111,6 +2111,87 @@ GAME_TEST(Mm6, SeasonsChangeTerrain) {
     EXPECT_GT(winter[TILESET_SNOW], 0);
 }
 
+GAME_TEST(Mm6, SaveLoadRoundtrip) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Party-state mutations that must survive the .mm6 save.
+    pParty->SetGold(1234);
+    pParty->_questBits[static_cast<QuestBit>(100)] = true;
+
+    // Map-delta mutation on New Sorpigal: the first placed peasant of oute3.ddm dies.
+    auto isFirstPeasant = [](const Actor &actor) {
+        return std::to_underlying(actor.monsterId) == 123 && actor.initialPosition == Vec3f(-10296, -7528, 160);
+    };
+    auto peasant = std::ranges::find_if(pActors, isFirstPeasant);
+    ASSERT_NE(peasant, pActors.end());
+    peasant->aiState = Dead;
+    peasant->hp = 0;
+
+    // Leave through a REAL transition - the Abandoned Temple of Baa door (event 102) - because
+    // that's the path that autosaves and thereby serializes oute3's delta into the save's
+    // map-delta set. The teleportTo() test shortcut skips the autosave on purpose.
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 102 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f doorPos = doorCenter + door->facePlane.normal * 130;
+    doorPos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - doorPos.x, doorCenter.y - doorPos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, doorPos, yawDegrees); // Same-map teleport, no transition.
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(5);
+    ASSERT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "d02.blv");
+
+    // Indoor map-delta mutation: chest 0 has been opened.
+    ASSERT_FALSE(vChests.empty());
+    EXPECT_FALSE(vChests[0].flags & CHEST_OPENED);
+    vChests[0].flags |= CHEST_OPENED;
+
+    Vec3f savedPos = pParty->pos;
+
+    // Save, then load the save back.
+    Blob save = game.saveGame();
+    game.loadGame(save);
+    game.tick(1);
+
+    // We're back in the Abandoned Temple with the party state intact.
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "d02.blv");
+    EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_INDOOR);
+    EXPECT_NEAR(pParty->pos.x, savedPos.x, 1);
+    EXPECT_NEAR(pParty->pos.y, savedPos.y, 1);
+    EXPECT_NEAR(pParty->pos.z, savedPos.z, 1);
+    EXPECT_EQ(pParty->GetGold(), 1234);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(100)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(81)]); // New-game quest bits are still there.
+    EXPECT_TRUE(pParty->hasItem(static_cast<ItemId>(505))); // Roderick still carries The Letter.
+    EXPECT_TRUE(vChests[0].flags & CHEST_OPENED); // The current map's delta came from the save.
+
+    // Returning to New Sorpigal reloads its delta from the save rather than respawning the map:
+    // the peasant is still dead.
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    auto deadPeasant = std::ranges::find_if(pActors, isFirstPeasant);
+    ASSERT_NE(deadPeasant, pActors.end());
+    EXPECT_EQ(deadPeasant->aiState, Dead);
+    EXPECT_EQ(deadPeasant->hp, 0);
+}
+
 GAME_TEST(Mm6, EndgameWinAndLose) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

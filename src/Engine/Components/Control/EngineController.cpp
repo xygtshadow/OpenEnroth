@@ -229,8 +229,11 @@ Blob EngineController::saveGame() {
 }
 
 void EngineController::loadGame(const Blob &savedGame) {
+    // Save files are version-named (.mm6/.mm7) and the savegame list filters by extension.
+    std::string saveName = "!!!save" + saveFileExtension();
+
     MemoryFileSystem ramFs("ramfs");
-    ramFs.write("saves/!!!save.mm7", savedGame);
+    ramFs.write("saves/" + saveName, savedGame);
 
     ScopedRollback<FileSystem *> rollback(&ufs, &ramFs);
 
@@ -241,7 +244,7 @@ void EngineController::loadGame(const Blob &savedGame) {
     tick(1);
 
     assert(pSavegameList->pSavegameUsedSlots[0]);
-    assert(pSavegameList->pFileList[0] == "!!!save.mm7");
+    assert(pSavegameList->pFileList[0] == saveName);
 
     pressGuiButton("LoadMenu_Slot0");
     tick(2);

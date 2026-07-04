@@ -42,7 +42,7 @@ std::unordered_map<std::string, Blob> pMapDeltas;
 
 // Save files are named after the game version so MM6 and MM7 sessions don't see each other's
 // (mutually incompatible) saves. The save format itself is OpenEnroth's either way.
-static std::string saveFileExtension() {
+std::string saveFileExtension() {
     return engine->gameVersion() == GAME_VERSION_MM6 ? ".mm6" : ".mm7";
 }
 

@@ -2368,7 +2368,10 @@ void Actor::ActorDamageFromMonster(Pid attacker_id,
 std::string Actor::GetDisplayName() const {
     if (uniqueNameIndex)
         return pMonsterStats->uniqueNames[uniqueNameIndex];
-    if (npcId)
+    // MM6 ddm actors carry raw npcId values that are not MM7-style NPC references - only the
+    // lazily generated street citizens (npcId >= 5000) link to actual NPC data.
+    bool npcIdIsNpcLink = engine->gameVersion() == GAME_VERSION_MM6 ? npcId >= 5000 : npcId != 0;
+    if (npcIdIsNpcLink)
         return NameAndTitle(getNPCData(npcId));
     return pMonsterStats->infos[monsterInfo.id].name;
 }

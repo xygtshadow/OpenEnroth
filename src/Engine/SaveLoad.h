@@ -60,6 +60,7 @@ struct SavegameList {
 };
 
 void loadGame(int uSlot);
+std::string saveFileExtension();
 std::pair<SaveGameHeader, Blob> createSaveData(bool resetWorld, std::string_view title);
 SaveGameHeader saveGame(bool isAutoSave, bool resetWorld, std::string_view path, std::string_view title = {});
 void autoSave();
