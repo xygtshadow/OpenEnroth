@@ -127,6 +127,13 @@ class Character {
     bool IsUnarmed() const;
     bool wearsEnchantedItem(ItemEnchantment enchantment) const;
     bool wearsItem(ItemId itemId) const;
+
+    /**
+     * @return                          Whether an equipped item halves incoming missile damage - the 'of Shielding'
+     *                                  and 'of Storm' enchantments plus the per-version shielding artifacts
+     *                                  (MM7: Governor's Armor, Kelebrim, Elfbane; MM6: Valeria, Aegis).
+     */
+    bool wearsShieldingItem() const;
     int StealFromShop(Item *itemToSteal, int extraStealDifficulty,
                       int reputation, int extraStealFine, int *fineIfFailed);
     StealResult StealFromActor(int uActorID, int _steal_perm, int reputation);

@@ -777,9 +777,10 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
         case SPRITE_PROJECTILE_ARROW:
         case SPRITE_PROJECTILE_FLAMING_ARROW: {
             // Note that ITEM_SPELLBOOK_FIREBALL is an MM6 remnant here,
-            // in MM6 it was Percival artifact (id 405) which has swiftness and carnage enchantments
+            // in MM6 it was Percival artifact (id 405) which has swiftness and carnage enchantments -
+            // grantsCarnage() handles the real thing in MM6 sessions.
             if (object->containing_item.itemId != ITEM_SPELLBOOK_FIREBALL &&
-                object->containing_item.specialEnchantment != ITEM_ENCHANTMENT_OF_CARNAGE) {
+                !object->containing_item.grantsCarnage()) {
                 object->spellSpriteStop();
                 applySpellSpriteDamage(uLayingItemID, pid);
                 SpriteObject::OnInteraction(uLayingItemID);

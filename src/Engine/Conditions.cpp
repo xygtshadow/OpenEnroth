@@ -125,9 +125,22 @@ bool blockCondition(Character *character, Condition condition) {
     if (entry.enchantment != ITEM_ENCHANTMENT_NULL && character->wearsEnchantedItem(entry.enchantment))
         return true;
 
-    for (ItemId itemId : entry.items)
-        if (itemId != ITEM_NULL && character->wearsItem(itemId))
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // The condition-blocking artifacts are per-version - conditionArray carries MM7 ids
+        // (harmless in MM6, where those ids are unequippable scrolls). MM6 has two:
+        // Pendragon grants Immunity to Poison and Aegis Immunity to Flesh to Stone.
+        bool blockedByArtifact =
+            (condition == CONDITION_POISON_WEAK || condition == CONDITION_POISON_MEDIUM ||
+             condition == CONDITION_POISON_SEVERE) ? character->wearsItem(ITEM_MM6_ARTIFACT_PENDRAGON)
+            : condition == CONDITION_PETRIFIED ? character->wearsItem(ITEM_MM6_RELIC_AEGIS)
+            : false;
+        if (blockedByArtifact)
             return true;
+    } else {
+        for (ItemId itemId : entry.items)
+            if (itemId != ITEM_NULL && character->wearsItem(itemId))
+                return true;
+    }
 
     return false;
 }

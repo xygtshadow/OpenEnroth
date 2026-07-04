@@ -53,7 +53,28 @@ int Item::_439DF3_get_additional_damage(DamageType *damage_type,
     if (itemId == ITEM_NULL) return 0;
 
     UpdateTempBonus(pParty->GetPlayingTime());
-    if (itemId == ITEM_ARTIFACT_IRON_FEATHER) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 artifact weapon powers. The damage types follow the MM6 resistance mapping
+        // used everywhere else: Poison maps onto Earth and Electricity onto Air. Special
+        // enchantments are shared with MM7, so the switch below still applies.
+        if (itemId == ITEM_MM6_ARTIFACT_MORDRED) { // Vampiric.
+            *damage_type = DAMAGE_DARK;
+            *draintargetHP = true;
+            return 0;
+        }
+        if (itemId == ITEM_MM6_RELIC_HADES) { // Drips acid: +20 poison damage.
+            *damage_type = DAMAGE_EARTH;
+            return 20;
+        }
+        if (itemId == ITEM_MM6_RELIC_ARES) { // Burns: +30 fire damage.
+            *damage_type = DAMAGE_FIRE;
+            return 30;
+        }
+        if (itemId == ITEM_MM6_RELIC_ARTEMIS) { // Charged: +20 electricity damage.
+            *damage_type = DAMAGE_AIR;
+            return 20;
+        }
+    } else if (itemId == ITEM_ARTIFACT_IRON_FEATHER) {
         *damage_type = DAMAGE_AIR;
         return grng->random(10) + 6;
     }
@@ -134,6 +155,14 @@ int Item::_439DF3_get_additional_damage(DamageType *damage_type,
             *damage_type = DAMAGE_FIRE;
             return 0;
     }
+}
+
+bool Item::grantsCarnage() const {
+    // MM7's Percival remnant check (ITEM_SPELLBOOK_FIREBALL == 405) is kept literal at the
+    // sprite-impact site; here it's the real thing - in MM6 sessions id 405 IS Percival.
+    if (engine->gameVersion() == GAME_VERSION_MM6 && itemId == ITEM_MM6_ARTIFACT_PERCIVAL)
+        return true;
+    return specialEnchantment == ITEM_ENCHANTMENT_OF_CARNAGE;
 }
 
 //----- (00402F07) --------------------------------------------------------

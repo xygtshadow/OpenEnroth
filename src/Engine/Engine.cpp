@@ -1331,6 +1331,17 @@ void RegeneratePartyHealthMana() {
         RegenData thisChar;
         // Item regeneration
         for (InventoryEntry item : character.inventory.functionalEquipment()) {
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                // The regen artifacts are per-version - the MM7 ids below are unequippable
+                // scrolls in MM6. Pellinore has Hit Point Regeneration; Hades draws its power
+                // from its wielder (Negative Regeneration), like MM7's Ethric's Staff.
+                if (item->itemId == ITEM_MM6_ARTIFACT_PELLINORE) {
+                    thisChar.hpRegen++;
+                }
+                if (item->itemId == ITEM_MM6_RELIC_HADES) {
+                    character.health -= ticks5;
+                }
+            }
             if (!isRegular(item->itemId)) {
                 if (item->itemId == ITEM_RELIC_ETHRICS_STAFF) {
                     character.health -= ticks5;

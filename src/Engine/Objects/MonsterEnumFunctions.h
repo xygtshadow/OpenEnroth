@@ -3,6 +3,8 @@
 #include <span>
 #include <utility>
 
+#include "Application/Paths/GameVersion.h"
+
 #include "Engine/Data/HouseEnums.h"
 
 #include "Utility/Segment.h"
@@ -90,6 +92,17 @@ MonsterSupertype supertypeForMonsterType(MonsterType monsterType);
 inline MonsterSupertype supertypeForMonsterId(MonsterId monsterId) {
     return supertypeForMonsterType(monsterTypeForMonsterId(monsterId));
 }
+
+/**
+ * Version-aware variant of supertypeForMonsterId(). In MM6 sessions monster ids index MM6's
+ * monsters.txt, so the MM7 MonsterType-derived classification above doesn't apply and the
+ * MM6 rows are classified directly.
+ *
+ * @param monsterId                     Monster id to check.
+ * @param version                       Game version the id belongs to.
+ * @return                              Supertype for the provided monster id.
+ */
+MonsterSupertype supertypeForMonsterId(MonsterId monsterId, GameVersion version);
 
 
 //

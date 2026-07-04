@@ -315,6 +315,30 @@ MonsterSupertype supertypeForMonsterType(MonsterType monsterType) {
     }
 }
 
+MonsterSupertype supertypeForMonsterId(MonsterId monsterId, GameVersion version) {
+    if (version != GAME_VERSION_MM6)
+        return supertypeForMonsterId(monsterId);
+
+    // MM6 monster ids follow MM6's monsters.txt rows, so the MM7 MonsterType ranges don't
+    // apply. Classify by the MM6 rows directly (3 tiers per family, like MM7):
+    // DemonFly 25-27 / Demon 28-30 / zDemonqueen 172 are the devils, DragonCave 31-33 /
+    // DragonLand 37-39 / DragonCover 40-42 are the dragons (DragonFly 34-36 is an insect),
+    // Ghost 73-75 / Lich 94-96 / Skeleton 154-156 are the undead, ElemWater 58-60 and
+    // Titan 166-168 match their MM7 supertypes, and MM6 has no elves or treants.
+    int id = std::to_underlying(monsterId);
+    if ((id >= 25 && id <= 30) || id == 172)
+        return MONSTER_SUPERTYPE_KREEGAN;
+    if ((id >= 31 && id <= 33) || (id >= 37 && id <= 42))
+        return MONSTER_SUPERTYPE_DRAGON;
+    if ((id >= 73 && id <= 75) || (id >= 94 && id <= 96) || (id >= 154 && id <= 156))
+        return MONSTER_SUPERTYPE_UNDEAD;
+    if (id >= 58 && id <= 60)
+        return MONSTER_SUPERTYPE_WATER_ELEMENTAL;
+    if (id >= 166 && id <= 168)
+        return MONSTER_SUPERTYPE_TITAN;
+    return MONSTER_SUPERTYPE_NONE;
+}
+
 std::span<const MonsterAttackPreference> allMonsterAttackPreferences() {
     static constexpr std::initializer_list<MonsterAttackPreference> result = {
         ATTACK_PREFERENCE_KNIGHT,

@@ -617,7 +617,9 @@ int Character::GetDisarmTrap() const {
     if (val.mastery() == MASTERY_GRANDMASTER)  // gm disarm
         return 10000;
 
-    if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_THIEVERY))  // item has increased disarm
+    bool mm6Thievery = engine->gameVersion() == GAME_VERSION_MM6 &&
+                       (wearsItem(ITEM_MM6_ARTIFACT_PENDRAGON) || wearsItem(ITEM_MM6_RELIC_HADES));
+    if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_THIEVERY) || mm6Thievery)  // item has increased disarm
         multiplier++;
 
     return multiplier * val.level();
@@ -878,20 +880,29 @@ int Character::CalculateMeleeDmgToEnemyWithWeapon(Item *weapon,
         ItemEnchantment enchType =
             weapon->specialEnchantment;  // check against enchantments
 
-        if (supertypeForMonsterId(uTargetActorID) == MONSTER_SUPERTYPE_UNDEAD &&
-            (enchType == ITEM_ENCHANTMENT_UNDEAD_SLAYING || itemId == ITEM_ARTIFACT_GHOULSBANE ||
-             itemId == ITEM_ARTIFACT_GIBBET || itemId == ITEM_RELIC_JUSTICE)) {
+        // Slaying artifacts are hardcoded per game version - the id spaces differ. MM6 has a
+        // single such weapon, Conan (Devil and Dragon Slaying); the special enchantments are
+        // shared between the games.
+        bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        bool slaysUndead = !mm6 && (itemId == ITEM_ARTIFACT_GHOULSBANE || itemId == ITEM_ARTIFACT_GIBBET || itemId == ITEM_RELIC_JUSTICE);
+        bool slaysDemons = mm6 ? itemId == ITEM_MM6_ARTIFACT_CONAN : itemId == ITEM_ARTIFACT_GIBBET;
+        bool slaysDragons = mm6 ? itemId == ITEM_MM6_ARTIFACT_CONAN : itemId == ITEM_ARTIFACT_GIBBET;
+        bool slaysElves = !mm6 && itemId == ITEM_RELIC_OLD_NICK;
+
+        MonsterSupertype supertype = supertypeForMonsterId(uTargetActorID, engine->gameVersion());
+        if (supertype == MONSTER_SUPERTYPE_UNDEAD &&
+            (enchType == ITEM_ENCHANTMENT_UNDEAD_SLAYING || slaysUndead)) {
             totalDmg *= 2;  // double damage vs undead
-        } else if (supertypeForMonsterId(uTargetActorID) == MONSTER_SUPERTYPE_KREEGAN &&
-                   (enchType == ITEM_ENCHANTMENT_DEMON_SLAYING || itemId == ITEM_ARTIFACT_GIBBET)) {
+        } else if (supertype == MONSTER_SUPERTYPE_KREEGAN &&
+                   (enchType == ITEM_ENCHANTMENT_DEMON_SLAYING || slaysDemons)) {
             totalDmg *= 2;  // double damage vs devils
-        } else if (supertypeForMonsterId(uTargetActorID) == MONSTER_SUPERTYPE_DRAGON &&
-                   (enchType == ITEM_ENCHANTMENT_DRAGON_SLAYING || itemId == ITEM_ARTIFACT_GIBBET)) {
+        } else if (supertype == MONSTER_SUPERTYPE_DRAGON &&
+                   (enchType == ITEM_ENCHANTMENT_DRAGON_SLAYING || slaysDragons)) {
             totalDmg *= 2;  // double damage vs dragons
-        } else if (supertypeForMonsterId(uTargetActorID) == MONSTER_SUPERTYPE_ELF &&
-                   (enchType == ITEM_ENCHANTMENT_ELF_SLAYING || itemId == ITEM_RELIC_OLD_NICK)) {
+        } else if (supertype == MONSTER_SUPERTYPE_ELF &&
+                   (enchType == ITEM_ENCHANTMENT_ELF_SLAYING || slaysElves)) {
             totalDmg *= 2;  // double damage vs elf
-        } else if (supertypeForMonsterId(uTargetActorID) == MONSTER_SUPERTYPE_TITAN &&
+        } else if (supertype == MONSTER_SUPERTYPE_TITAN &&
                    (enchType == ITEM_ENCHANTMENT_TITAN_SLAYING)) {
             totalDmg *= 2;  // double damage vs titan
         }
@@ -969,20 +980,21 @@ int Character::CalculateRangedDamageTo(MonsterId uMonsterInfoID) {
              damagefromroll;  // total damage
 
     if (uMonsterInfoID != MONSTER_INVALID) {  // check against bow enchantments
+        MonsterSupertype supertype = supertypeForMonsterId(uMonsterInfoID, engine->gameVersion());
         if (itemenchant == ITEM_ENCHANTMENT_UNDEAD_SLAYING &&
-            supertypeForMonsterId(uMonsterInfoID) == MONSTER_SUPERTYPE_UNDEAD) {  // double damage vs undead
+            supertype == MONSTER_SUPERTYPE_UNDEAD) {  // double damage vs undead
             damage *= 2;
         } else if (itemenchant == ITEM_ENCHANTMENT_DEMON_SLAYING &&
-                   supertypeForMonsterId(uMonsterInfoID) == MONSTER_SUPERTYPE_KREEGAN) {  // double vs devils
+                   supertype == MONSTER_SUPERTYPE_KREEGAN) {  // double vs devils
             damage *= 2;
         } else if (itemenchant == ITEM_ENCHANTMENT_DRAGON_SLAYING &&
-                   supertypeForMonsterId(uMonsterInfoID) == MONSTER_SUPERTYPE_DRAGON) {  // double vs dragons
+                   supertype == MONSTER_SUPERTYPE_DRAGON) {  // double vs dragons
             damage *= 2;
         } else if (itemenchant == ITEM_ENCHANTMENT_ELF_SLAYING &&
-                   supertypeForMonsterId(uMonsterInfoID) == MONSTER_SUPERTYPE_ELF) {  // double vs elf
+                   supertype == MONSTER_SUPERTYPE_ELF) {  // double vs elf
             damage *= 2;
         } else if (itemenchant == ITEM_ENCHANTMENT_TITAN_SLAYING &&
-                   supertypeForMonsterId(uMonsterInfoID) == MONSTER_SUPERTYPE_TITAN) { // double vs titans
+                   supertype == MONSTER_SUPERTYPE_TITAN) { // double vs titans
             damage *= 2;
         }
     }
@@ -1151,6 +1163,16 @@ bool Character::wearsItem(ItemId itemId) const {
         if (InventoryConstEntry entry = inventory.functionalEntry(slot); entry && entry->itemId == itemId)
             return true;
     return false;
+}
+
+bool Character::wearsShieldingItem() const {
+    if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_SHIELDING) || wearsEnchantedItem(ITEM_ENCHANTMENT_OF_STORM))
+        return true;
+    // The shielding artifacts are hardcoded per game version - the id spaces differ.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return wearsItem(ITEM_MM6_ARTIFACT_VALERIA) || wearsItem(ITEM_MM6_RELIC_AEGIS);
+    return wearsItem(ITEM_ARTIFACT_GOVERNORS_ARMOR) || wearsItem(ITEM_RELIC_KELEBRIM) ||
+           wearsItem(ITEM_ARTIFACT_ELFBANE);
 }
 
 //----- (0048D76C) --------------------------------------------------------
@@ -1725,9 +1747,13 @@ Duration Character::GetAttackRecoveryTime(bool attackUsesBow) const {
 
     Duration weapon_enchantment_recovery_reduction;
     if (weapon) {
+        // Swiftness artifacts are per-version: MM7 has Puck, MM6 has Merlin and Percival.
+        bool swiftArtifact = engine->gameVersion() == GAME_VERSION_MM6
+            ? weapon->itemId == ITEM_MM6_ARTIFACT_MERLIN || weapon->itemId == ITEM_MM6_ARTIFACT_PERCIVAL
+            : weapon->itemId == ITEM_ARTIFACT_PUCK;
         if (weapon->specialEnchantment == ITEM_ENCHANTMENT_SWIFT ||
             weapon->specialEnchantment == ITEM_ENCHANTMENT_OF_DARKNESS ||
-            weapon->itemId == ITEM_ARTIFACT_PUCK)
+            swiftArtifact)
             weapon_enchantment_recovery_reduction = 20_ticks;
     }
 
@@ -2048,15 +2074,19 @@ int Character::GetParameterBonus(int player_parameter) const {
 
 //----- (0048EA46) --------------------------------------------------------
 int Character::GetSpecialItemBonus(ItemEnchantment enchantment) const {
+    bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
     for (InventoryConstEntry entry : inventory.functionalEquipment()) {
         if (enchantment == ITEM_ENCHANTMENT_OF_RECOVERY) {
+            // The hit-recovery artifacts are per-version: MM7 has Elven Chainmail, MM6 has Pellinore.
             if (entry->specialEnchantment == ITEM_ENCHANTMENT_OF_RECOVERY ||
-                entry->itemId == ITEM_ARTIFACT_ELVEN_CHAINMAIL)
+                entry->itemId == (mm6 ? ITEM_MM6_ARTIFACT_PELLINORE : ITEM_ARTIFACT_ELVEN_CHAINMAIL))
                 return 50;
         }
 
         if (enchantment == ITEM_ENCHANTMENT_OF_FORCE) {
-            if (entry->specialEnchantment == ITEM_ENCHANTMENT_OF_FORCE)
+            // MM6's Thor is the Force artifact; MM7 has no artifact analog.
+            if (entry->specialEnchantment == ITEM_ENCHANTMENT_OF_FORCE ||
+                (mm6 && entry->itemId == ITEM_MM6_ARTIFACT_THOR))
                 return 5;
         }
     }
@@ -6139,15 +6169,7 @@ void DamageCharacterFromMonster(Pid uObjID, ActorAbility dmgSource, signed int t
                     shielded = true;
                 if (pParty->pPartyBuffs[PARTY_BUFF_SHIELD].Active())
                     shielded = true;
-                if (playerPtr->wearsEnchantedItem(ITEM_ENCHANTMENT_OF_SHIELDING))
-                    shielded = true;
-                if (playerPtr->wearsEnchantedItem(ITEM_ENCHANTMENT_OF_STORM))
-                    shielded = true;
-                if (playerPtr->wearsItem(ITEM_ARTIFACT_GOVERNORS_ARMOR))
-                    shielded = true;
-                if (playerPtr->wearsItem(ITEM_RELIC_KELEBRIM))
-                    shielded = true;
-                if (playerPtr->wearsItem(ITEM_ARTIFACT_ELFBANE))
+                if (playerPtr->wearsShieldingItem())
                     shielded = true;
                 if (InventoryConstEntry offHandItem = playerPtr->inventory.functionalEntry(ITEM_SLOT_OFF_HAND);
                     offHandItem && offHandItem->isShield() && playerPtr->getActualSkillValue(SKILL_SHIELD).mastery() == MASTERY_GRANDMASTER)

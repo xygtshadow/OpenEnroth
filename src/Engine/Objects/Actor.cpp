@@ -3088,7 +3088,7 @@ int Actor::DamageMonsterFromParty(Pid a1, unsigned int uActorID_Monster, const V
                     uDamageAmount /= 2;
                 IsAdditionalDamagePossible = true;
                 if (projectileSprite->containing_item.itemId != ITEM_NULL &&
-                    projectileSprite->containing_item.specialEnchantment == ITEM_ENCHANTMENT_OF_CARNAGE) {
+                    projectileSprite->containing_item.grantsCarnage()) {
                     attackElement = DAMAGE_FIRE;
                 } else if (!character->characterHitOrMiss(pMonster, v61, skillLevel)) {
                     character->playReaction(SPEECH_ATTACK_MISS);
@@ -3198,7 +3198,7 @@ int Actor::DamageMonsterFromParty(Pid a1, unsigned int uActorID_Monster, const V
         }
     }
     if (knockbackValue > 10) knockbackValue = 10;
-    if (supertypeForMonsterId(pMonster->monsterInfo.id) != MONSTER_SUPERTYPE_TREANT) {
+    if (supertypeForMonsterId(pMonster->monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_TREANT) {
         pMonster->velocity = 50 * knockbackValue * pVelocity;
     }
     Actor::AddOnDamageOverlay(uActorID_Monster, 1, v61);

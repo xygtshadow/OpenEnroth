@@ -24,6 +24,7 @@
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/CombinedSkillValue.h"
+#include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Tables/HouseTable.h"
@@ -1395,4 +1396,189 @@ GAME_TEST(Mm6, ArtifactPowers) {
     });
     caster.pActiveSkills[SKILL_LIGHT] = CombinedSkillValue();
     caster.pActiveSkills[SKILL_DARK] = CombinedSkillValue();
+}
+
+GAME_TEST(Mm6, ArtifactBehavioralPowers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &knight = pParty->pCharacters[0];
+
+    auto withEquipped = [&](Character &character, ItemSlot slot, int itemId, auto &&checks) {
+        if (InventoryEntry existing = character.inventory.entry(slot))
+            character.inventory.take(existing);
+        InventoryEntry entry = character.inventory.equip(slot, Item(ItemId(itemId)));
+        checks();
+        character.inventory.take(entry);
+    };
+
+    // Mordred (400) is Vampiric: hits drain the target's life instead of adding elemental
+    // damage. Hades (415) drips acid: +20 poison damage (MM6 Poison maps onto Earth, like
+    // the monsters.txt resistance columns). Ares (416) burns: +30 fire damage. Artemis (420)
+    // fires charged bolts: +20 electricity damage (MM6 Elec maps onto Air).
+    {
+        DamageType damageType = DAMAGE_PHYSICAL;
+        bool drainsHp = false;
+
+        Item mordred(ItemId(400));
+        EXPECT_EQ(mordred._439DF3_get_additional_damage(&damageType, &drainsHp), 0);
+        EXPECT_TRUE(drainsHp);
+        EXPECT_EQ(damageType, DAMAGE_DARK);
+
+        Item hades(ItemId(415));
+        EXPECT_EQ(hades._439DF3_get_additional_damage(&damageType, &drainsHp), 20);
+        EXPECT_FALSE(drainsHp);
+        EXPECT_EQ(damageType, DAMAGE_EARTH);
+
+        Item ares(ItemId(416));
+        EXPECT_EQ(ares._439DF3_get_additional_damage(&damageType, &drainsHp), 30);
+        EXPECT_FALSE(drainsHp);
+        EXPECT_EQ(damageType, DAMAGE_FIRE);
+
+        Item artemis(ItemId(420));
+        EXPECT_EQ(artemis._439DF3_get_additional_damage(&damageType, &drainsHp), 20);
+        EXPECT_FALSE(drainsHp);
+        EXPECT_EQ(damageType, DAMAGE_AIR);
+    }
+
+    // The monster supertypes behind the slaying powers follow MM6's monsters.txt rows, not
+    // MM7's id ranges: demons ARE the devils (DemonFly 25-27, Demon 28-30, zDemonqueen 172),
+    // dragons are DragonCave 31-33 / DragonLand 37-39 / DragonCover 40-42 - while DragonFly
+    // 34-36 is an insect - and Ghost/Lich/Skeleton are the undead.
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(25), GAME_VERSION_MM6), MONSTER_SUPERTYPE_KREEGAN);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(28), GAME_VERSION_MM6), MONSTER_SUPERTYPE_KREEGAN);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(172), GAME_VERSION_MM6), MONSTER_SUPERTYPE_KREEGAN);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(31), GAME_VERSION_MM6), MONSTER_SUPERTYPE_DRAGON);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(37), GAME_VERSION_MM6), MONSTER_SUPERTYPE_DRAGON);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(42), GAME_VERSION_MM6), MONSTER_SUPERTYPE_DRAGON);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(34), GAME_VERSION_MM6), MONSTER_SUPERTYPE_NONE);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(73), GAME_VERSION_MM6), MONSTER_SUPERTYPE_UNDEAD);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(94), GAME_VERSION_MM6), MONSTER_SUPERTYPE_UNDEAD);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(154), GAME_VERSION_MM6), MONSTER_SUPERTYPE_UNDEAD);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(166), GAME_VERSION_MM6), MONSTER_SUPERTYPE_TITAN);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(58), GAME_VERSION_MM6), MONSTER_SUPERTYPE_WATER_ELEMENTAL);
+    EXPECT_EQ(supertypeForMonsterId(MonsterId(76), GAME_VERSION_MM6), MONSTER_SUPERTYPE_NONE);
+
+    // Conan (402) slays devils and dragons: double damage. Conan is 3d7+10, so a single
+    // roll is 13-31 and a doubled one 26-62; with 16 rolls at least one lands above the
+    // single-roll maximum unless the power is missing.
+    {
+        Item conan(ItemId(402));
+        ASSERT_EQ(pItemTable->items[ItemId(402)].name, "Conan");
+        const ItemData &conanData = pItemTable->items[ItemId(402)];
+        int minSingle = conanData.damageMod + conanData.damageDice;
+        int maxSingle = conanData.damageMod + conanData.damageDice * conanData.damageRoll;
+        bool exceededSingleMax = false;
+        for (int i = 0; i < 16; i++) {
+            int vsDragon = knight.CalculateMeleeDmgToEnemyWithWeapon(&conan, MonsterId(37), false);
+            EXPECT_GE(vsDragon, 2 * minSingle);
+            EXPECT_LE(vsDragon, 2 * maxSingle);
+            exceededSingleMax = exceededSingleMax || vsDragon > maxSingle;
+            int vsDevil = knight.CalculateMeleeDmgToEnemyWithWeapon(&conan, MonsterId(28), false);
+            EXPECT_GE(vsDevil, 2 * minSingle);
+            int vsGoblin = knight.CalculateMeleeDmgToEnemyWithWeapon(&conan, MonsterId(76), false);
+            EXPECT_GE(vsGoblin, minSingle);
+            EXPECT_LE(vsGoblin, maxSingle);
+        }
+        EXPECT_TRUE(exceededSingleMax);
+    }
+
+    // Swiftness: Merlin (404) and Percival (405) attack 20 ticks faster than a plain staff
+    // (61) and bow (42).
+    {
+        Duration plainStaffRecovery, merlinRecovery;
+        withEquipped(knight, ITEM_SLOT_MAIN_HAND, 61, [&] {
+            plainStaffRecovery = knight.GetAttackRecoveryTime(false);
+        });
+        withEquipped(knight, ITEM_SLOT_MAIN_HAND, 404, [&] {
+            merlinRecovery = knight.GetAttackRecoveryTime(false);
+        });
+        EXPECT_EQ(plainStaffRecovery - merlinRecovery, 20_ticks);
+
+        Duration plainBowRecovery, percivalRecovery;
+        withEquipped(knight, ITEM_SLOT_BOW, 42, [&] {
+            plainBowRecovery = knight.GetAttackRecoveryTime(true);
+        });
+        withEquipped(knight, ITEM_SLOT_BOW, 405, [&] {
+            percivalRecovery = knight.GetAttackRecoveryTime(true);
+        });
+        EXPECT_EQ(plainBowRecovery - percivalRecovery, 20_ticks);
+    }
+
+    // Force: a blow from Thor (401) knocks enemies back, via the same special-item bonus
+    // MM7's 'of Force' enchantment feeds into the knockback code.
+    EXPECT_EQ(knight.GetSpecialItemBonus(ITEM_ENCHANTMENT_OF_FORCE), 0);
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 401, [&] {
+        EXPECT_EQ(knight.GetSpecialItemBonus(ITEM_ENCHANTMENT_OF_FORCE), 5);
+    });
+
+    // Hit Recovery: Pellinore (407) speeds up recovery like MM7's 'of Recovery'.
+    EXPECT_EQ(knight.GetSpecialItemBonus(ITEM_ENCHANTMENT_OF_RECOVERY), 0);
+    withEquipped(knight, ITEM_SLOT_ARMOUR, 407, [&] {
+        EXPECT_EQ(knight.GetSpecialItemBonus(ITEM_ENCHANTMENT_OF_RECOVERY), 50);
+    });
+
+    // Shielding: Valeria (408) and Aegis (423) halve incoming missile damage.
+    EXPECT_FALSE(knight.wearsShieldingItem());
+    withEquipped(knight, ITEM_SLOT_OFF_HAND, 408, [&] {
+        EXPECT_TRUE(knight.wearsShieldingItem());
+    });
+    withEquipped(knight, ITEM_SLOT_OFF_HAND, 423, [&] {
+        EXPECT_TRUE(knight.wearsShieldingItem());
+    });
+
+    // Carnage: Percival's arrows explode in a fireball on impact; Artemis (420), the other
+    // bow, doesn't carry the power.
+    EXPECT_TRUE(Item(ItemId(405)).grantsCarnage());
+    EXPECT_FALSE(Item(ItemId(420)).grantsCarnage());
+
+    // Thievery: Pendragon (410) and Hades (415) boost trap disarming, like MM7's
+    // 'of Thievery' (the exact MM6 number is unreversed - the MM7 multiplier bump is used).
+    CombinedSkillValue disarmSkillBefore = knight.pActiveSkills[SKILL_TRAP_DISARM];
+    knight.pActiveSkills[SKILL_TRAP_DISARM] = CombinedSkillValue(4, MASTERY_NOVICE);
+    int plainDisarm = knight.GetDisarmTrap();
+    EXPECT_EQ(plainDisarm, 4);
+    withEquipped(knight, ITEM_SLOT_CLOAK, 410, [&] {
+        EXPECT_EQ(knight.GetDisarmTrap(), plainDisarm + 4);
+    });
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 415, [&] {
+        EXPECT_EQ(knight.GetDisarmTrap(), plainDisarm + 4);
+    });
+    knight.pActiveSkills[SKILL_TRAP_DISARM] = disarmSkillBefore;
+
+    // Immunity: Pendragon blocks all poison severities, Aegis blocks Flesh to Stone.
+    knight.SetCondition(CONDITION_POISON_WEAK, 1);
+    EXPECT_TRUE(knight.conditions.has(CONDITION_POISON_WEAK)); // Unprotected, the poison sticks.
+    knight.conditions.reset(CONDITION_POISON_WEAK);
+    withEquipped(knight, ITEM_SLOT_CLOAK, 410, [&] {
+        for (Condition poison : {CONDITION_POISON_WEAK, CONDITION_POISON_MEDIUM, CONDITION_POISON_SEVERE}) {
+            knight.SetCondition(poison, 1);
+            EXPECT_FALSE(knight.conditions.has(poison));
+        }
+    });
+    withEquipped(knight, ITEM_SLOT_OFF_HAND, 423, [&] {
+        knight.SetCondition(CONDITION_PETRIFIED, 1);
+        EXPECT_FALSE(knight.conditions.has(CONDITION_PETRIFIED));
+    });
+
+    // Hit Point Regeneration: Pellinore heals on the 5-minute regen tick; Hades draws its
+    // power from its wielder - Negative Regeneration drains on the same tick.
+    withEquipped(knight, ITEM_SLOT_ARMOUR, 407, [&] {
+        knight.health = 1;
+        pParty->last_regenerated = pParty->GetPlayingTime();
+        pParty->playing_time += Duration::fromMinutes(11); // Two 5-minute regen ticks.
+        RegeneratePartyHealthMana();
+        EXPECT_EQ(knight.health, 3);
+    });
+    withEquipped(knight, ITEM_SLOT_MAIN_HAND, 415, [&] {
+        int healthBefore = knight.health = knight.GetMaxHealth();
+        pParty->last_regenerated = pParty->GetPlayingTime();
+        pParty->playing_time += Duration::fromMinutes(11);
+        RegeneratePartyHealthMana();
+        EXPECT_EQ(knight.health, healthBefore - 2);
+    });
+    knight.health = knight.GetMaxHealth();
 }

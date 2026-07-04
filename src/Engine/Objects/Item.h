@@ -59,6 +59,12 @@ struct Item {
     int _439DF3_get_additional_damage(DamageType *a2, bool *vampiyr);
 
     /**
+     * @return                          Whether this item, when carried by a projectile, makes it explode in a
+     *                                  fireball on impact - MM7's 'of Carnage' enchantment, or MM6's Percival.
+     */
+    bool grantsCarnage() const;
+
+    /**
      * @return                          Character skill needed to wear this item. Will return `CHARACTER_SKILL_MISC`
      *                                  for items that are not worn or don't have an associated skill (scrolls, gems,
      *                                  boots, potions, reagents, etc).

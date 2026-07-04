@@ -1013,6 +1013,23 @@ enum class ItemId : int32_t {
 };
 using enum ItemId;
 
+// MM6 artifact & relic ids that carry behavioral powers, valid only in MM6 sessions - in the
+// MM7 id space these values are ordinary items (e.g. 405 is ITEM_SPELLBOOK_FIREBALL). The
+// stat-style powers of all 30 MM6 artifacts/relics live in Item::PopulateArtifactBonusMapMm6();
+// these constants exist for the hardcoded behavioral hooks in the combat/regen/condition code.
+constexpr ItemId ITEM_MM6_ARTIFACT_MORDRED = ItemId(400);   // Vampiric.
+constexpr ItemId ITEM_MM6_ARTIFACT_THOR = ItemId(401);      // Force (knockback).
+constexpr ItemId ITEM_MM6_ARTIFACT_CONAN = ItemId(402);     // Devil and Dragon Slaying.
+constexpr ItemId ITEM_MM6_ARTIFACT_MERLIN = ItemId(404);    // Swiftness.
+constexpr ItemId ITEM_MM6_ARTIFACT_PERCIVAL = ItemId(405);  // Swiftness and Carnage.
+constexpr ItemId ITEM_MM6_ARTIFACT_PELLINORE = ItemId(407); // Hit Recovery and HP Regeneration.
+constexpr ItemId ITEM_MM6_ARTIFACT_VALERIA = ItemId(408);   // Shielding.
+constexpr ItemId ITEM_MM6_ARTIFACT_PENDRAGON = ItemId(410); // Thievery and Immunity to Poison.
+constexpr ItemId ITEM_MM6_RELIC_HADES = ItemId(415);        // +20 Poison Damage, Thievery, Negative Regeneration.
+constexpr ItemId ITEM_MM6_RELIC_ARES = ItemId(416);         // +30 Fire Damage.
+constexpr ItemId ITEM_MM6_RELIC_ARTEMIS = ItemId(420);      // +20 Electricity Damage.
+constexpr ItemId ITEM_MM6_RELIC_AEGIS = ItemId(423);        // Shielding and Immunity to Flesh to Stone.
+
 enum class ItemType {
     ITEM_TYPE_INVALID = -1, // No items in the game have this type.
     ITEM_TYPE_SINGLE_HANDED = 0, // Also blasters.
