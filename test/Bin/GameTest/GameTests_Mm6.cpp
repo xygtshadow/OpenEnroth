@@ -27,7 +27,9 @@
 #include "Engine/Graphics/Overlays.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Sprites.h"
+#include "Engine/Graphics/TurnBasedOverlay.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/TurnEngine/TurnEngineEnums.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/CharacterEnumFunctions.h"
 #include "Engine/Objects/Chest.h"
@@ -2624,4 +2626,43 @@ GAME_TEST(Mm6, OverlaysRenderAndExpire) {
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 5, 0, 0);
     game.tick(3);
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
+}
+
+GAME_TEST(Mm6, TurnBasedCombatIcon) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 has no dift.bin turn-based icons (MM7's "turnstart"/"turnhour"/...), so the overlay falls back to
+    // drawing two sprite framesets: newhand1 while the party can act, newglas1 while monsters take their turn
+    // (MM6.EXE 0x435F03, at screen anchor (444, 326)). loadIcons() resolved and loaded them.
+    ASSERT_TRUE(turnBasedOverlay.usesMm6Sprites());
+    int hand = pSpriteFrameTable->FastFindSprite("newhand1");
+    int glass = pSpriteFrameTable->FastFindSprite("newglas1");
+    ASSERT_GT(hand, 0);
+    ASSERT_GT(glass, 0);
+    // The framesets were InitializeSprite'd, so their frames carry real (non-null) sprites.
+    ASSERT_NE(pSpriteFrameTable->GetFrame(hand, 0_ticks)->sprites[0], nullptr);
+    ASSERT_NE(pSpriteFrameTable->GetFrame(glass, 0_ticks)->sprites[0], nullptr);
+
+    // The overlay tracks the turn stage directly (no MM7-style opening-hand phase): hourglass on the
+    // monsters' turn, hand on the party's attack or movement steps, nothing when combat ends.
+    turnBasedOverlay.update(8_ticks, TE_WAIT);
+    EXPECT_EQ(turnBasedOverlay.state(), TURN_BASED_OVERLAY_WAIT);
+    turnBasedOverlay.draw(); // Headless smoke test - draws the hourglass without crashing.
+
+    turnBasedOverlay.update(8_ticks, TE_ATTACK);
+    EXPECT_EQ(turnBasedOverlay.state(), TURN_BASED_OVERLAY_ATTACK);
+    turnBasedOverlay.draw(); // Draws the hand.
+
+    turnBasedOverlay.update(8_ticks, TE_MOVEMENT);
+    EXPECT_EQ(turnBasedOverlay.state(), TURN_BASED_OVERLAY_MOVEMENT);
+
+    turnBasedOverlay.update(8_ticks, TE_NONE);
+    EXPECT_EQ(turnBasedOverlay.state(), TURN_BASED_OVERLAY_NONE);
+    turnBasedOverlay.draw(); // No overlay when combat is over - must be a no-op.
+
+    turnBasedOverlay.reset();
 }

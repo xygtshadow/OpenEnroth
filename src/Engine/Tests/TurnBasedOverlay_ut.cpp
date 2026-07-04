@@ -40,9 +40,9 @@ static IconFrameData_MM7 makeIconFrame(std::string_view animationName, std::stri
 // MM6's icon frame table (dift.bin) has no turn-based combat animations at all - its only named animations are
 // glow01..glow05 and fire, so every MM7 turn-combat name (turnstart/turnstop/turnhour/turn0..turn4) misses and
 // animationId returns -1. Unguarded, loadIcons() then called animationLength(-1), indexing _frames[-1] and
-// aborting the MM6 launch with an _STL_VERIFY "vector subscript out of range". Until the MM6 turn-based UI is
-// modeled (docs/pending/mm6-turnbased-overlay-icons.md), the overlay must tolerate the missing animations and
-// stay disabled.
+// aborting the MM6 launch with an _STL_VERIFY "vector subscript out of range". loadIcons() must tolerate the
+// missing icons; on real MM6 data it falls back to the newhand1/newglas1 sprite framesets, but with the MM7
+// sprite data this test runs on those are absent too, so the overlay stays disabled.
 GAME_TEST(TurnBasedOverlayMm6, BootsPastMissingIcons) {
     // An icon frame table shaped like MM6's: some animations, but none of the turn-combat ones.
     IconFrameTable table;

@@ -1,9 +1,12 @@
 #include "TurnBasedOverlay.h"
 
 #include "Engine/Tables/IconFrameTable.h"
+#include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
+#include "Engine/Graphics/Sprites.h"
 #include "Engine/TurnEngine/TurnEngine.h"
 
+#include "Library/Geometry/Rect.h"
 #include "Library/Logger/Logger.h"
 
 // Opening hand animation in vanilla was 320 ticks long (that's 2.5 seconds), but it was cut short and only the first
@@ -20,14 +23,22 @@ TurnBasedOverlay turnBasedOverlay;
 void TurnBasedOverlay::loadIcons() {
     _initialIconId = pIconsFrameTable->animationId("turnstart");
     if (_initialIconId == -1) {
-        // MM6's icon frame table has no turn-based combat animations at all - not under any name. MM6 drew its
-        // turn-based UI through a different mechanism, so until that's modeled the overlay stays disabled
-        // (update() keeps the state at TURN_BASED_OVERLAY_NONE when icons are missing).
-        logger->warning("MM6 turn-based overlay icons are not implemented yet - the turn-based overlay "
-                        "will not be drawn.");
+        // MM6's icon frame table (dift.bin) has no turn-based combat animations under any name. MM6 instead
+        // draws the indicator from two sprite framesets - a hand while the party can act and an hourglass
+        // while monsters take their turn - at (444, 326) (MM6.EXE 0x435F03, framesets loaded at 0x42A610).
         _attackIconId = -1;
         _waitIconId = -1;
         _movementIconIds.fill(-1);
+        _mm6HandFramesetId = pSpriteFrameTable->FastFindSprite("newhand1");
+        _mm6GlassFramesetId = pSpriteFrameTable->FastFindSprite("newglas1");
+        _mm6 = _mm6HandFramesetId > 0 && _mm6GlassFramesetId > 0;
+        if (_mm6) {
+            pSpriteFrameTable->InitializeSprite(_mm6HandFramesetId);
+            pSpriteFrameTable->InitializeSprite(_mm6GlassFramesetId);
+        } else {
+            logger->warning("MM6 turn-based overlay sprites (newhand1/newglas1) are missing - the turn-based "
+                            "overlay will not be drawn.");
+        }
         return;
     }
 
@@ -44,8 +55,23 @@ void TurnBasedOverlay::reset() {
 }
 
 void TurnBasedOverlay::update(Duration dt, TurnEngineStep newStep) {
+    if (_mm6) {
+        // MM6's indicator has no opening-hand phase; it toggles hand/hourglass directly with the turn stage.
+        // Advance the freely-looping animation time (GetFrame wraps it modulo the frameset length, so it
+        // never needs resetting), then map the stage: monsters' turn = hourglass, party's turn = hand.
+        if (newStep == TE_NONE) {
+            _state = TURN_BASED_OVERLAY_NONE;
+            return;
+        }
+        _currentTime += dt;
+        _state = newStep == TE_WAIT   ? TURN_BASED_OVERLAY_WAIT
+               : newStep == TE_ATTACK ? TURN_BASED_OVERLAY_ATTACK
+                                      : TURN_BASED_OVERLAY_MOVEMENT;
+        return;
+    }
+
     if (_initialIconId == -1)
-        return; // No overlay icons (MM6), stay in TURN_BASED_OVERLAY_NONE so draw() never dereferences them.
+        return; // No overlay icons at all, stay in TURN_BASED_OVERLAY_NONE so draw() never dereferences them.
 
     if (newStep == TE_NONE) {
         _state = TURN_BASED_OVERLAY_NONE;
@@ -89,6 +115,18 @@ void TurnBasedOverlay::update(Duration dt, TurnEngineStep newStep) {
 void TurnBasedOverlay::draw() {
     if (_state == TURN_BASED_OVERLAY_NONE)
         return;
+
+    if (_mm6) {
+        // Draw the current frame of the hand (party's turn) or hourglass (monsters' turn) frameset at the
+        // MM6 anchor (444, 326).
+        int framesetId = _state == TURN_BASED_OVERLAY_WAIT ? _mm6GlassFramesetId : _mm6HandFramesetId;
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(framesetId, _currentTime);
+        if (!frame || !frame->sprites[0] || !frame->sprites[0]->texture)
+            return;
+        Sprite *sprite = frame->sprites[0];
+        render->DrawImage(sprite->texture, Recti(444, 326, sprite->uWidth, sprite->uHeight), frame->paletteId);
+        return;
+    }
 
     render->DrawQuad2D(currentIcon(), {394, 288});
 }

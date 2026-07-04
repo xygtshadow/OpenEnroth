@@ -31,6 +31,18 @@ class TurnBasedOverlay {
      */
     void draw();
 
+    TurnBasedOverlayState state() const {
+        return _state;
+    }
+
+    /**
+     * @return                              True when running on MM6 data, where the overlay is drawn from sprite
+     *                                      framesets (hand / hourglass) instead of MM7's dift.bin icons.
+     */
+    bool usesMm6Sprites() const {
+        return _mm6;
+    }
+
  private:
     GraphicsImage *currentIcon() const;
 
@@ -43,6 +55,11 @@ class TurnBasedOverlay {
     int _attackIconId = 0; // Open hand.
     std::array<int, 5> _movementIconIds = {{}}; // Fingers.
     int _waitIconId = 0; // Hourglass animation.
+
+    // MM6 draws the indicator from two sprite framesets rather than dift.bin icons (MM6.EXE 0x435F03).
+    bool _mm6 = false;
+    int _mm6HandFramesetId = 0; // "newhand1" - shown while the party can act.
+    int _mm6GlassFramesetId = 0; // "newglas1" - shown while monsters take their turn.
 };
 
 extern TurnBasedOverlay turnBasedOverlay;
