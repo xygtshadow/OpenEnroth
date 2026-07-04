@@ -406,9 +406,8 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         case EVENT_ModifyItem:
         case EVENT_RandomPassword:
         case EVENT_RandomAnswer:
-            // MM6-only opcodes whose semantics nobody has reversed yet (MMExtension treats them as decode-only
-            // stubs too). ModifyItem appears only in znwc.blv, RandomPassword/RandomAnswer only in d09.blv.
-            logger->warning("Skipping MM6 event instruction {} - its semantics are not known", ::toString(ir.opcode));
+            // MM6-only dev leftovers that the shipped MM6 engine never implemented - its dispatch table sends
+            // them to the step-advance path, same as unknown opcodes (see EvtEnums.h). Skipping is faithful.
             break;
         case EVENT_ToggleActorFlag:
             Actor::toggleFlag(ir.data.actor_flag_descr.id, ir.data.actor_flag_descr.attr, ir.data.actor_flag_descr.is_set);

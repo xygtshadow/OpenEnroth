@@ -81,9 +81,14 @@ enum class EvtOpcode : uint8_t {
     // in-memory representation version-independent.
     EVENT_SetTextureOutdoors = 69,   // MM6 opcode 12. Sets a texture on an outdoor model face by (model, face) index.
     EVENT_SetFacesBitOutdoors = 70,  // MM6 opcode 24. Toggles a face attribute on outdoor model faces by (model, face) index.
-    EVENT_ModifyItem = 71,           // MM6 opcode 20. Semantics unreversed ("ModifyItem" per mm8leveleditor); parsed and skipped.
-    EVENT_RandomPassword = 72,       // MM6 opcode 27. Semantics unreversed (MM6's random password quest); parsed and skipped.
-    EVENT_RandomAnswer = 73,         // MM6 opcode 28. Semantics unreversed (companion of EVENT_RandomPassword); parsed and skipped.
+    // The three below ("ModifyItem" / "RndPassword" / "RndAnswer" per mm8leveleditor) are dev leftovers that were
+    // never implemented in the shipped MM6 engine: MM6.EXE's event dispatch table (0x43E3C8, switch at 0x43C948)
+    // routes opcodes 20, 27 and 28 (as well as 31, 37, 38) straight to the step-advance path, same as unknown
+    // opcodes. They appear only in znwc.blv (20) and d09.blv (27 on a switch, 28 on a bookshelf), so skipping them
+    // is the faithful behavior, not a stub.
+    EVENT_ModifyItem = 71,           // MM6 opcode 20. No-op in the original engine; parsed and skipped.
+    EVENT_RandomPassword = 72,       // MM6 opcode 27. No-op in the original engine; parsed and skipped.
+    EVENT_RandomAnswer = 73,         // MM6 opcode 28. No-op in the original engine; parsed and skipped.
 };
 using enum EvtOpcode;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(EvtOpcode)

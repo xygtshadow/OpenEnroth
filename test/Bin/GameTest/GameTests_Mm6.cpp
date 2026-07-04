@@ -2510,3 +2510,49 @@ GAME_TEST(Mm6, LloydBeaconSaveRoundtrip) {
     ASSERT_TRUE(pParty->pCharacters[0].vBeacons[4].has_value());
     EXPECT_EQ(pParty->pCharacters[0].vBeacons[4]->mapId, goblinwatch);
 }
+
+GAME_TEST(Mm6, DevLeftoverOpcodesAreNoOps) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6.EXE's event dispatch table routes opcodes 20/27/28 (ModifyItem / RndPassword / RndAnswer -
+    // dev leftovers, never implemented) straight to the step-advance path, so they are no-ops in the
+    // shipped game. Snergle's Iron Mines (d09.blv) has RndPassword at step 0 of switch event 21 whose
+    // step 1 opens a door: execution must pass THROUGH the no-op and drive the door.
+    MapId snergleMines = pMapStats->GetMapInfo("d09.blv");
+    ASSERT_NE(snergleMines, MAP_INVALID);
+    game.teleportTo(snergleMines, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(snergleMines, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+
+    ASSERT_TRUE(engine->_localEventMap.hasEvent(21));
+    const std::vector<EvtInstruction> &script = engine->_localEventMap.function(21);
+    auto rndPassword = std::ranges::find_if(script, [](const EvtInstruction &ir) { return ir.opcode == EVENT_RandomPassword; });
+    ASSERT_NE(rndPassword, script.end());
+    auto doorStep = std::ranges::find_if(script, [](const EvtInstruction &ir) { return ir.opcode == EVENT_ChangeDoorState; });
+    ASSERT_NE(doorStep, script.end());
+
+    BLVDoor *door = nullptr;
+    for (BLVDoor &candidate : pIndoor->doors) {
+        if (candidate.doorId == static_cast<uint32_t>(doorStep->data.door_descr.door_id)) {
+            door = &candidate;
+            break;
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    DoorState stateBefore = door->state;
+
+    eventProcessor(21, Pid(), 1, 0);
+    game.tick(2);
+    EXPECT_NE(door->state, stateBefore); // The no-op step didn't halt the script.
+
+    // Event 39 is a bookshelf whose only non-marker step is a RndAnswer - firing it must be a
+    // clean no-op ("You thumb through the books, but find nothing of interest.").
+    ASSERT_TRUE(engine->_localEventMap.hasEvent(39));
+    eventProcessor(39, Pid(), 1, 0);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
