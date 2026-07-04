@@ -3,4 +3,4 @@
 class GraphicsImage;
 
 void GameOver_Setup();
-GraphicsImage *CreateWinnerCertificate();
+GraphicsImage *CreateWinnerCertificate(bool isLoss = false);

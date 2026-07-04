@@ -207,16 +207,19 @@ void OutdoorLocation::ExecDraw(unsigned int bRedraw) {
     render->DrawSpriteObjects();
     render->TransformBillboards();
 
-    // temp hack to show snow every third day in winter
-    switch (pParty->uCurrentMonth) {
-        case 11:
-        case 0:
-        case 1:
-            pWeather->bRenderSnow = (pParty->uCurrentDayOfMonth % 3) == 0;
-            break;
-        default:
-            pWeather->bRenderSnow = false;
-            break;
+    // temp hack to show snow every third day in winter. In MM6 snow is event-driven
+    // (OnMapReload SetSnow, e.g. the Frozen Highlands), so the event-set value must stay.
+    if (engine->gameVersion() != GAME_VERSION_MM6) {
+        switch (pParty->uCurrentMonth) {
+            case 11:
+            case 0:
+            case 1:
+                pWeather->bRenderSnow = (pParty->uCurrentDayOfMonth % 3) == 0;
+                break;
+            default:
+                pWeather->bRenderSnow = false;
+                break;
+        }
     }
 }
 

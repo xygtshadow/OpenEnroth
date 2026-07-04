@@ -883,12 +883,28 @@ void Game::processQueuedMessages() {
                 continue;
 
             case UIMSG_ShowGameOverWindow: {
-                pGameOverWindow = std::make_unique<GUIWindow_GameOver>();
+                pGameOverWindow = std::make_unique<GUIWindow_GameOver>(UIMSG_OnGameOverWindowClose, uMessageParam != 0);
                 uGameState = GAME_STATE_FINAL_WINDOW;
                 continue;
             }
             case UIMSG_OnGameOverWindowClose:
                 pAudioPlayer->stopSounds();
+
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    if (uMessageParam) {
+                        // MM6 Lose: the world is gone - back to the main menu.
+                        uGameState = GAME_STATE_GAME_QUITTING_TO_MAIN_MENU;
+                    } else {
+                        // MM6 Win: the game just continues where the party stands.
+                        autoSave();
+                        uGameState = GAME_STATE_PLAYING;
+                        for (Character &character : pParty->pCharacters) {
+                            character.playEmotion(PORTRAIT_WIDE_SMILE, 0_ticks);
+                        }
+                    }
+                    continue;
+                }
+
                 autoSave();
 
                 pParty->pos = Vec3f(-17331, 12547, 465); // respawn point in Harmondale

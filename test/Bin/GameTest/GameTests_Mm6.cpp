@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -9,6 +10,7 @@
 
 #include "Engine/Engine.h"
 #include "Engine/Evt/EvtProgram.h"
+#include "Engine/Evt/Processor.h"
 #include "Engine/MapEnumFunctions.h"
 #include "Engine/MapInfo.h"
 #include "Engine/Party.h"
@@ -22,6 +24,7 @@
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
+#include "Engine/Graphics/Weather.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/CharacterEnumFunctions.h"
 #include "Engine/Objects/Chest.h"
@@ -36,6 +39,7 @@
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/MessageScrollTable.h"
 #include "Engine/Tables/NPCTable.h"
+#include "Engine/Tables/TileTable.h"
 
 #include "GUI/GUIButton.h"
 #include "GUI/GUIWindow.h"
@@ -2030,4 +2034,123 @@ GAME_TEST(Mm6, MonsterModel) {
     peasant.monsterInfo.id = MonsterId(123);
     peasant.hostilityGroup = monsterTypeForMonsterId(peasant.monsterInfo.id);
     EXPECT_TRUE(peasant.IsPeasant());
+}
+
+// Advances party time forward to the given 0-based month index (Might & Magic months are
+// exactly 28 days), then runs a frame so the per-frame time update recomputes uCurrentMonth.
+static void advanceToMonth(EngineController &game, int monthIndex) {
+    int currentMonthIndex = pParty->GetPlayingTime().toCivilTime().month - 1;
+    pParty->GetPlayingTime() += Duration::fromDays(28 * ((monthIndex - currentMonthIndex + 12) % 12));
+    game.tick(1);
+    EXPECT_EQ(pParty->uCurrentMonth, monthIndex);
+}
+
+GAME_TEST(Mm6, SnowFromMapEvents) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6 snow is event-driven: outc1 (Frozen Highlands) has OnMapReload event 211 doing
+    // SetSnow(0, 1), so it snows there permanently - even in summer. The MM7 every-third-
+    // winter-day hack must not overwrite the event-set value in an MM6 session.
+    advanceToMonth(game, 5); // June.
+    MapId frozenHighlands = pMapStats->GetMapInfo("outc1.odm");
+    ASSERT_NE(frozenHighlands, MAP_INVALID);
+    game.teleportTo(frozenHighlands, Vec3f(0, 0, 0), 0);
+    game.tick(5);
+    EXPECT_TRUE(pWeather->bRenderSnow);
+
+    // New Sorpigal has no SetSnow event - no snow, not even in deep winter.
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(5);
+    EXPECT_FALSE(pWeather->bRenderSnow);
+    advanceToMonth(game, 0); // January.
+    game.tick(5);
+    EXPECT_FALSE(pWeather->bRenderSnow);
+}
+
+GAME_TEST(Mm6, SeasonsChangeTerrain) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+
+    // Reloads New Sorpigal (bouncing through Goblinwatch) so OutdoorLocation::Initialize
+    // re-runs the seasonal tileset swap for the current month, then counts terrain tilesets.
+    auto tilesetCountsAfterReload = [&](int monthIndex) {
+        advanceToMonth(game, monthIndex);
+        game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
+        game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+        game.tick(1);
+        std::map<Tileset, int> counts;
+        for (int y = 0; y < 128; y++)
+            for (int x = 0; x < 128; x++)
+                counts[pTileTable->tile(pOutdoor->pTerrain.tileIdByGrid(Pointi(x, y))).tileset]++;
+        return counts;
+    };
+
+    // Seasons originate in MM6: grass in summer, dirt in autumn, snow in winter.
+    std::map<Tileset, int> summer = tilesetCountsAfterReload(5); // June.
+    EXPECT_GT(summer[TILESET_GRASS], 0);
+    EXPECT_EQ(summer[TILESET_SNOW], 0);
+
+    std::map<Tileset, int> autumn = tilesetCountsAfterReload(9); // October.
+    EXPECT_EQ(autumn[TILESET_GRASS], 0);
+    EXPECT_GT(autumn[TILESET_DIRT], summer[TILESET_DIRT]);
+
+    std::map<Tileset, int> winter = tilesetCountsAfterReload(0); // January.
+    EXPECT_EQ(winter[TILESET_GRASS], 0);
+    EXPECT_GT(winter[TILESET_SNOW], 0);
+}
+
+GAME_TEST(Mm6, EndgameWinAndLose) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The Hive's event 60 ends the game: step 11 is EnterHouse(600) = Win (party destroyed the
+    // reactor with the Ritual of the Void in hand), step 5 is EnterHouse(601) = Lose (without
+    // it, the blast consumes the world). Both show the endgame certificate screen.
+    MapId hive = pMapStats->GetMapInfo("hive.blv");
+    ASSERT_NE(hive, MAP_INVALID);
+    game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+
+    // Win: the certificate window opens and the game is NOT over - MM6 lets you play on.
+    eventProcessor(60, Pid(), 1, 11);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAMEOVER_WINDOW);
+    EXPECT_EQ(uGameState, GAME_STATE_FINAL_WINDOW);
+    ASSERT_TRUE(pGameOverWindow);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240); // First click shows the credits popup...
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240); // ...second click closes the window.
+    game.tick(2);
+    EXPECT_FALSE(pGameOverWindow);
+    EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(engine->_currentLoadedMapId, hive); // Still in the Hive, game continues.
+
+    // Lose: certificate again, but closing it ends the session - back to the main menu.
+    eventProcessor(60, Pid(), 1, 5);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAMEOVER_WINDOW);
+    ASSERT_TRUE(pGameOverWindow);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    for (int i = 0; i < 50 && GetCurrentMenuID() != MENU_MAIN; i++)
+        game.tick(1);
+    EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
 }

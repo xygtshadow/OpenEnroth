@@ -46,7 +46,9 @@ void Weather::Initialize() {
 }
 
 void Weather::Draw() {
-    if (bRenderSnow && engine->config->graphics.Snow.value()) {
+    // The Snow config flag gates the MM7 every-third-winter-day emulation; MM6's own
+    // event-driven snow always draws.
+    if (bRenderSnow && (engine->gameVersion() == GAME_VERSION_MM6 || engine->config->graphics.Snow.value())) {
         DrawSnow();
     }
 }

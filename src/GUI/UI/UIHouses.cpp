@@ -297,7 +297,10 @@ bool enterHouse(HouseId uHouseID) {
     keyboardInputHandler->EndTextInput();
 
     if (uHouseID == HOUSE_THRONEROOM_WIN_GOOD || uHouseID == HOUSE_THRONEROOM_WIN_EVIL) {
-        engine->_messageQueue->addMessageCurrentFrame(UIMSG_ShowGameOverWindow, 0, 0);
+        // In MM7 both ids are endings won (good/evil side); in MM6 600 is Win and 601 is Lose
+        // (the Hive reactor blast without the Ritual of the Void consumes the world).
+        bool isLoss = engine->gameVersion() == GAME_VERSION_MM6 && uHouseID == HOUSE_THRONEROOM_WIN_EVIL;
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_ShowGameOverWindow, isLoss, 0);
         return false;
     }
 

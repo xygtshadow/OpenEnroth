@@ -1,10 +1,13 @@
 #include <string>
+#include <string_view>
 #include <memory>
 #include <utility>
 
 #include "GameOver.h"
 
+#include "Engine/Engine.h"
 #include "Engine/AssetsManager.h"
+#include "Engine/Resources/ResourceManager.h"
 #include "Engine/Resources/EngineFileSystem.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Image.h"
@@ -21,6 +24,8 @@
 
 #include "Library/Image/Pcx.h"
 
+#include "Utility/Memory/Blob.h"
+
 
 //----- (004BF91E) --------------------------------------------------------
 void GameOver_Setup() {
@@ -33,10 +38,22 @@ void GameOver_Setup() {
     pDialogueWindow = nullptr;
 }
 
-GraphicsImage *CreateWinnerCertificate() {
+// The MM6 ending texts ship as win.str / lose.str in icons.lod - level-strings-style files
+// where entry 0 is a lone space and entry 1 is the text.
+static std::string mm6EndingText(bool isLoss) {
+    Blob blob = engine->resources()->eventsData(isLoss ? "lose.str" : "win.str");
+    std::string_view raw = blob.str();
+    size_t start = raw.find('\0');
+    if (start == std::string_view::npos)
+        return std::string(raw);
+    raw.remove_prefix(start + 1);
+    return std::string(raw.substr(0, raw.find('\0')));
+}
+
+GraphicsImage *CreateWinnerCertificate(bool isLoss) {
     render->Present();
     render->BeginScene2D();
-    GraphicsImage *background = assets->getImage_PCXFromIconsLOD("winbg.pcx");
+    GraphicsImage *background = assets->getImage_PCXFromIconsLOD(isLoss ? "losebg.pcx" : "winbg.pcx");
     render->DrawQuad2D(background, {0, 0});
 
     std::unique_ptr<GUIWindow> tempwindow_SpeakInHouse = std::make_unique<GUIWindow>(WINDOW_Unknown, Pointi{ 0, 0 }, render->GetRenderDimensions());
@@ -44,7 +61,9 @@ GraphicsImage *CreateWinnerCertificate() {
     std::unique_ptr<GUIFont> pFont = GUIFont::LoadFont("endgame.fnt");
 
     std::string pInString;
-    if (pParty->isPartyGood())
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        pInString = mm6EndingText(isLoss); // MM6 has no good/evil sides, but it does have a losing ending.
+    else if (pParty->isPartyGood())
         pInString = localization->str(LSTR_GOOD_ENDING);
     else if (pParty->isPartyEvil())
         pInString = localization->str(LSTR_EVIL_ENDING);
@@ -106,7 +125,7 @@ GraphicsImage *CreateWinnerCertificate() {
     render->EndTextNew();
 
     RgbaImage pixels = render->MakeFullScreenshot();
-    ufs->write("MM7_Win.Pcx", pcx::encode(pixels));
+    ufs->write(engine->gameVersion() == GAME_VERSION_MM6 ? "MM6_Win.Pcx" : "MM7_Win.Pcx", pcx::encode(pixels));
     GraphicsImage *result = GraphicsImage::Create(std::move(pixels));
 
     background->release();

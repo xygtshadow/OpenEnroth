@@ -173,7 +173,9 @@ void BaseRenderer::PrepareDecorationsRenderList_ODM() {
                     frame = pSpriteFrameTable->GetFrame(decor_desc->uSpriteID,
                         v6 + Duration::fromTicks(v7));
 
-                    if (config->graphics.SeasonsChange.value()) {
+                    // The seasonal decoration swap table is keyed by MM7 sprite ids - in MM6 those ids
+                    // point at unrelated sprites, so only the terrain tileset swap runs there.
+                    if (config->graphics.SeasonsChange.value() && engine->gameVersion() != GAME_VERSION_MM6) {
                         frame = LevelDecorationChangeSeason(decor_desc, v6 + Duration::fromTicks(v7), pParty->uCurrentMonth);
                     }
 

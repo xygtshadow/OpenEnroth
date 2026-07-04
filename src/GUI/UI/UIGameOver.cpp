@@ -11,12 +11,12 @@
 
 #include "Application/GameOver.h"
 
-GUIWindow_GameOver::GUIWindow_GameOver(UIMessageType releaseEvent) : GUIWindow(WINDOW_GameOverWindow, {0, 0}, render->GetRenderDimensions()), _releaseEvent(releaseEvent) {
+GUIWindow_GameOver::GUIWindow_GameOver(UIMessageType releaseEvent, bool isLoss) : GUIWindow(WINDOW_GameOverWindow, {0, 0}, render->GetRenderDimensions()), _releaseEvent(releaseEvent), _isLoss(isLoss) {
     pEventTimer->setPaused(true);
     prev_screen_type = current_screen_type;
     current_screen_type = SCREEN_GAMEOVER_WINDOW;
     GameOver_Setup();
-    _winnerCert = CreateWinnerCertificate();
+    _winnerCert = CreateWinnerCertificate(_isLoss);
     this->sHint = fmt::format(
         "{}\n \n{}\n \n{}",
         localization->str(LSTR_CONGRATULATIONS_ADVENTURER),
@@ -37,7 +37,7 @@ void GUIWindow_GameOver::Update() {
 }
 
 GUIWindow_GameOver::~GUIWindow_GameOver() {
-    engine->_messageQueue->addMessageCurrentFrame(_releaseEvent, 0, 0);
+    engine->_messageQueue->addMessageCurrentFrame(_releaseEvent, _isLoss, 0);
 
     current_screen_type = prev_screen_type;
     GameOverNoSound = false;
