@@ -851,7 +851,7 @@ void Engine::_461103_load_level_sub() {
         if (actor.npcId && actor.npcId < 5000)
             continue;
 
-        if (isPeasant(actor.monsterInfo.id)) {
+        if (isPeasant(actor.monsterInfo.id, engine->gameVersion())) {
             pNPCStats->InitializeAdditionalNPCs(
                 &pNPCStats->pAdditionalNPC[pNPCStats->uNewlNPCBufPos],
                 actor.monsterInfo.id, HOUSE_INVALID, engine->_currentLoadedMapId);

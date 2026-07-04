@@ -674,7 +674,7 @@ std::pair<int, int> MonsterPopup_Draw(unsigned int uActorID, Recti* pWindow) {
             } else {
                 // rand();
                 pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
-                if (!isPeasant(pMonsterInfoUI_Doll.monsterInfo.id) && vrng->random(30) < 100)
+                if (!isPeasant(pMonsterInfoUI_Doll.monsterInfo.id, engine->gameVersion()) && vrng->random(30) < 100)
                     pMonsterInfoUI_Doll.currentActionAnimation = ANIM_AtkMelee;
                 pMonsterInfoUI_Doll.currentActionLength =
                         pSpriteFrameTable

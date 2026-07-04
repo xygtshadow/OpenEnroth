@@ -1607,7 +1607,7 @@ void UpdateActors_ODM() {
             actor.aiState == Summoned || !actor.moveSpeed)
                 continue;
 
-        bool Water_Walk = supertypeForMonsterId(actor.monsterInfo.id) == MONSTER_SUPERTYPE_WATER_ELEMENTAL;
+        bool Water_Walk = supertypeForMonsterId(actor.monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_WATER_ELEMENTAL;
 
         actor.sectorId = 0;
 

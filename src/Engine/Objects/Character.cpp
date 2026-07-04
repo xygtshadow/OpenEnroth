@@ -1103,6 +1103,13 @@ int Character::CalculateIncommingDamage(DamageType dmg_type, int dmg) {
         case DAMAGE_BODY:
             resist_value = GetActualResistance(ATTRIBUTE_RESIST_BODY);
             break;
+        case DAMAGE_MAGIC:
+            // MM6's non-elemental Magic damage is checked against Magic resistance, which this
+            // engine represents as the Mind/Spirit/Body fan-out (all three carry the same value).
+            // MM7's own DAMAGE_MAGIC (Souldrinker) is unresistable.
+            if (engine->gameVersion() == GAME_VERSION_MM6)
+                resist_value = GetActualResistance(ATTRIBUTE_RESIST_MIND);
+            break;
         default:
             break;
     }

@@ -25,6 +25,7 @@
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/CombinedSkillValue.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
+#include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Tables/HouseTable.h"
@@ -1581,4 +1582,73 @@ GAME_TEST(Mm6, ArtifactBehavioralPowers) {
         EXPECT_EQ(knight.health, healthBefore - 2);
     });
     knight.health = knight.GetMaxHealth();
+}
+
+GAME_TEST(Mm6, MonsterModel) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 monsters.txt attack types: Elec/Cold/Pois map onto MM7's Air/Water/Earth like the
+    // resistance columns do, Magic is the non-elemental DAMAGE_MAGIC, and Ener is a real energy
+    // attack (the MM7 parser's Ener->Earth first-letter collision is an MM7-only preserved bug).
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(12)].attack1Type, DAMAGE_AIR);    // BeholderC, "Elec".
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(10)].attack1Type, DAMAGE_WATER);  // BeholderA, "Cold".
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(37)].attack1Type, DAMAGE_EARTH);  // DragonLandA, "Pois".
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(73)].attack1Type, DAMAGE_MAGIC);  // GhostA, "Magic".
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(36)].attack1Type, DAMAGE_ENERGY); // DragonFlyC, "Ener".
+
+    // Ranged attackers keep their elemental bolt projectiles; Ghosts strike in melee. MM6-only
+    // projectiles with no MM7 sprite (Magic/Rock/Dagger/FireAr) drop to NONE, mirroring the
+    // ddm-embedded stats path.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(12)].attack1MissileType, MONSTER_PROJECTILE_AIR_BOLT);
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(10)].attack1MissileType, MONSTER_PROJECTILE_WATER_BOLT);
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(37)].attack1MissileType, MONSTER_PROJECTILE_EARTH_BOLT);
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(36)].attack1MissileType, MONSTER_PROJECTILE_ENERGY_BOLT);
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(73)].attack1MissileType, MONSTER_PROJECTILE_NONE);
+
+    // MM6 "Magic" damage is checked against Magic resistance, which this engine represents as
+    // the Mind/Spirit/Body fan-out. A highly resistant target sees its damage halved at least
+    // once in a handful of rolls; without the mapping the damage always lands in full (which is
+    // MM7's correct Souldrinker behavior).
+    Character &knight = pParty->pCharacters[0];
+    int16_t mindResBefore = knight.sResMindBase;
+    knight.sResMindBase = 500;
+    bool characterResisted = false;
+    for (int i = 0; i < 64 && !characterResisted; i++)
+        characterResisted = knight.CalculateIncommingDamage(DAMAGE_MAGIC, 1000) < 1000;
+    EXPECT_TRUE(characterResisted);
+    knight.sResMindBase = mindResBefore;
+
+    Actor resistantActor;
+    resistantActor.monsterInfo.resMind = 100;
+    bool actorResisted = false;
+    for (int i = 0; i < 64 && !actorResisted; i++)
+        actorResisted = resistantActor.CalcMagicalDamageToActor(DAMAGE_MAGIC, 1000) < 1000;
+    EXPECT_TRUE(actorResisted);
+
+    // MM6 peasants are the PeasantF*/PeasantM* rows 121-144. The MM7 id ranges would also
+    // swallow everything from Oozes up to zReactor - killing a Titan must not read as a
+    // peasant murder.
+    EXPECT_TRUE(isPeasant(MonsterId(121), GAME_VERSION_MM6));  // PeasantF1A.
+    EXPECT_TRUE(isPeasant(MonsterId(135), GAME_VERSION_MM6));  // PeasantM1C.
+    EXPECT_TRUE(isPeasant(MonsterId(144), GAME_VERSION_MM6));  // PeasantM4C.
+    EXPECT_FALSE(isPeasant(MonsterId(118), GAME_VERSION_MM6)); // Ogre.
+    EXPECT_FALSE(isPeasant(MonsterId(147), GAME_VERSION_MM6)); // Giant Rat.
+    EXPECT_FALSE(isPeasant(MonsterId(154), GAME_VERSION_MM6)); // Skeleton.
+    EXPECT_FALSE(isPeasant(MonsterId(166), GAME_VERSION_MM6)); // Titan.
+    EXPECT_FALSE(isPeasant(MonsterId(173), GAME_VERSION_MM6)); // zReactor.
+
+    // Actor::IsPeasant goes through the hostility group and must agree.
+    Actor titan;
+    titan.monsterInfo.id = MonsterId(166);
+    titan.hostilityGroup = monsterTypeForMonsterId(titan.monsterInfo.id);
+    EXPECT_FALSE(titan.IsPeasant());
+
+    Actor peasant;
+    peasant.monsterInfo.id = MonsterId(123);
+    peasant.hostilityGroup = monsterTypeForMonsterId(peasant.monsterInfo.id);
+    EXPECT_TRUE(peasant.IsPeasant());
 }

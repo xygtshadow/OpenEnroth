@@ -1008,7 +1008,7 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
 
         case SPRITE_SPELL_LIGHT_DESTROY_UNDEAD: {
             if (pid.type() == OBJECT_Actor &&
-                supertypeForMonsterId(pActors[pid.id()].monsterInfo.id) == MONSTER_SUPERTYPE_UNDEAD) {
+                supertypeForMonsterId(pActors[pid.id()].monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_UNDEAD) {
                 applySpellSpriteDamage(uLayingItemID, pid);
             }
             updateSpriteOnImpact(object);

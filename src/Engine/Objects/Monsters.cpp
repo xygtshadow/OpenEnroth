@@ -22,7 +22,7 @@ MonsterList *pMonsterList;
 
 void ParseDamage(std::string_view damage_str, uint8_t *dice_rolls,
                  uint8_t *dice_sides, uint8_t *dmg_bonus);
-MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str);
+MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version);
 MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str);
 
 //----- (004548E2) --------------------------------------------------------
@@ -89,7 +89,23 @@ CombinedSkillValue ParseSkillValue(std::string_view skillString, std::string_vie
 }
 
 //----- (00454CB4) --------------------------------------------------------
-static DamageType ParseAttackType(std::string_view damage_type_str) {
+static DamageType ParseAttackType(std::string_view damage_type_str, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6 attack types: Elec/Cold/Pois are MM7's Air/Water/Earth (like the resistance
+        // columns), Magic is the non-elemental DAMAGE_MAGIC and Ener is a real energy attack.
+        // Same coding as the ddm-embedded monster stats (see reconstructMm6DamageType).
+        static const std::map<std::string, DamageType, ascii::NoCaseLess> mm6DamageTypeMap = {
+            {"Fire",  DAMAGE_FIRE},
+            {"Elec",  DAMAGE_AIR},
+            {"Cold",  DAMAGE_WATER},
+            {"Pois",  DAMAGE_EARTH},
+            {"Phys",  DAMAGE_PHYSICAL},
+            {"Magic", DAMAGE_MAGIC},
+            {"Ener",  DAMAGE_ENERGY},
+        };
+        return valueOr(mm6DamageTypeMap, damage_type_str, DAMAGE_PHYSICAL);
+    }
+
     // Match the abbreviated names used in monsters.txt (e.g. "Phys", "Ener").
     static const std::map<std::string, DamageType, ascii::NoCaseLess> damageTypeMap = {
         {"Fire",   DAMAGE_FIRE},
@@ -142,7 +158,26 @@ void ParseDamage(std::string_view damage_str, uint8_t *dice_rolls,
 }
 
 //----- (00454E3A) --------------------------------------------------------
-MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str) {
+MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6 projectiles follow the attack-type names. Magic/Rock/Dagger/FireAr have no MM7
+        // sprite and drop to NONE, mirroring the ddm-embedded stats path
+        // (see reconstructMm6MissileType).
+        if (ascii::noCaseEquals(missle_attack_str, "ARROW"))
+            return MONSTER_PROJECTILE_ARROW;
+        if (ascii::noCaseEquals(missle_attack_str, "FIRE"))
+            return MONSTER_PROJECTILE_FIRE_BOLT;
+        if (ascii::noCaseEquals(missle_attack_str, "ELEC"))
+            return MONSTER_PROJECTILE_AIR_BOLT;
+        if (ascii::noCaseEquals(missle_attack_str, "COLD"))
+            return MONSTER_PROJECTILE_WATER_BOLT;
+        if (ascii::noCaseEquals(missle_attack_str, "POIS"))
+            return MONSTER_PROJECTILE_EARTH_BOLT;
+        if (ascii::noCaseEquals(missle_attack_str, "ENER"))
+            return MONSTER_PROJECTILE_ENERGY_BOLT;
+        return MONSTER_PROJECTILE_NONE;
+    }
+
     // TODO(captainurist): this is broken, we get "FireAr" for flaming arrow here.
 
     if (ascii::noCaseEquals(missle_attack_str, "ARROW"))
@@ -394,7 +429,7 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
     //   "Shot Nx"            - multi-shot, N extra shots.
     //   "Summon <where> <name> [a|b|c|...]" - summon a monster, group letter at end picks monster A/B/C subtype.
     //   "Explode <dmg>"      - explode-on-death, damage parsed via ParseDamage.
-    auto parseSpecialAbility = [](std::string_view cell, MonsterInfo &info) {
+    auto parseSpecialAbility = [version](std::string_view cell, MonsterInfo &info) {
         info.specialAbilityType = MONSTER_SPECIAL_ABILITY_NONE;
         info.specialAbilityDamageDiceBonus = 0;
         std::string normalized(removeQuotes(cell));
@@ -437,7 +472,7 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
                 &info.specialAbilityDamageDiceRolls,
                 &info.specialAbilityDamageDiceSides,
                 &info.specialAbilityDamageDiceBonus);
-            info.field_3C_some_special_attack = std::to_underlying(ParseAttackType(props[0])); // TODO(captainurist): makes no sense.
+            info.field_3C_some_special_attack = std::to_underlying(ParseAttackType(props[0], version)); // TODO(captainurist): makes no sense.
         }
     };
 
@@ -533,13 +568,13 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
         parseAttackPrefs(tokens[15], info);
         parseSpecialAttack(tokens[16], info);
 
-        info.attack1Type = ParseAttackType(tokens[17]);
+        info.attack1Type = ParseAttackType(tokens[17], version);
         ParseDamage(tokens[18], &info.attack1DamageDiceRolls, &info.attack1DamageDiceSides, &info.attack1DamageBonus);
-        info.attack1MissileType = ParseMissleAttackType(tokens[19]);
+        info.attack1MissileType = ParseMissleAttackType(tokens[19], version);
         info.attack2Chance = fromString<int>(tokens[20]);
-        info.attack2Type = ParseAttackType(tokens[21]);
+        info.attack2Type = ParseAttackType(tokens[21], version);
         ParseDamage(tokens[22], &info.attack2DamageDiceRolls, &info.attack2DamageDiceSides, &info.attack2DamageBonus);
-        info.attack2MissileType = ParseMissleAttackType(tokens[23]);
+        info.attack2MissileType = ParseMissleAttackType(tokens[23], version);
         info.spell1UseChance = fromString<int>(tokens[24]);
         parseSpellEntry(tokens[25], info.spell1Id, info.spell1SkillMastery);
 

@@ -59,6 +59,25 @@ inline bool isPeasant(MonsterId monsterId) {
     return isPeasant(monsterTypeForMonsterId(monsterId));
 }
 
+/**
+ * Version-aware variant of isPeasant(). MM6 peasants are monsters.txt rows 121-144
+ * (PeasantF1A..PeasantM4C), i.e. 3-tier families 41-48; MM7's own peasant id ranges would also
+ * swallow MM6's Oozes, Ogres, Rats, Robots, Skeletons, Sorcerers, Titans and Werewolves.
+ *
+ * @param monsterType                   Monster type (3-tier family index) to check.
+ * @param version                       Game version the type belongs to.
+ * @return                              Whether monsters of this type are peasants.
+ */
+inline bool isPeasant(MonsterType monsterType, GameVersion version) {
+    if (version != GAME_VERSION_MM6)
+        return isPeasant(monsterType);
+    return std::to_underlying(monsterType) >= 41 && std::to_underlying(monsterType) <= 48;
+}
+
+inline bool isPeasant(MonsterId monsterId, GameVersion version) {
+    return isPeasant(monsterTypeForMonsterId(monsterId), version);
+}
+
 Sex sexForMonsterType(MonsterType monsterType);
 
 Race raceForMonsterType(MonsterType monsterType);

@@ -454,7 +454,7 @@ void CastSpellInfoHelpers::castSpell() {
                     pSpellSprite.uFacing = target_direction.uYawAngle;
                     pSpellSprite.uAttributes |= SPRITE_ATTACHED_TO_HEAD;
                     int obj_id = pSpellSprite.Create(0, 0, 0, 0);
-                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id) != MONSTER_SUPERTYPE_UNDEAD) {
+                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_UNDEAD) {
                         spellFailed(pCastSpell, LSTR_SPELL_FAILED);
                         pPlayer->SpendMana(uRequiredMana); // decrease mana on failure
                         setSpellRecovery(pCastSpell, recoveryTime);
@@ -1768,7 +1768,7 @@ void CastSpellInfoHelpers::castSpell() {
                     pSpellSprite.spriteId = SPRITE_SPELL_SPIRIT_TURN_UNDEAD_1;
                     initSpellSprite(&pSpellSprite, spell_level, spell_mastery, pCastSpell);
                     for (Actor *actor : render->getActorsInViewport(4096)) {
-                        if (supertypeForMonsterId(actor->monsterInfo.id) == MONSTER_SUPERTYPE_UNDEAD) {
+                        if (supertypeForMonsterId(actor->monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_UNDEAD) {
                             pSpellSprite.vPosition = actor->pos - Vec3f(0, 0, actor->height * -0.8);
                             pSpellSprite.spell_target_pid = Pid(OBJECT_Actor, actor->id);
                             pSpellSprite.Create(0, 0, 0, 0);
@@ -2076,7 +2076,7 @@ void CastSpellInfoHelpers::castSpell() {
                     Duration spell_duration = Duration::fromMinutes(10 * spell_level);
                     int monster_id = spell_targeted_at.id();
                     // v730 = 836 * monster_id;
-                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id) == MONSTER_SUPERTYPE_UNDEAD) {
+                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_UNDEAD) {
                         spellFailed(pCastSpell, LSTR_SPELL_FAILED);
                         pPlayer->SpendMana(uRequiredMana); // decrease mana on failure
                         setSpellRecovery(pCastSpell, recoveryTime);
@@ -2121,7 +2121,7 @@ void CastSpellInfoHelpers::castSpell() {
                     initSpellSprite(&pSpellSprite, spell_level, spell_mastery, pCastSpell);
                     for (Actor *actor : render->getActorsInViewport(4096)) {
                         // Change: do not exit loop when first undead monster is found
-                        if (supertypeForMonsterId(actor->monsterInfo.id) != MONSTER_SUPERTYPE_UNDEAD) {
+                        if (supertypeForMonsterId(actor->monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_UNDEAD) {
                             pSpellSprite.vPosition = actor->pos - Vec3f(0, 0, actor->height * -0.8);
                             pSpellSprite.spell_target_pid = Pid(OBJECT_Actor, actor->id);
                             pSpellSprite.Create(0, 0, 0, 0);
@@ -2758,7 +2758,7 @@ void CastSpellInfoHelpers::castSpell() {
                             assert(false);
                     }
                     int monster_id = spell_targeted_at.id();
-                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id) != MONSTER_SUPERTYPE_UNDEAD) {
+                    if (supertypeForMonsterId(pActors[monster_id].monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_UNDEAD) {
                         spellFailed(pCastSpell, LSTR_SPELL_FAILED);
                         pPlayer->SpendMana(uRequiredMana); // decrease mana on failure
                         setSpellRecovery(pCastSpell, recoveryTime);

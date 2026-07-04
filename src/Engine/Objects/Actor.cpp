@@ -694,6 +694,10 @@ bool Actor::ArePeasantsOfSameFaction(Actor *a1, Actor *a2) {
     MonsterType v2 = a1->hostilityGroup;
     MonsterType v3 = a2->hostilityGroup;
 
+    // MM6 peasants have no races - all PeasantF*/PeasantM* families side with each other.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return (isPeasant(v2, GAME_VERSION_MM6) && isPeasant(v3, GAME_VERSION_MM6)) || v2 == v3;
+
     if (isPeasant(v2) && isPeasant(v3) && raceForMonsterType(v2) == raceForMonsterType(v3) || v2 == v3)
         return true;
     else
@@ -1225,7 +1229,7 @@ int Actor::_43B3E0_CalcDamage(ActorAbility dmgSource) {
 
 //----- (00438B9B) --------------------------------------------------------
 bool Actor::IsPeasant() {
-    return isPeasant(this->hostilityGroup);
+    return isPeasant(this->hostilityGroup, engine->gameVersion());
 }
 
 //----- (0042EBEE) --------------------------------------------------------
@@ -1556,7 +1560,7 @@ void Actor::AI_RandomMove(unsigned int uActor_id, Pid uTarget_id,
         absx = absy + (absx / 2);
     else
         absx = absx + absy / 2;
-    if (supertypeForMonsterId(pActors[uActor_id].monsterInfo.id) == MONSTER_SUPERTYPE_TREANT) {
+    if (supertypeForMonsterId(pActors[uActor_id].monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_TREANT) {
         if (!uActionLength) uActionLength = 256_ticks;
         Actor::AI_StandOrBored(uActor_id, Pid(OBJECT_Character, 0), uActionLength,
                                &doNotInitializeBecauseShouldBeRandom);
@@ -1786,7 +1790,10 @@ void Actor::Die(unsigned int uActorID) {
 
     Item drop;
     drop.Reset();
-    drop.itemId = itemDropForMonsterType(monsterTypeForMonsterId(actor->monsterInfo.id));
+    // The type-keyed reagent drops (harpy feathers, troll blood, ...) are an MM7 alchemy
+    // mechanic; MM6 has no reagents, and its monster ids would hit unrelated map entries.
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        drop.itemId = itemDropForMonsterType(monsterTypeForMonsterId(actor->monsterInfo.id));
 
     if (grng->random(100) < 20 && drop.itemId != ITEM_NULL) {
         SpriteObject::dropItemAt(pItemTable->items[drop.itemId].spriteId,
@@ -1849,7 +1856,7 @@ void Actor::AI_Pursue1(unsigned int uActorID, Pid a2, signed int arg0,
     } else {
         v10 = pDir;
     }
-    if (supertypeForMonsterId(v7->monsterInfo.id) == MONSTER_SUPERTYPE_TREANT) {
+    if (supertypeForMonsterId(v7->monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_TREANT) {
         if (!uActionLength) uActionLength = 256_ticks;
         Actor::AI_StandOrBored(uActorID, Pid::character(0), uActionLength, v10);
         return;
@@ -1897,7 +1904,7 @@ void Actor::AI_Flee(unsigned int uActorID, Pid sTargetPid,
         }
         Actor::GetDirectionInfo(v7, Pid::character(0), &v10, 0);
         v13 = &v10;
-        if (supertypeForMonsterId(v5->monsterInfo.id) == MONSTER_SUPERTYPE_TREANT ||
+        if (supertypeForMonsterId(v5->monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_TREANT ||
             sTargetPid.type() == OBJECT_Actor && v13->uDistance < meleeRange) {
             if (!uActionLength) uActionLength = 256_ticks;
             Actor::AI_StandOrBored(uActorID, Pid::character(0), uActionLength, v13);
@@ -1948,7 +1955,7 @@ void Actor::AI_Pursue2(unsigned int uActorID, Pid a2,
         Actor::GetDirectionInfo(v8, a2, &a3, v6);
         v10 = &a3;
     }
-    if (supertypeForMonsterId(v7->monsterInfo.id) == MONSTER_SUPERTYPE_TREANT) {
+    if (supertypeForMonsterId(v7->monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_TREANT) {
         if (!uActionLength) uActionLength = 256_ticks;
         Actor::AI_StandOrBored(uActorID, Pid::character(0), uActionLength, v10);
         return;
@@ -2003,7 +2010,7 @@ void Actor::AI_Pursue3(unsigned int uActorID, Pid a2,
         Actor::GetDirectionInfo(v7, a2, &a3, v5);
         v20 = &a3;
     }
-    if (supertypeForMonsterId(v6->monsterInfo.id) == MONSTER_SUPERTYPE_TREANT) {
+    if (supertypeForMonsterId(v6->monsterInfo.id, engine->gameVersion()) == MONSTER_SUPERTYPE_TREANT) {
         if (!uActionLength) uActionLength = 256_ticks;
         return Actor::AI_StandOrBored(uActorID, Pid::character(0), uActionLength, a4);
     }
@@ -2345,7 +2352,7 @@ void Actor::ActorDamageFromMonster(Pid attacker_id,
                     pushDistance =
                         20 * finalDmg / pActors[actor_id].monsterInfo.hp;
                     if (pushDistance > 10) pushDistance = 10;
-                    if (supertypeForMonsterId(pActors[actor_id].monsterInfo.id) != MONSTER_SUPERTYPE_TREANT) {
+                    if (supertypeForMonsterId(pActors[actor_id].monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_TREANT) {
                         pActors[actor_id].velocity = 50 * pushDistance * pVelocity;
                     }
                     Actor::AddOnDamageOverlay(actor_id, 1, finalDmg);
@@ -3752,6 +3759,17 @@ int Actor::CalcMagicalDamageToActor(DamageType dmgType,
         case DAMAGE_DARK:
             v6 = this->monsterInfo.resDark;
             break;
+        case DAMAGE_MAGIC:
+            // MM6's non-elemental Magic damage is checked against Magic resistance, which this
+            // engine represents as the Mind/Spirit/Body fan-out (all three carry the same value).
+            // MM7's own DAMAGE_MAGIC (Souldrinker) is unresistable.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                v6 = this->monsterInfo.resMind;
+                v4 = v5;
+            } else {
+                v6 = 0;
+            }
+            break;
         default:
             v6 = 0;
             break;
@@ -4525,7 +4543,7 @@ void ItemDamageFromActor(Pid uObjID, unsigned int uActorID, const Vec3f &pVeloci
                     int knockback = 20 * damage / (signed int)pActors[uActorID].monsterInfo.hp;
                     if (knockback > 10)
                         knockback = 10;
-                    if (supertypeForMonsterId(pActors[uActorID].monsterInfo.id) != MONSTER_SUPERTYPE_TREANT) {
+                    if (supertypeForMonsterId(pActors[uActorID].monsterInfo.id, engine->gameVersion()) != MONSTER_SUPERTYPE_TREANT) {
                         pActors[uActorID].velocity = 50 * knockback * pVelocity;
                     }
                     Actor::AddOnDamageOverlay(uActorID, 1, damage);
