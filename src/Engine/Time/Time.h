@@ -4,7 +4,8 @@
 
 #include "Duration.h"
 
-const int gameStartingYear = 1168;
+// MM7 starts in year 1168, MM6 in 1165. Set once at engine construction, see Engine::Engine.
+extern int gameStartingYear;
 
 struct CivilTime {
     int year = 0; // Since the Silence.

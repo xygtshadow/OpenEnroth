@@ -378,9 +378,8 @@ unsigned int Party::getPartyFame() {
 
 void Party::resetCharactersMm6() {
     // The MM6 default party, byte-for-byte from new.lod's party.bin - MM6's new-game savegame
-    // template. Experience and birth years are the template's fixed values (birth years shifted
-    // by +3 so ages come out right against the engine's MM7 starting year of 1168 - MM6 starts
-    // in 1165, tracked in docs/pending). Every character knows the first spell of their magic
+    // template. Experience and birth years are the template's fixed values (MM6 sessions start
+    // in year 1165, see gameStartingYear). Every character knows the first spell of their magic
     // schools; the books of the second are in their backpacks, see giveDefaultPartyItemsMm6().
     struct Mm6DefaultCharacter {
         LstrId name;
@@ -395,15 +394,15 @@ void Party::resetCharactersMm6() {
     };
     static const std::array<Mm6DefaultCharacter, 4> defaults = {{
         {LSTR_NAME_RODERICK, CLASS_PALADIN, SEX_MALE, 0, {17, 5, 15, 15, 15, 13, 6},
-         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {static_cast<SpellId>(45)}, 343, 1147},
+         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {static_cast<SpellId>(45)}, 343, 1144},
         {LSTR_NAME_ALEXIS, CLASS_ARCHER, SEX_FEMALE, 11, {14, 15, 5, 15, 17, 13, 6},
-         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {static_cast<SpellId>(12)}, 291, 1147},
+         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {static_cast<SpellId>(12)}, 291, 1144},
         {LSTR_NAME_SERENA, CLASS_CLERIC, SEX_FEMALE, 9, {11, 7, 17, 15, 13, 11, 12},
          {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION},
-         {static_cast<SpellId>(56), static_cast<SpellId>(67)}, 266, 1146},
+         {static_cast<SpellId>(56), static_cast<SpellId>(67)}, 266, 1143},
         {LSTR_NAME_ZOLTAN, CLASS_SORCERER, SEX_MALE, 7, {11, 17, 7, 15, 13, 13, 9},
          {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION},
-         {static_cast<SpellId>(1), static_cast<SpellId>(23)}, 336, 1143},
+         {static_cast<SpellId>(1), static_cast<SpellId>(23)}, 336, 1140},
     }};
 
     for (int i = 0; i < 4; i++) {

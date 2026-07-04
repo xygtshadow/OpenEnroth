@@ -210,6 +210,110 @@ static constexpr IndexedArray<int, CLASS_FIRST, CLASS_LAST> pBaseManaPerLevelByC
     {CLASS_LICH,              6}
 };
 
+// MM6 analogs of the tables above, from the MM6 manual & community references, validated against
+// new.lod's party.bin new-game template (default party HP 31/31/24/24, SP 7/7/22/22). Same formula
+// as MM7 (MM7 inherited MM6's engine): max = base[class] + perLevel[class] * (level + statBonus),
+// plus perLevel * Bodybuilding/Meditation via GetSkillBonus. Each MM6 promotion adds +1 hp & +1 sp
+// per level (+2 hp for knights); MM6's 3 tiers occupy the first 3 of the 4 MM7 enum tiers. Classes
+// that don't exist in MM6 (thief/monk/ranger blocks, tier-4 columns) are left zero.
+static constexpr int pBaseHealthByClassMm6[12] = {30, 0, 0, 25, 25, 0, 20, 20, 20, 0, 0, 0};
+static constexpr int pBaseManaByClassMm6[12] = {0, 0, 0, 5, 5, 0, 10, 10, 10, 0, 0, 0};
+
+static constexpr IndexedArray<int, CLASS_FIRST, CLASS_LAST> pBaseHealthPerLevelByClassMm6 = {
+    {CLASS_KNIGHT,            4},
+    {CLASS_CAVALIER,          6},
+    {CLASS_CHAMPION,          8},
+    {CLASS_BLACK_KNIGHT,      0},
+    {CLASS_THIEF,             0},
+    {CLASS_ROGUE,             0},
+    {CLASS_SPY,               0},
+    {CLASS_ASSASSIN,          0},
+    {CLASS_MONK,              0},
+    {CLASS_INITIATE,          0},
+    {CLASS_MASTER,            0},
+    {CLASS_NINJA,             0},
+    {CLASS_PALADIN,           3},
+    {CLASS_CRUSADER,          4},
+    {CLASS_HERO,              5},
+    {CLASS_VILLIAN,           0},
+    {CLASS_ARCHER,            3},
+    {CLASS_WARRIOR_MAGE,      4},
+    {CLASS_MASTER_ARCHER,     5},
+    {CLASS_SNIPER,            0},
+    {CLASS_RANGER,            0},
+    {CLASS_HUNTER,            0},
+    {CLASS_RANGER_LORD,       0},
+    {CLASS_BOUNTY_HUNTER,     0},
+    {CLASS_CLERIC,            2},
+    {CLASS_PRIEST,            3},
+    {CLASS_PRIEST_OF_SUN,     4},
+    {CLASS_PRIEST_OF_MOON,    0},
+    {CLASS_DRUID,             2},
+    {CLASS_GREAT_DRUID,       3},
+    {CLASS_ARCH_DRUID,        4},
+    {CLASS_WARLOCK,           0},
+    {CLASS_SORCERER,          2},
+    {CLASS_WIZARD,            3},
+    {CLASS_ARCHAMGE,          4},
+    {CLASS_LICH,              0}
+};
+static constexpr IndexedArray<int, CLASS_FIRST, CLASS_LAST> pBaseManaPerLevelByClassMm6 = {
+    {CLASS_KNIGHT,            0},
+    {CLASS_CAVALIER,          0},
+    {CLASS_CHAMPION,          0},
+    {CLASS_BLACK_KNIGHT,      0},
+    {CLASS_THIEF,             0},
+    {CLASS_ROGUE,             0},
+    {CLASS_SPY,               0},
+    {CLASS_ASSASSIN,          0},
+    {CLASS_MONK,              0},
+    {CLASS_INITIATE,          0},
+    {CLASS_MASTER,            0},
+    {CLASS_NINJA,             0},
+    {CLASS_PALADIN,           1},
+    {CLASS_CRUSADER,          2},
+    {CLASS_HERO,              3},
+    {CLASS_VILLIAN,           0},
+    {CLASS_ARCHER,            1},
+    {CLASS_WARRIOR_MAGE,      2},
+    {CLASS_MASTER_ARCHER,     3},
+    {CLASS_SNIPER,            0},
+    {CLASS_RANGER,            0},
+    {CLASS_HUNTER,            0},
+    {CLASS_RANGER_LORD,       0},
+    {CLASS_BOUNTY_HUNTER,     0},
+    {CLASS_CLERIC,            3},
+    {CLASS_PRIEST,            4},
+    {CLASS_PRIEST_OF_SUN,     5},
+    {CLASS_PRIEST_OF_MOON,    0},
+    {CLASS_DRUID,             3},
+    {CLASS_GREAT_DRUID,       4},
+    {CLASS_ARCH_DRUID,        5},
+    {CLASS_WARLOCK,           0},
+    {CLASS_SORCERER,          3},
+    {CLASS_WIZARD,            4},
+    {CLASS_ARCHAMGE,          5},
+    {CLASS_LICH,              0}
+};
+
+static int baseHealthForClass(Class classType) {
+    int index = std::to_underlying(classType) / 4;
+    return engine->gameVersion() == GAME_VERSION_MM6 ? pBaseHealthByClassMm6[index] : pBaseHealthByClass[index];
+}
+
+static int baseManaForClass(Class classType) {
+    int index = std::to_underlying(classType) / 4;
+    return engine->gameVersion() == GAME_VERSION_MM6 ? pBaseManaByClassMm6[index] : pBaseManaByClass[index];
+}
+
+static int healthPerLevelForClass(Class classType) {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? pBaseHealthPerLevelByClassMm6[classType] : pBaseHealthPerLevelByClass[classType];
+}
+
+static int manaPerLevelForClass(Class classType) {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? pBaseManaPerLevelByClassMm6[classType] : pBaseManaPerLevelByClass[classType];
+}
+
 static constexpr IndexedArray<std::array<int, 19>, ATTRIBUTE_FIRST_STAT, ATTRIBUTE_LAST_STAT> pConditionAttributeModifier = {
     {ATTRIBUTE_MIGHT,         {100, 100, 100, 120, 50, 200, 75, 60, 50, 30, 25, 10, 100, 100, 100, 100, 100, 100, 100}},
     {ATTRIBUTE_INTELLIGENCE,  {100, 100, 100, 50, 25, 10, 100, 100, 75, 60, 50, 30, 100, 100, 100, 100, 100, 1, 100}},
@@ -1808,9 +1912,9 @@ float Character::GetArmorRecoveryMultiplierFromSkillLevel(Skill armour_skill_typ
 int Character::GetMaxHealth() const {
     int endbonus = GetParameterBonus(GetActualEndurance());
     int healthbylevel =
-        pBaseHealthPerLevelByClass[classType] * (GetActualLevel() + endbonus);
+        healthPerLevelForClass(classType) * (GetActualLevel() + endbonus);
     int itembonus = GetItemsBonus(ATTRIBUTE_HEALTH) + healthbylevel;
-    int maxhealth = uFullHealthBonus + pBaseHealthByClass[std::to_underlying(classType) / 4] +
+    int maxhealth = uFullHealthBonus + baseHealthForClass(classType) +
                     GetSkillBonus(ATTRIBUTE_HEALTH) + itembonus;
 
     if (maxhealth < 0)  // min zero
@@ -1878,9 +1982,9 @@ int Character::GetMaxMana() const {
     }
 
     int manabylevel =
-        pBaseManaPerLevelByClass[classType] * (GetActualLevel() + statbonus);
+        manaPerLevelForClass(classType) * (GetActualLevel() + statbonus);
     int itembonus = GetItemsBonus(ATTRIBUTE_MANA) + manabylevel;
-    int maxmana = uFullManaBonus + pBaseManaByClass[std::to_underlying(classType) / 4] +
+    int maxmana = uFullManaBonus + baseManaForClass(classType) +
                   GetSkillBonus(ATTRIBUTE_MANA) + itembonus;
 
     if (maxmana < 0)  // min of 0
@@ -2617,13 +2721,13 @@ int Character::GetSkillBonus(Attribute inSkill) const {
             return 0;
 
         case ATTRIBUTE_HEALTH: {
-            int base_value = pBaseHealthPerLevelByClass[classType];
+            int base_value = healthPerLevelForClass(classType);
             int attrib_modif = GetBodybuilding();
             return base_value * attrib_modif;
         }
 
         case ATTRIBUTE_MANA: {
-            int base_value = pBaseManaPerLevelByClass[classType];
+            int base_value = manaPerLevelForClass(classType);
             int attrib_modif = GetMeditation();
             return base_value * attrib_modif;
         }
@@ -2812,6 +2916,11 @@ int Character::GetMultiplierForSkillLevel(Skill uSkillType, int mult1, int mult2
 //                     23   zombie male
 //                     24   zombie female
 enum Race Character::GetRace() const {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 has no races - faces 8-19 are just more humans, not the MM7 elf/dwarf/goblin blocks.
+        return RACE_HUMAN;
+    }
+
     if (uCurrentFace <= 7) {
         return RACE_HUMAN;
     } else if (uCurrentFace <= 11) {

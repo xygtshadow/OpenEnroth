@@ -115,22 +115,24 @@ GAME_TEST(Mm6, NewGameDefaults) {
         std::vector<int> spells;
         int experience;
         int age;
+        int hp;
+        int sp;
         std::vector<int> backpack;
         int mainHand;
     };
     // Every caster knows the first spell of their school and carries the book of the second.
     std::array<DefaultCharacter, 4> expected = {{
         {"Roderick", CLASS_PALADIN, SEX_MALE, 0, {17, 5, 15, 15, 15, 13, 6},
-         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {45}, 343, 21,
+         {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {45}, 343, 21, 31, 7,
          {124, 345, 505}, 1}, // Blessed Ring, Bless book, The Letter; Longsword.
         {"Alexis", CLASS_ARCHER, SEX_FEMALE, 11, {14, 15, 5, 15, 17, 13, 6},
-         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {12}, 291, 21,
+         {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {12}, 291, 21, 31, 7,
          {122, 312, 163, 160}, 23}, // Lunar Ring, Static Charge book, bottle, Poppysnaps; Hand Axe.
         {"Serena", CLASS_CLERIC, SEX_FEMALE, 9, {11, 7, 17, 15, 13, 11, 12},
-         {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION}, {56, 67}, 266, 22,
+         {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION}, {56, 67}, 266, 22, 24, 22,
          {121, 356, 367, 163, 162}, 50}, // Sparkling Ring, 2 books, bottle, Widoweeps Berries; Mace.
         {"Zoltan", CLASS_SORCERER, SEX_MALE, 7, {11, 17, 7, 15, 13, 13, 9},
-         {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION}, {1, 23}, 336, 25,
+         {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION}, {1, 23}, 336, 25, 24, 22,
          {122, 301, 323, 163, 160}, 15}, // Lunar Ring, 2 books, bottle, Poppysnaps; Dagger.
     }};
 
@@ -170,9 +172,31 @@ GAME_TEST(Mm6, NewGameDefaults) {
         for (InventoryConstEntry entry : have.inventory.entries())
             EXPECT_TRUE(entry->IsIdentified()) << want.name;
 
+        // MM6 has no races, and max HP/SP come from the MM6 class tables - the template's values.
+        EXPECT_EQ(have.GetRace(), RACE_HUMAN) << want.name;
+        EXPECT_EQ(have.GetMaxHealth(), want.hp) << want.name;
+        EXPECT_EQ(have.GetMaxMana(), want.sp) << want.name;
         EXPECT_EQ(have.health, have.GetMaxHealth()) << want.name;
         EXPECT_EQ(have.mana, have.GetMaxMana()) << want.name;
     }
+
+    // MM6 starts in year 1165 (MM7 in 1168).
+    EXPECT_EQ(pParty->GetPlayingTime().toCivilTime().year, 1165);
+
+    // HP/SP growth: a paladin gains 3 hp & 1 sp per level, and each promotion tier
+    // adds another +1 hp & +1 sp per level.
+    Character &roderick = pParty->pCharacters[0];
+    roderick.uLevel = 2;
+    EXPECT_EQ(roderick.GetMaxHealth(), 34); // 25 + 3 * (2 + endBonus 1).
+    EXPECT_EQ(roderick.GetMaxMana(), 8);    // 5 + 1 * (2 + perBonus 1).
+    roderick.classType = CLASS_CRUSADER;
+    EXPECT_EQ(roderick.GetMaxHealth(), 37);
+    EXPECT_EQ(roderick.GetMaxMana(), 11);
+    roderick.classType = CLASS_HERO;
+    EXPECT_EQ(roderick.GetMaxHealth(), 40);
+    EXPECT_EQ(roderick.GetMaxMana(), 14);
+    roderick.classType = CLASS_PALADIN;
+    roderick.uLevel = 1;
 
     // Roderick's shield hand, armor, and his ring's rolled enchantment ("of Magic" +3).
     EXPECT_EQ(pParty->pCharacters[0].inventory.entry(ITEM_SLOT_OFF_HAND)->itemId, static_cast<ItemId>(84));
@@ -196,7 +220,6 @@ GAME_TEST(Mm6, NewGameDefaults) {
 }
 
 GAME_TEST(Mm6, WalkAndInteract) {
-    if (engine->gameVersion() != GAME_VERSION_MM6)
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 

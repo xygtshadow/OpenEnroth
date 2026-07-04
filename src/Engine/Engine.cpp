@@ -58,6 +58,7 @@
 #include "Engine/Tables/TransitionTable.h"
 #include "Engine/Tables/MerchantTable.h"
 #include "Engine/Tables/MessageScrollTable.h"
+#include "Engine/Time/Time.h"
 #include "Engine/Time/Timer.h"
 #include "Engine/AttackList.h"
 #include "Engine/Resources/ResourceManager.h"
@@ -392,6 +393,7 @@ bool Engine::draw_debug_outlines() {
 
 //----- (0044E4B7) --------------------------------------------------------
 Engine::Engine(std::shared_ptr<GameConfig> config, OverlaySystem &overlaySystem, GameVersion gameVersion) : _overlaySystem(overlaySystem), _gameVersion(gameVersion) {
+    ::gameStartingYear = gameVersion == GAME_VERSION_MM6 ? 1165 : 1168;
     this->config = config;
     this->bloodsplat_container = EngineIocContainer::ResolveBloodsplatContainer();
     this->decal_builder = EngineIocContainer::ResolveDecalBuilder();
