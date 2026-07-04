@@ -29,6 +29,7 @@
 #include "Engine/Objects/CombinedSkillValue.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/Monsters.h"
+#include "Engine/Objects/NPC.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Tables/HouseTable.h"
@@ -38,6 +39,7 @@
 
 #include "GUI/GUIButton.h"
 #include "GUI/GUIWindow.h"
+#include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/Houses/Shops.h"
@@ -734,37 +736,82 @@ GAME_TEST(Mm6, BuyFromWeaponShop) {
     game.tick(5);
 }
 
-GAME_TEST(Mm6, PeasantNews) {
+// MM6 street townsfolk are generated citizens: the first talk to a peasant actor generates a random
+// citizen lazily (towns place far more peasants than the citizen buffer holds) - sex from the peasant's
+// monster row (PeasantF* rows 121-132 / PeasantM* rows 133-144; the ddm npcId carries no reliable sex),
+// name by sex from npcnames.txt, profession rolled on npcprof.txt's "Random Chance" column, portrait
+// from the npc501..npc554 commoner block. Talking opens the standard hireable-NPC dialogue: it greets
+// with a regional news line (npcnews.txt - the old bare-news flow folded into the dialogue) and offers
+// the profession-details and hire topics; hiring pays the profession's hire price and puts the citizen
+// in the party.
+GAME_TEST(Mm6, StreetCitizenDialogueAndHire) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
     game.startNewGame();
 
-    // Find a placed peasant.
-    auto peasantPos = std::ranges::find_if(pActors, [](const Actor &actor) {
-        int monsterId = std::to_underlying(actor.monsterId);
-        return monsterId >= 121 && monsterId <= 135 && actor.CanAct();
-    })->pos;
+    // No eager generation at level load - peasants keep their raw ddm npcId (0/1/2, all below the
+    // 5000+ generated-NPC handles).
+    int peasants = 0;
+    for (const Actor &actor : pActors) {
+        if (isPeasant(actor.monsterInfo.id, GAME_VERSION_MM6)) {
+            EXPECT_LT(actor.npcId, 5000);
+            peasants++;
+        }
+    }
+    EXPECT_GT(peasants, 0);
+    EXPECT_EQ(pNPCStats->uNewlNPCBufPos, 0);
 
-    // Teleport right next to it, facing it.
+    // Teleport right next to a placed peasant, facing it, and talk to it.
+    auto peasant = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return isPeasant(actor.monsterInfo.id, GAME_VERSION_MM6) && actor.CanAct();
+    });
+    ASSERT_NE(peasant, pActors.end());
+    Vec3f peasantPos = peasant->pos;
     Vec3f pos = peasantPos + Vec3f(-160, 0, 0);
     int yawDegrees = TrigLUT.atan2(peasantPos.x - pos.x, peasantPos.y - pos.y) * 90 / 512;
     game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
     game.tick(1);
-
-    // Talking to a peasant should surface a regional news line (MM6's npcnews.txt): either New Sorpigal
-    // local news or a kingdom-wide rumor.
-    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
-    game.tick(1);
-    EXPECT_FALSE(branchless_dialogue_str.empty());
-    const std::vector<RegionalNewsEntry> &localNews = pNPCStats->pRegionalNews[engine->_currentLoadedMapId];
-    EXPECT_EQ(localNews.size(), 30u); // New Sorpigal's share of npcnews.txt.
-    auto saysIt = [](const RegionalNewsEntry &entry) { return entry.text == branchless_dialogue_str; };
-    EXPECT_TRUE(std::ranges::any_of(localNews, saysIt) || std::ranges::any_of(pNPCStats->pGeneralNews, saysIt));
-
-    // Any key dismisses the dialogue.
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(2);
+
+    // The standard NPC dialogue opened on the generated citizen.
+    ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    ASSERT_GE(speakingNpcId, 5000);
+    NPCData *citizen = getNPCData(speakingNpcId);
+    EXPECT_FALSE(citizen->name.empty());
+    EXPECT_TRUE(std::ranges::contains(pNPCStats->pNPCNames[citizen->sex], citizen->name));
+    EXPECT_GE(citizen->portraitId, 501);
+    EXPECT_LE(citizen->portraitId, 554);
+    EXPECT_NE(citizen->profession, NoProfession);
+    EXPECT_GT(pNPCStats->pProfessions[citizen->profession].uHirePrice, 0u);
+    EXPECT_TRUE(citizen->canJoin);
+
+    // The citizen greets with a regional news line: New Sorpigal local news or a kingdom-wide rumor.
+    auto *dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    const std::string &greeting = dialogue->mm6NewsGreeting();
+    EXPECT_FALSE(greeting.empty());
+    const std::vector<RegionalNewsEntry> &localNews = pNPCStats->pRegionalNews[engine->_currentLoadedMapId];
+    EXPECT_EQ(localNews.size(), 30u); // New Sorpigal's share of npcnews.txt.
+    auto saysIt = [&](const RegionalNewsEntry &entry) { return entry.text == greeting; };
+    EXPECT_TRUE(std::ranges::any_of(localNews, saysIt) || std::ranges::any_of(pNPCStats->pGeneralNews, saysIt));
+
+    // Hire the citizen: click the hire topic (buttons are re-laid-out on draw - locate by msg_param).
+    pParty->SetGold(5000); // Some professions cost up to 2000 to hire.
+    const GUIButton *hireOption = nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectNPCDialogueOption && button->msg_param == std::to_underlying(DIALOGUE_HIRE_FIRE))
+            hireOption = button;
+    ASSERT_NE(hireOption, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, hireOption->rect.x + hireOption->rect.w / 2,
+                               hireOption->rect.y + hireOption->rect.h / 2);
+    game.tick(2);
+
+    EXPECT_TRUE(citizen->Hired());
+    // Burglars are the one profession hired for free (the hire handler skips the gold check for them).
+    int expectedPrice = citizen->profession == Burglar ? 0 : pNPCStats->pProfessions[citizen->profession].uHirePrice;
+    EXPECT_EQ(pParty->GetGold(), 5000 - expectedPrice);
+    EXPECT_TRUE(pParty->pHirelings[0].name == citizen->name || pParty->pHirelings[1].name == citizen->name);
 }
 
 GAME_TEST(Mm6, QuestNpcDialogueInTavern) {

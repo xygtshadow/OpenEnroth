@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "Engine/Localization.h"
 #include "Engine/MapEnumFunctions.h"
 #include "Engine/Objects/NPC.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
@@ -53,7 +54,10 @@ void NPCStats::InitializeNPCTopics(const Blob &npcTopics, GameVersion version) {
 
 void NPCStats::InitializeNPCDist(const Blob &npcDist) {
     // npcdist.txt table structure: profession (localized, not used) | area profession chance values...
-    for (auto [line, prof] : split(npcDist.str()).by("\r\n").drop(2).skip("").zip(allNpcProfessions()))
+    // The file is MM7-only (58 profession rows, then trailing non-numeric rows) - zip against MM7's
+    // profession range, NOT allNpcProfessions(), which also spans the MM6-only professions and would
+    // pull the trailing rows in as data.
+    for (auto [line, prof] : split(npcDist.str()).by("\r\n").drop(2).skip("").zip(Segment(Smith, Hunter)))
         for (auto [token, map] : split(line).by('\t').drop(1).zip(allMaps()))
             pProfessionChance[map].chanceByProfession[prof] = fromString<int>(token);
 
@@ -98,12 +102,8 @@ void NPCStats::InitializeNPCData(const Blob &npcData, GameVersion version) {
         pOriginalNPCData[i].dialogue_2_evt_id = fromString<int>(tokens[11]);
         pOriginalNPCData[i].dialogue_3_evt_id = fromString<int>(tokens[12]);
         if (isMm6) {
-            // MM6 professions 1-22 coincide with MM7's, then the sets diverge and MM6 runs to id 77 - past
-            // the MM7-shaped NpcProfession arrays (that's an out-of-range abort at first use, e.g. when the
-            // dialogue UI draws the NPC's title). Keep the shared prefix and drop the rest until MM6's
-            // profession set is modelled (docs/pending/mm6-npcprof-model.md).
-            int profession = fromString<int>(tokens[7]);
-            pOriginalNPCData[i].profession = profession >= 1 && profession <= 22 ? static_cast<NpcProfession>(profession) : NoProfession;
+            // MM6 profession ids are MM6's own 77-profession set (diverges from MM7's from id 23).
+            pOriginalNPCData[i].profession = npcProfessionFromMm6Id(fromString<int>(tokens[7]));
             // No greeting-index column; join is the numeric col 8 (0/1); no event D/E/F columns.
             pOriginalNPCData[i].canJoin = fromString<int>(tokens[8]) != 0;
         } else {
@@ -218,17 +218,46 @@ void NPCStats::InitializeNPCNames(const Blob &npcNames) {
 
 void NPCStats::InitializeNPCProfs(const Blob &npcProfs, GameVersion version) {
     if (version == GAME_VERSION_MM6) {
-        // MM6's npcprof.txt is a SET/model difference from MM7's, not just a column variant: it lists 77
-        // professions where MM7 has 58, the sets diverge from id 23 (id 52 = Peasant in MM6 vs Fallen
-        // Wizard in MM7), and MM6 also inserts a "Random Chance" column (col 2) and a "Personality" column
-        // (col 4) and has no "Dismiss Text". The NpcProfession enum and pProfessions array are MM7-shaped
-        // (58 slots), so MM6 ids 59-77 overflow pProfessions and the corresponding ids would carry the
-        // wrong profession data. Modelling MM6's profession set is a separate task (see
-        // docs/pending/mm6-npcprof-model.md); for now MM6's profession info is deliberately left
-        // unpopulated so engine bring-up can proceed.
-        logger->warning("MM6 npcprof.txt parsing is not implemented yet - NPC profession info (hire prices, "
-                        "join/benefit text) will be empty. MM6's 77-profession set differs from MM7's and "
-                        "needs a dedicated NpcProfession mapping.");
+        // MM6 npcprof.txt table structure: profession id | profession name (localized) | random chance |
+        //                                  hire price | personality (not used) | action text (localized) |
+        //                                  benefit description (localized) | join text (localized).
+        // Compared to MM7 it inserts "Random Chance" (col 2) and "Personality" (col 4) and has no
+        // "Dismiss Text"; its 77-profession set diverges from MM7's from id 23, so ids go through
+        // npcProfessionFromMm6Id. Col 1 is MM6's only localized source of profession names (MM7 reads
+        // them from fixed global.txt rows, which don't line up with MM6's global.txt), so it feeds the
+        // localization table. The random-chance column drives street-citizen generation; MM6 has no
+        // per-map npcdist.txt, the same weights apply everywhere, so they fan out into every
+        // pProfessionChance slot.
+        IndexedArray<int, NPC_PROFESSION_FIRST, NPC_PROFESSION_LAST> chanceByProfession = {{}};
+        for (std::string_view line : split(npcProfs.str()).by("\r\n").drop(4)) {
+            std::array<std::string_view, 8> tokens = split(line).by('\t');
+            if (tokens[0].empty())
+                continue; // Trailing pure-tab orphan rows past the last entry.
+
+            NpcProfession prof = npcProfessionFromMm6Id(fromString<int>(tokens[0]));
+            if (prof == NoProfession) {
+                logger->warning("npcprof.txt: unexpected MM6 profession id '{}', skipping.", tokens[0]);
+                continue;
+            }
+
+            localization->setNpcProfessionName(prof, std::string(removeQuotes(tokens[1])));
+            // Child's random chance is a literal "??" in the file - not a number, so it never generates.
+            if (!tokens[2].empty() && tokens[2].find_first_not_of("0123456789") == std::string_view::npos)
+                chanceByProfession[prof] = fromString<int>(tokens[2]);
+            pProfessions[prof].uHirePrice = fromString<int>(tokens[3]);
+            pProfessions[prof].pActionText = removeQuotes(tokens[5]);
+            pProfessions[prof].pBenefits = removeQuotes(tokens[6]);
+            pProfessions[prof].pJoinText = removeQuotes(tokens[7]);
+        }
+
+        int total = 0;
+        for (NpcProfession prof : allNpcProfessions())
+            total += chanceByProfession[prof];
+        for (MapId map : allMaps()) {
+            pProfessionChance[map].chanceByProfession = chanceByProfession;
+            pProfessionChance[map].total = total;
+        }
+        uNumNPCProfessions = 78; // Number of professions + 1, mirroring MM7's 59.
         return;
     }
 
@@ -250,13 +279,39 @@ void NPCStats::InitializeNPCProfs(const Blob &npcProfs, GameVersion version) {
     uNumNPCProfessions = 59;
 }
 
+NpcProfession NPCStats::rollProfession(MapId mapId) const {
+    if (pProfessionChance[mapId].total <= 0) // Zero when profession chances are not loaded.
+        return Hunter; // MM7's fallback profession (was NPC_PROFESSION_LAST before the enum grew MM6's professions).
+
+    int cap = grng->random(pProfessionChance[mapId].total);
+    int sum = 0;
+    for (NpcProfession prof : allNpcProfessions()) {
+        sum += pProfessionChance[mapId].chanceByProfession[prof];
+        if (sum > cap)
+            return prof;
+    }
+    return Hunter;
+}
+
+void NPCStats::initializeMm6StreetCitizen(NPCData *npc, Sex sex, MapId mapId) {
+    // Portraits come from icons.lod's dedicated commoner block npc501..npc554. The block mixes sexes;
+    // the original's per-sex sub-pools (and any personality-column keying) would need MM6.EXE, so the
+    // pick ignores sex for now (docs/pending/mm6-hostility-and-street-npcs.md).
+    *npc = NPCData();
+    npc->sex = sex;
+    npc->name = grng->randomSample(pNPCNames[sex]);
+    npc->portraitId = 501 + grng->random(54);
+    npc->profession = rollProfession(mapId);
+    npc->house = HOUSE_INVALID;
+    npc->field_24 = 1;
+    npc->canJoin = 1;
+}
+
 //----- (0047732C) --------------------------------------------------------
 void NPCStats::InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid,
                                         HouseId uLocation2D, MapId uMapId) {
     int rep_gen;
     int uGeneratedPortret;    // ecx@23
-    int test_prof_summ;       // ecx@37
-    int max_prof_cap;         // edx@37
                               // signed int result; // eax@39
     Race uRace;                // [sp+Ch] [bp-Ch]@1
     bool break_gen;           // [sp+10h] [bp-8h]@1
@@ -347,18 +402,7 @@ void NPCStats::InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid
         pNPCDataBuff->rep = 0;
     }
 
-    pNPCDataBuff->profession = NPC_PROFESSION_LAST;
-    if (pProfessionChance[uMapId].total > 0) { // Zero when profession chances are not loaded, e.g. for MM6 (npcprof.txt is not implemented yet).
-        max_prof_cap = grng->random(pProfessionChance[uMapId].total);
-        test_prof_summ = 0;
-        for (NpcProfession i : allNpcProfessions()) {
-            test_prof_summ += pProfessionChance[uMapId].chanceByProfession[i];
-            if (test_prof_summ > max_prof_cap) {
-                pNPCDataBuff->profession = i;
-                break;
-            }
-        }
-    }
+    pNPCDataBuff->profession = rollProfession(uMapId);
     pNPCDataBuff->house = uLocation2D;
     pNPCDataBuff->field_24 = 1;
     pNPCDataBuff->canJoin = 1;

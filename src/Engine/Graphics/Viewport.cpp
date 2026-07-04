@@ -13,6 +13,7 @@
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Localization.h"
 #include "Engine/Objects/Actor.h"
+#include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Spells/Spells.h"
@@ -191,10 +192,27 @@ void InteractWithActor(unsigned int id) {
     Actor::AI_FaceObject(id, Pid::character(0), 0);
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6 street townsfolk aren't npcdata NPCs - their npcId on the map is just 1 (male) / 2 (female) -
-        // the original generates a random citizen who tells "Regional News" (npcnews.txt). Citizen generation
-        // and hiring hinge on MM6's profession model (docs/pending/mm6-npcprof-model.md); until then just
-        // surface the news line itself.
+        // MM6 street townsfolk aren't npcdata NPCs - the original generates a random citizen when the
+        // party first talks to a peasant actor. Generation is lazy (not at level load) because towns
+        // place far more peasants than pAdditionalNPC has slots (New Sorpigal alone has ~120). The
+        // generated citizen sticks to the actor for the map session, and talking opens the standard
+        // hireable-NPC dialogue, which greets with a regional news line. The bare news line remains as
+        // the fallback once the citizen buffer is full. The citizen's sex comes from the peasant's
+        // monster row - MM6 rows 121-132 are the PeasantF* (female) models, 133-144 the PeasantM* ones
+        // (the ddm npcId on peasants is 0/1/2 with no reliable sex semantics - it even contradicts the
+        // model sex where set).
+        if (pActors[id].npcId < 5000 && isPeasant(pActors[id].monsterInfo.id, GAME_VERSION_MM6) &&
+            pNPCStats->uNewlNPCBufPos < static_cast<int>(pNPCStats->pAdditionalNPC.size())) {
+            Sex sex = std::to_underlying(pActors[id].monsterInfo.id) <= 132 ? SEX_FEMALE : SEX_MALE;
+            pNPCStats->initializeMm6StreetCitizen(
+                &pNPCStats->pAdditionalNPC[pNPCStats->uNewlNPCBufPos], sex, engine->_currentLoadedMapId);
+            pActors[id].npcId = pNPCStats->uNewlNPCBufPos + 5000;
+            pNPCStats->uNewlNPCBufPos++;
+        }
+        if (pActors[id].npcId >= 5000) {
+            engine->_messageQueue->addMessageCurrentFrame(UIMSG_StartNPCDialogue, id, 0);
+            return;
+        }
         std::string news = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
         if (!news.empty()) {
             branchless_dialogue_str = std::move(news);

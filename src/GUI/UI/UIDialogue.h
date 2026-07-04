@@ -30,10 +30,17 @@ class GUIWindow_Dialogue : public GUIWindow {
         return _displayedDialogue;
     }
 
+    const std::string &mm6NewsGreeting() const {
+        return _mm6NewsGreeting;
+    }
+
     virtual void Update() override;
 
  protected:
     DialogueId _displayedDialogue = DIALOGUE_MAIN;;
+    // MM6: the greeting a generated street citizen opens with is a regional news line (npcnews.txt),
+    // picked once at window creation (the join text takes over on hire-related topics as usual).
+    std::string _mm6NewsGreeting;
 };
 
 void initializeNPCDialogue(int npcId, int bPlayerSaysHello, Actor *actor = nullptr);

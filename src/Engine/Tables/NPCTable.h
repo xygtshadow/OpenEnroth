@@ -104,6 +104,29 @@ struct NPCStats {
     void InitializeNPCNews(const Blob &npcNews, GameVersion version);
     void InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid,
                                   HouseId uLocation2D, MapId uMapId);
+
+    /**
+     * Generates an MM6 street citizen into `npc`. MM6 street townsfolk aren't npcdata NPCs - the
+     * original generates a random citizen when the party first talks to a peasant actor: name by sex
+     * from npcnames.txt, profession weighted by npcprof.txt's "Random Chance" column (same weights on
+     * every map), portrait from the dedicated commoner block npc501..npc554.
+     *
+     * @param npc                       Slot in `pAdditionalNPC` to fill.
+     * @param sex                       Citizen sex, from the peasant's monster row (the PeasantF / PeasantM models).
+     * @param mapId                     Map the citizen lives on.
+     */
+    void initializeMm6StreetCitizen(NPCData *npc, Sex sex, MapId mapId);
+
+    /**
+     * Rolls a random profession weighted by `pProfessionChance` for the given map (MM7: npcdist.txt
+     * per-map chances; MM6: npcprof.txt's "Random Chance" column, same on every map).
+     *
+     * @param mapId                     Map to roll for.
+     * @return                          Rolled profession, or `Hunter` (MM7's legacy fallback) when no
+     *                                  chances are loaded.
+     */
+    NpcProfession rollProfession(MapId mapId) const;
+
     /**
      * @offset 0x476C60
      */

@@ -7,6 +7,7 @@
 
 #include "Application/Paths/GameVersion.h"
 
+#include "Engine/Localization.h"
 #include "Engine/Tables/NPCTable.h"
 
 #include "Utility/Memory/Blob.h"
@@ -31,9 +32,8 @@ static Blob makeNpcDataBlob(const std::vector<std::vector<std::string>> &rows) {
 // 0/1 "Join" flag at col 8, and free-form text from col 13 on ("Notes"). Parsing MM6 with MM7's columns
 // throws ("'gives money...' is not a number") when the numeric read of dialogue_4 (tokens[13]) lands on
 // the text Notes column. The MM6 parse path reads the join flag from col 8, maps events A/B/C to
-// dialogue 1/2/3, and leaves greetingIndex / dialogue 4-6 at their defaults. MM6 profession ids share
-// MM7's 1-22 prefix but then diverge and run to 77, overflowing the MM7-shaped NpcProfession arrays, so
-// only the shared prefix is kept until MM6's profession set is modelled (docs/pending/mm6-npcprof-model.md).
+// dialogue 1/2/3, and leaves greetingIndex / dialogue 4-6 at their defaults. MM6 profession ids are
+// MM6's own 77-profession set (diverging from MM7's from id 23) and translate via npcProfessionFromMm6Id.
 GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
     Blob blob = makeNpcDataBlob({
         {"NPC Data (Special)"},                                                          // Header 1.
@@ -53,7 +53,7 @@ GAME_TEST(NPCTableMm6, ParsesMm6Layout) {
     EXPECT_EQ(npc1.name, "Andover Potbello");
     EXPECT_EQ(npc1.portraitId, 81u);
     EXPECT_EQ(static_cast<int>(npc1.house), 92);
-    EXPECT_EQ(npc1.profession, NoProfession); // MM6 id 74 is past the shared 1-22 prefix -> dropped.
+    EXPECT_EQ(npc1.profession, FollowerOfBaa); // MM6 id 74, an MM6-only profession.
     EXPECT_TRUE(npc1.canJoin);                 // MM6 join flag from col 8 (numeric 1).
     EXPECT_EQ(npc1.greetingIndex, 0);          // MM6 has no greeting-index column -> default.
     EXPECT_EQ(npc1.dialogue_1_evt_id, 1u);     // Event #A.
@@ -206,17 +206,14 @@ GAME_TEST(NPCTableTopicMm7, DropsOneHeaderRow) {
     pNPCTopics[1] = saved1;
 }
 
-// MM6's npcprof.txt is a SET/model difference, not the column-shift first assumed: it lists 77
-// professions (ids 1-77) where MM7 has 58, the sets diverge from id 23 (id 52 = Peasant in MM6 vs
-// Fallen Wizard in MM7), and MM6 also inserts "Random Chance" (col 2) and "Personality" (col 4) columns
-// with no "Dismiss Text". The NpcProfession enum and pProfessions array are MM7-shaped (58 slots), so
-// MM6 ids 59-77 overflow pProfessions (an "array subscript out of range" abort) and the corresponding
-// ids would carry the wrong profession data. MM6 is therefore booted past (pProfessions left at
-// defaults) until a dedicated MM6 profession model is built - same interim treatment as npcnews/spells.
-GAME_TEST(NPCTableProfMm6, BootsPastProfessions) {
-    // MM6 column layout: # | Professions | Random Chance | Cost/w | Personality | Action Text |
-    //                    In Party Benefit | Join Text. Includes id 77 (Child) which overflows the
-    //                    58-slot pProfessions - boot-past must skip the whole table, not just clamp.
+// MM6's npcprof.txt parses natively. Its column layout is # | Professions | Random Chance | Cost/w |
+// Personality | Action Text | In Party Benefit | Join Text (a "Random Chance" col 2 and "Personality"
+// col 4 that MM7 doesn't have, no "Dismiss Text"), and its ids are MM6's own 77-profession set that
+// diverges from MM7's from id 23 - translated via npcProfessionFromMm6Id (23 -> Counselor, not MM7's
+// Herbalist; 69 -> Hunter2, not MM7's benefit-carrying Hunter; 77 -> Child). Col 1 feeds the
+// localization profession-name table, and the random-chance column fans out into every map's
+// pProfessionChance slot (MM6 has no per-map npcdist.txt).
+GAME_TEST(NPCTableProfMm6, ParsesMm6Layout) {
     Blob blob = makeNpcDataBlob({
         {"", "", "", "", "", "", "", ""},                                                  // Header 1.
         {"", "NPC", "Random", "Join", "", "", "", ""},                                     // Header 2.
@@ -224,17 +221,48 @@ GAME_TEST(NPCTableProfMm6, BootsPastProfessions) {
          "In Party Benefit", "Join Text"},
         {"", "", "", "", "", "", "", ""},                                                  // Header 4.
         {"1", "Smith", "10", "200", "Merchant", "", "Unlimited weapon repair.", "I'll join for 200 gold."},
-        {"77", "Child", "10", "0", "Peasant", "", "Nothing useful.", "Can I come too?"},
+        {"23", "Counselor", "10", "200", "Official", "", "", "Need advice?"},
+        {"69", "Hunter", "10", "5", "Adventurer", "", "", "I have no skills to offer."},
+        {"77", "Child", "??", "1", "Peasant", "", "", "Can I come too?"},
     });
+
+    // The parse feeds the global localization name table - snapshot & restore the touched slots.
+    std::string savedSmith = localization->npcProfessionName(Smith);
+    std::string savedCounselor = localization->npcProfessionName(Counselor);
+    std::string savedHunter2 = localization->npcProfessionName(Hunter2);
+    std::string savedChild = localization->npcProfessionName(Child);
 
     auto stats = std::make_unique<NPCStats>();
     EXPECT_NO_THROW(stats->InitializeNPCProfs(blob, GAME_VERSION_MM6));
 
-    // Boot-past leaves the MM7-shaped profession data at its defaults (no MM6 column misread, no overflow).
-    EXPECT_EQ(stats->pProfessions[Smith].uHirePrice, 0u);  // Not the misread "10" (MM6's Random Chance col).
-    EXPECT_TRUE(stats->pProfessions[Smith].pBenefits.empty());
-    EXPECT_TRUE(stats->pProfessions[Smith].pJoinText.empty());
-    EXPECT_EQ(stats->uNumNPCProfessions, 0);               // Left unset (MM7 sets 59 after a full parse).
+    EXPECT_EQ(stats->pProfessions[Smith].uHirePrice, 200u);  // Cost/w from col 3, not the col-2 chance.
+    EXPECT_EQ(stats->pProfessions[Smith].pBenefits, "Unlimited weapon repair.");
+    EXPECT_EQ(stats->pProfessions[Smith].pJoinText, "I'll join for 200 gold.");
+    EXPECT_TRUE(stats->pProfessions[Smith].pDismissText.empty());  // MM6 has no dismiss-text column.
+
+    // Divergent / MM6-only ids land on their own slots, not MM7's professions at the same id.
+    EXPECT_EQ(stats->pProfessions[Counselor].uHirePrice, 200u);
+    EXPECT_EQ(stats->pProfessions[Herbalist].uHirePrice, 0u);   // MM7's id 23 stays untouched.
+    EXPECT_EQ(stats->pProfessions[Hunter2].uHirePrice, 5u);
+    EXPECT_EQ(stats->pProfessions[Hunter].uHirePrice, 0u);      // MM7's Hunter (58) stays untouched.
+    EXPECT_EQ(stats->pProfessions[Child].uHirePrice, 1u);
+
+    // Col 1 is MM6's localized profession-name source.
+    EXPECT_EQ(localization->npcProfessionName(Counselor), "Counselor");
+    EXPECT_EQ(localization->npcProfessionName(Child), "Child");
+
+    // Random-chance weights fan out to every map; Child's literal "??" chance parses as 0 (never generated).
+    MapId map = static_cast<MapId>(15);
+    EXPECT_EQ(stats->pProfessionChance[map].chanceByProfession[Smith], 10);
+    EXPECT_EQ(stats->pProfessionChance[map].chanceByProfession[Child], 0);
+    EXPECT_EQ(stats->pProfessionChance[map].total, 30);  // 10 + 10 + 10 + 0.
+
+    EXPECT_EQ(stats->uNumNPCProfessions, 78);
+
+    localization->setNpcProfessionName(Smith, std::move(savedSmith));
+    localization->setNpcProfessionName(Counselor, std::move(savedCounselor));
+    localization->setNpcProfessionName(Hunter2, std::move(savedHunter2));
+    localization->setNpcProfessionName(Child, std::move(savedChild));
 }
 
 // Guards the MM7 npcprof parse path through the version-parameter refactor: MM7 columns are

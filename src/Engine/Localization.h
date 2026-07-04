@@ -140,6 +140,15 @@ class Localization {
         return _npcProfessionNames[prof];
     }
 
+    /**
+     * Overrides a profession display name. MM6 profession names come from npcprof.txt (parsed by
+     * `NPCStats::InitializeNPCProfs`), not from fixed global.txt rows like MM7's - MM6's 77-profession
+     * set doesn't fit the MM7 rows anyway.
+     */
+    void setNpcProfessionName(NpcProfession prof, std::string name) {
+        _npcProfessionNames[prof] = std::move(name);
+    }
+
     const std::string &specialAttackName(MonsterSpecialAttack index) const {
         return _specialAttackNames[index];
     }

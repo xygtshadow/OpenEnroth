@@ -238,6 +238,38 @@ int UseNPCSkill(NpcProfession profession, int id) {
         case Hunter:
             break;
 
+        // MM6-only professions - commoner trades with no usable skill.
+        case Counselor:
+        case Barrister:
+        case Negotiator:
+        case Peasant:
+        case Serf:
+        case Tailor:
+        case Laborer:
+        case Farmer:
+        case Cooper:
+        case Potter:
+        case Weaver:
+        case Cobbler:
+        case DitchDigger:
+        case Miller:
+        case Carpenter:
+        case StoneCutter:
+        case Jester:
+        case Trapper:
+        case Beggar:
+        case Rustler:
+        case Hunter2:
+        case Scribe:
+        case Missionary:
+        case Clerk:
+        case Guard:
+        case FollowerOfBaa:
+        case Noble:
+        case Gambler:
+        case Child:
+            break;
+
         default:
             assert(false && "Invalid enum value");
     }

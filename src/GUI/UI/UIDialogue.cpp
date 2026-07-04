@@ -119,6 +119,9 @@ GUIWindow_Dialogue::GUIWindow_Dialogue(DialogWindowType type) : GUIWindow(WINDOW
     NPCData *speakingNPC = getNPCData(speakingNpcId);
     std::vector<DialogueId> optionList;
 
+    if (engine->gameVersion() == GAME_VERSION_MM6 && getNPCType(speakingNpcId) == NPC_TYPE_HIREABLE)
+        _mm6NewsGreeting = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
+
     if (type == DIALOG_WINDOW_FULL) {
         if (getNPCType(speakingNpcId) == NPC_TYPE_QUEST) {
             optionList = prepareScriptedNPCDialogueTopics(speakingNPC);
@@ -238,6 +241,8 @@ void GUIWindow_Dialogue::Update() {
 
                 if (pNPC->Hired()) {
                     dialogue_string = BuildDialogueString(prof->pDismissText, 0, pNPC);
+                } else if (!_mm6NewsGreeting.empty()) {
+                    dialogue_string = _mm6NewsGreeting;
                 } else {
                     dialogue_string = BuildDialogueString(prof->pJoinText, 0, pNPC);
                 }

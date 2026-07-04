@@ -85,7 +85,41 @@ enum class NpcProfession : int32_t {
     Sage = 57,   // Monster ID: +6
     Hunter = 58,  // Monster ID: +6
 
+    // MM6-only professions. MM6's npcprof.txt lists 77 professions whose ids 1-22, 25-48 and 50-51
+    // coincide with MM7's; the ids below exist only in MM6 (or, like Hunter2, share a name but not
+    // MM7's in-party benefit). Their numeric values are engine-internal - MM6 file ids are translated
+    // via npcProfessionFromMm6Id(). None of them have an in-party benefit (commoner trades).
+    Counselor = 59,      // MM6 id 23 (MM7 23 = Herbalist).
+    Barrister = 60,      // MM6 id 24 (MM7 24 = Apothecary).
+    Negotiator = 61,     // MM6 id 49 (MM7 49 = Diplomat).
+    Peasant = 62,        // MM6 id 52 (MM7 52 = Fallen Wizard).
+    Serf = 63,           // MM6 id 53.
+    Tailor = 64,         // MM6 id 54.
+    Laborer = 65,        // MM6 id 55.
+    Farmer = 66,         // MM6 id 56.
+    Cooper = 67,         // MM6 id 57.
+    Potter = 68,         // MM6 id 58.
+    Weaver = 69,         // MM6 id 59.
+    Cobbler = 70,        // MM6 id 60.
+    DitchDigger = 71,    // MM6 id 61.
+    Miller = 72,         // MM6 id 62.
+    Carpenter = 73,      // MM6 id 63.
+    StoneCutter = 74,    // MM6 id 64.
+    Jester = 75,         // MM6 id 65.
+    Trapper = 76,        // MM6 id 66.
+    Beggar = 77,         // MM6 id 67.
+    Rustler = 78,        // MM6 id 68.
+    Hunter2 = 79,        // MM6 id 69 - MM6's Hunter is a benefit-less commoner, unlike MM7's (Monster ID +6).
+    Scribe = 80,         // MM6 id 70.
+    Missionary = 81,     // MM6 id 71.
+    Clerk = 82,          // MM6 id 72.
+    Guard = 83,          // MM6 id 73.
+    FollowerOfBaa = 84,  // MM6 id 74.
+    Noble = 85,          // MM6 id 75.
+    Gambler = 86,        // MM6 id 76.
+    Child = 87,          // MM6 id 77.
+
     NPC_PROFESSION_FIRST = Smith,
-    NPC_PROFESSION_LAST = Hunter
+    NPC_PROFESSION_LAST = Child
 };
 using enum NpcProfession;

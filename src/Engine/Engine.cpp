@@ -843,24 +843,30 @@ void Engine::_461103_load_level_sub() {
     pParty->arenaLevel = ARENA_LEVEL_INVALID;
     pNPCStats->uNewlNPCBufPos = 0;
 
-    for (Actor &actor : pActors) {
-        MonsterTier tier = monsterTierForMonsterId(actor.monsterInfo.id);
-        if (tier == MONSTER_TIER_A)
-            continue; // Weakest peasants are just peasants.
+    // MM6 street townsfolk aren't npcdata NPCs: citizens generate LAZILY on first talk
+    // (InteractWithActor), because a town holds far more peasants than pAdditionalNPC has slots
+    // (New Sorpigal alone places ~120 peasants). MM7's eager per-peasant generation below would
+    // overflow the buffer.
+    if (engine->gameVersion() != GAME_VERSION_MM6) {
+        for (Actor &actor : pActors) {
+            MonsterTier tier = monsterTierForMonsterId(actor.monsterInfo.id);
+            if (tier == MONSTER_TIER_A)
+                continue; // Weakest peasants are just peasants.
 
-        if (actor.npcId && actor.npcId < 5000)
-            continue;
+            if (actor.npcId && actor.npcId < 5000)
+                continue;
 
-        if (isPeasant(actor.monsterInfo.id, engine->gameVersion())) {
-            pNPCStats->InitializeAdditionalNPCs(
-                &pNPCStats->pAdditionalNPC[pNPCStats->uNewlNPCBufPos],
-                actor.monsterInfo.id, HOUSE_INVALID, engine->_currentLoadedMapId);
-            actor.npcId = pNPCStats->uNewlNPCBufPos + 5000;
-            pNPCStats->uNewlNPCBufPos++;
-            continue;
+            if (isPeasant(actor.monsterInfo.id, engine->gameVersion())) {
+                pNPCStats->InitializeAdditionalNPCs(
+                    &pNPCStats->pAdditionalNPC[pNPCStats->uNewlNPCBufPos],
+                    actor.monsterInfo.id, HOUSE_INVALID, engine->_currentLoadedMapId);
+                actor.npcId = pNPCStats->uNewlNPCBufPos + 5000;
+                pNPCStats->uNewlNPCBufPos++;
+                continue;
+            }
+
+            actor.npcId = 0;
         }
-
-        actor.npcId = 0;
     }
 
     pGameLoadingUI_ProgressBar->Progress();
