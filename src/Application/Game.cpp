@@ -1703,7 +1703,13 @@ void Game::gameLoop() {
                 }
                 pParty->setActiveCharacterIndex(1);
 
-                if (pParty->_questBits[QBIT_ESCAPED_EMERALD_ISLE]) {
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6 death respawn: the New Sorpigal start pose, see saveNewGame().
+                    pParty->pos = Vec3f(-9728, -11319, 160);
+                    pParty->_viewYaw = 512;
+                    mapid = startingMapId(_config.get());
+                    assert(mapid != MAP_INVALID);
+                } else if (pParty->_questBits[QBIT_ESCAPED_EMERALD_ISLE]) {
                     pParty->pos = Vec3f(-17331, 12547, 465); // respawn in harmondale
                     pParty->_viewYaw = 0;
                     mapid = MAP_HARMONDALE;

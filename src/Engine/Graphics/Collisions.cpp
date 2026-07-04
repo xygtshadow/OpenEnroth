@@ -440,13 +440,16 @@ void CollideIndoorWithGeometry(bool ignore_ethereal) {
             if (face->isPortal() || !collision_state.bbox.intersects(face->boundingBox))
                 continue;
 
-            // TODO(pskelton): Modify game data face attribs to ethereal eventually - hack so that secret tunnel under prison bed can be accessed
-            if (engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE)
-                if (face_id == 385 || face_id == 405 || face_id == 4602 || face_id == 4606)
-                    continue;
-            if (engine->_currentLoadedMapId == MAP_TEMPLE_OF_THE_LIGHT) // For #1706 glitch on waterway
-                if (face_id == 1181)
-                    continue;
+            // Per-map face fixes are MM7-only: MM6 map ids collide with MM7's MapId enum.
+            if (engine->gameVersion() == GAME_VERSION_MM7) {
+                // TODO(pskelton): Modify game data face attribs to ethereal eventually - hack so that secret tunnel under prison bed can be accessed
+                if (engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE)
+                    if (face_id == 385 || face_id == 405 || face_id == 4602 || face_id == 4606)
+                        continue;
+                if (engine->_currentLoadedMapId == MAP_TEMPLE_OF_THE_LIGHT) // For #1706 glitch on waterway
+                    if (face_id == 1181)
+                        continue;
+            }
 
             CollideBodyWithFace(face, Pid(OBJECT_Face, face_id), ignore_ethereal, MODEL_INDOOR);
         }
@@ -958,26 +961,29 @@ void ProcessPartyCollisionsBLV(int sectorId, int min_party_move_delta_sqr, int *
             BLVFace *pFace = &pIndoor->faces[collision_state.pid.id()];
             bool bFaceSlopeTooSteep = pFace->facePlane.normal.z > 0.0f && pFace->facePlane.normal.z < 0.70767211914f; // Was 46378 fixpoint
 
-            // TODO(pskelton): Better way to do this? Maybe add a climbable attribute
-            if (engine->_currentLoadedMapId == MAP_TIDEWATER_CAVERNS) {  // Special case for steep staircase in tidewater
-                if (collision_state.pid.id() == 650)
-                    bFaceSlopeTooSteep = false;
-            }
-            if (engine->_currentLoadedMapId == MAP_CASTLE_GLOAMING) { // Special case for exiting teleport boats
-                if (collision_state.pid.id() == 551 || collision_state.pid.id() == 1990 || collision_state.pid.id() == 2217)
-                    bFaceSlopeTooSteep = false;
-            }
-            if (engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE) {
-                if (collision_state.pid.id() == 398) // Secret tunnel under prison bed
-                    bFaceSlopeTooSteep = false;
-            }
-            if (engine->_currentLoadedMapId == MapId::MAP_HALL_OF_THE_PIT) {
-                if (collision_state.pid.id() == 787 || collision_state.pid.id() == 832 || collision_state.pid.id() == 790)
-                    bFaceSlopeTooSteep = false;
-            }
-            if (engine->_currentLoadedMapId == MAP_CASTLE_GLOAMING) {
-                if (collision_state.pid.id() == 2439 || collision_state.pid.id() == 2438 || collision_state.pid.id() == 2437 || collision_state.pid.id() == 2436) // gloaming
-                    bFaceSlopeTooSteep = false;
+            // Per-map face fixes are MM7-only: MM6 map ids collide with MM7's MapId enum.
+            if (engine->gameVersion() == GAME_VERSION_MM7) {
+                // TODO(pskelton): Better way to do this? Maybe add a climbable attribute
+                if (engine->_currentLoadedMapId == MAP_TIDEWATER_CAVERNS) {  // Special case for steep staircase in tidewater
+                    if (collision_state.pid.id() == 650)
+                        bFaceSlopeTooSteep = false;
+                }
+                if (engine->_currentLoadedMapId == MAP_CASTLE_GLOAMING) { // Special case for exiting teleport boats
+                    if (collision_state.pid.id() == 551 || collision_state.pid.id() == 1990 || collision_state.pid.id() == 2217)
+                        bFaceSlopeTooSteep = false;
+                }
+                if (engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE) {
+                    if (collision_state.pid.id() == 398) // Secret tunnel under prison bed
+                        bFaceSlopeTooSteep = false;
+                }
+                if (engine->_currentLoadedMapId == MapId::MAP_HALL_OF_THE_PIT) {
+                    if (collision_state.pid.id() == 787 || collision_state.pid.id() == 832 || collision_state.pid.id() == 790)
+                        bFaceSlopeTooSteep = false;
+                }
+                if (engine->_currentLoadedMapId == MAP_CASTLE_GLOAMING) {
+                    if (collision_state.pid.id() == 2439 || collision_state.pid.id() == 2438 || collision_state.pid.id() == 2437 || collision_state.pid.id() == 2436) // gloaming
+                        bFaceSlopeTooSteep = false;
+                }
             }
 
             // TODO(pskelton): This 'catch all' is probably unsafe - would be better as above

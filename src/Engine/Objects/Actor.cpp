@@ -1096,11 +1096,14 @@ void Actor::ApplyFineForKillingPeasant(unsigned int uActorID) {
     if (engine->_currentLoadedMapId == MAP_INVALID || !pActors[uActorID].IsPeasant())
         return;
 
-    if ((engine->_currentLoadedMapId == MAP_BRACADA_DESERT || engine->_currentLoadedMapId == MAP_CELESTE) && pParty->isPartyEvil())
-        return;
+    // The alignment exemptions are MM7-only: MM6 map ids collide with MM7's MapId enum.
+    if (engine->gameVersion() == GAME_VERSION_MM7) {
+        if ((engine->_currentLoadedMapId == MAP_BRACADA_DESERT || engine->_currentLoadedMapId == MAP_CELESTE) && pParty->isPartyEvil())
+            return;
 
-    if ((engine->_currentLoadedMapId == MAP_DEYJA || engine->_currentLoadedMapId == MAP_PIT) && pParty->isPartyGood())
-        return;
+        if ((engine->_currentLoadedMapId == MAP_DEYJA || engine->_currentLoadedMapId == MAP_PIT) && pParty->isPartyGood())
+            return;
+    }
 
     pParty->uFine += 100 * (pMapStats->pInfos[engine->_currentLoadedMapId].baseStealingFine +
                             pActors[uActorID].monsterInfo.level +
@@ -2919,11 +2922,14 @@ void Actor::InitializeActors() {
     bool bPit = false;
     bool good = false;
     bool evil = false;
-    if (engine->_currentLoadedMapId == MAP_CELESTE) {
-        bCelestia = true;
-    }
-    if (engine->_currentLoadedMapId == MAP_PIT) {
-        bPit = true;
+    // Celeste/Pit alignment hostility is MM7-only: MM6 map ids collide with MM7's MapId enum.
+    if (engine->gameVersion() == GAME_VERSION_MM7) {
+        if (engine->_currentLoadedMapId == MAP_CELESTE) {
+            bCelestia = true;
+        }
+        if (engine->_currentLoadedMapId == MAP_PIT) {
+            bPit = true;
+        }
     }
     if (pParty->isPartyGood())
         good = true;

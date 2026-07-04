@@ -64,7 +64,9 @@ static void calculateRequiredFood() {
     if (foodRequiredToRest < 1) {
         foodRequiredToRest = 1;
     }
-    if (engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE && pParty->_questBits[QBIT_HARMONDALE_REBUILT]) {
+    // MM7-only: MM6 map ids collide with MM7's MapId enum.
+    if (engine->gameVersion() == GAME_VERSION_MM7 &&
+        engine->_currentLoadedMapId == MAP_CASTLE_HARMONDALE && pParty->_questBits[QBIT_HARMONDALE_REBUILT]) {
         foodRequiredToRest = 0;
     }
 }

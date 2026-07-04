@@ -561,29 +561,32 @@ void DoPrepareWorld(bool bLoading, int _1_fullscreen_loading_2_box) {
 
     pNPCStats->setNPCNamesOnLoad();
     engine->_461103_load_level_sub();
-    if (engine->_currentLoadedMapId == MAP_BREEDING_ZONE || engine->_currentLoadedMapId == MAP_WALLS_OF_MIST) {
-        // spawning grounds & walls of mist - no loot & exp from monsters
+    // Per-map special cases below are MM7-only: MM6 map ids collide with MM7's MapId enum.
+    if (engine->gameVersion() == GAME_VERSION_MM7) {
+        if (engine->_currentLoadedMapId == MAP_BREEDING_ZONE || engine->_currentLoadedMapId == MAP_WALLS_OF_MIST) {
+            // spawning grounds & walls of mist - no loot & exp from monsters
 
-        for (Actor &actor : pActors) {
-            // TODO(captainurist): shouldn't we also set uTreasureLevel = ITEM_TREASURE_LEVEL_INVALID?
-            actor.monsterInfo.treasureType = RANDOM_ITEM_ANY;
-            actor.monsterInfo.goldDiceRolls = 0;
-            actor.monsterInfo.exp = 0;
+            for (Actor &actor : pActors) {
+                // TODO(captainurist): shouldn't we also set uTreasureLevel = ITEM_TREASURE_LEVEL_INVALID?
+                actor.monsterInfo.treasureType = RANDOM_ITEM_ANY;
+                actor.monsterInfo.goldDiceRolls = 0;
+                actor.monsterInfo.exp = 0;
+            }
         }
-    }
 
-    // OE fix - reduce maximum allowed radius in the Lincoln to stop act actors getting stuck in tight corridors.
-    if (engine->_currentLoadedMapId == MAP_LINCOLN) {
-        for (Actor& actor : pActors) {
-            actor.radius = std::min(actor.radius, static_cast<uint16_t>(140));
+        // OE fix - reduce maximum allowed radius in the Lincoln to stop act actors getting stuck in tight corridors.
+        if (engine->_currentLoadedMapId == MAP_LINCOLN) {
+            for (Actor& actor : pActors) {
+                actor.radius = std::min(actor.radius, static_cast<uint16_t>(140));
+            }
         }
-    }
 
-    // OE fix - replace spirit lash with bless for clerics of the moon in the temple of baa.
-    if (engine->_currentLoadedMapId == MAP_TEMPLE_OF_BAA)
-        for (Actor& actor : pActors)
-            if (actor.monsterInfo.spell2Id == SPELL_SPIRIT_SPIRIT_LASH)
-                actor.monsterInfo.spell2Id = SPELL_SPIRIT_BLESS;
+        // OE fix - replace spirit lash with bless for clerics of the moon in the temple of baa.
+        if (engine->_currentLoadedMapId == MAP_TEMPLE_OF_BAA)
+            for (Actor& actor : pActors)
+                if (actor.monsterInfo.spell2Id == SPELL_SPIRIT_SPIRIT_LASH)
+                    actor.monsterInfo.spell2Id = SPELL_SPIRIT_BLESS;
+    }
 
     bDialogueUI_InitializeActor_NPC_ID = 0;
     engine->_transitionMapId = MAP_INVALID;

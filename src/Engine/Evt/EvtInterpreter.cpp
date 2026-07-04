@@ -361,7 +361,7 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         case EVENT_SpeakNPC:
             if (_canShowMessages) {
                 // TODO(pskeltonm): Fix #2223 stop tutorial message spam - should be data mod
-                if (engine->_currentLoadedMapId == MAP_EMERALD_ISLAND && _eventId >= 200 && _eventId <= 218) {
+                if (engine->gameVersion() == GAME_VERSION_MM7 && engine->_currentLoadedMapId == MAP_EMERALD_ISLAND && _eventId >= 200 && _eventId <= 218) {
                     if (engine->_OE_transientVariables[_eventId - 200]) {
                         break;
                     }

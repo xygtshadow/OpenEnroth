@@ -2235,3 +2235,55 @@ GAME_TEST(Mm6, EndgameWinAndLose) {
         game.tick(1);
     EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
 }
+
+GAME_TEST(Mm6, Mm7MapPinsDoNotMisfire) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 map ids collide with MM7's MapId enum, so MM7's hardcoded per-map special cases must
+    // not fire in an MM6 session. New Sorpigal's map id is MM7's MAP_SHOALS - walking off the
+    // east map edge must not offer MM7 foot travel to Avlee. (MM6 border travel is a separate,
+    // not yet implemented model.)
+    EXPECT_EQ(pOutdoor->getTravelDestination(100000, 0), MAP_INVALID);
+
+    // Gharik's Forge has MM7's MAP_BREEDING_ZONE map id - its monsters must not have their
+    // exp and loot zeroed by MM7's spawning-grounds rule.
+    MapId gharik = pMapStats->GetMapInfo("d18.blv");
+    ASSERT_NE(gharik, MAP_INVALID);
+    game.teleportTo(gharik, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(gharik, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    ASSERT_FALSE(pActors.empty());
+    EXPECT_TRUE(std::ranges::any_of(pActors, [](const Actor &actor) { return actor.monsterInfo.exp > 0; }));
+}
+
+GAME_TEST(Mm6, DeathRespawnsInNewSorpigal) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Die somewhere far from home - in Goblinwatch.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(goblinwatch, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    for (Character &character : pParty->pCharacters)
+        character.conditions.set(CONDITION_DEAD, pParty->GetPlayingTime());
+    game.tick(10);
+
+    // MM6 death respawn: back at the New Sorpigal new-game start pose, not MM7's
+    // Harmondale/Emerald Isle logic (whose map ids are ordinary MM6 maps).
+    EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
+    EXPECT_EQ(pParty->uNumDeaths, 1);
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
+    EXPECT_EQ(pParty->pos.x, -9728);
+    EXPECT_EQ(pParty->pos.y, -11319);
+}

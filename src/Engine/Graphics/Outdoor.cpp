@@ -288,6 +288,11 @@ MapId OutdoorLocation::getTravelDestination(int partyX, int partyY) {
     if (!isMapOutdoor(currentMap))
         return MAP_INVALID;
 
+    // The foot-travel tables below are keyed by MM7 map ids, which MM6 map ids collide with.
+    // MM6 border travel is a separate model and is not implemented yet.
+    if (engine->gameVersion() != GAME_VERSION_MM7)
+        return MAP_INVALID;
+
     // Check which side of the map
     if (partyX < -maxPartyAxisDistance)
         direction = 3; // west
@@ -371,6 +376,13 @@ int OutdoorLocation::getNumFoodRequiredToRestInCurrentPos(const Vec3f &pos) {
 
 //----- (00489487) --------------------------------------------------------
 void OutdoorLocation::SetFog() {
+    // The fog probability table is keyed by MM7 map ids, which MM6 map ids collide with.
+    // The MM6 fog model is not implemented yet - no fog.
+    if (engine->gameVersion() != GAME_VERSION_MM7) {
+        loc_time.weatherFlags &= ~MAP_WEATHER_FOGGY;
+        return;
+    }
+
     MapId map_id = engine->_currentLoadedMapId;
     if (map_id == MAP_INVALID || map_id == MAP_CELESTE ||
         map_id == MAP_PIT || map_id > MAP_SHOALS)
@@ -595,7 +607,8 @@ bool OutdoorLocation::PrepareDecorations() {
             decorationsWithSound.push_back(i);
         }
 
-        if ((engine->_currentLoadedMapId == MAP_EVENMORN_ISLAND) && decor->uCog == 20)
+        // MM7-only: MM6 map ids collide with MM7's MapId enum.
+        if (engine->gameVersion() == GAME_VERSION_MM7 && engine->_currentLoadedMapId == MAP_EVENMORN_ISLAND && decor->uCog == 20)
             decor->uFlags |= LEVEL_DECORATION_OBELISK_CHEST;
         if (!decor->uEventID) {
             if (decor->IsInteractive()) {
