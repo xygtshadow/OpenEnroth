@@ -2777,7 +2777,7 @@ GAME_TEST(Mm6, SpellLearnMastery) {
     // each school's 11th spell down from MM7's Grandmaster to Master; otherwise the spellbook learn gate
     // (Character.cpp, requiredMastery > val.mastery()) would leave those 9 spells permanently unlearnable.
     // Native id 11 = Incinerate, the 11th Fire spell (MASTERY_GRANDMASTER in MM7's pSpellDatas).
-    EXPECT_EQ(pSpellDatas[static_cast<SpellId>(11)].skillMastery, MASTERY_MASTER);
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_INCINERATE].skillMastery, MASTERY_MASTER);
     EXPECT_EQ(pSpellDatas[SPELL_DARK_SOULDRINKER].skillMastery, MASTERY_MASTER); // native id 99, also GM in MM7.
 
     // Non-top spells keep their existing (sub-Grandmaster) tier - the clamp only touches Grandmaster rows.
