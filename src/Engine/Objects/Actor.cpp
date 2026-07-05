@@ -227,7 +227,14 @@ void Actor::AI_SpellAttack(unsigned int uActorID, AIDirection *pDir,
         distancemod = 2;
     }
 
-    switch (uSpellID) {
+    // Monster spell ids are native (MM7 identity, native MM6 slot for MM6), but this switch is keyed on
+    // MM7-named SpellId constants - the effect. Translate for DISPATCH only, mirroring castSpell(): the
+    // switch below runs the matching MM7 effect, while every asset/data read inside the cases stays on the
+    // native uSpellID - the projectile sprite (SpellSpriteMapping / GetObjDescId), the sprite-owned spell id,
+    // and the cast sound all index MM6's own native-slot asset banks. For MM7 translateForCast is identity.
+    SpellId effectId = translateForCast(uSpellID, engine->gameVersion());
+
+    switch (effectId) {
         case SPELL_FIRE_FIRE_BOLT:
         case SPELL_FIRE_FIREBALL:
         case SPELL_FIRE_INCINERATE:

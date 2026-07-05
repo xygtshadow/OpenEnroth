@@ -2788,6 +2788,48 @@ GAME_TEST(Mm6, MonsterSpellNamesResolve) {
     EXPECT_LE(unresolved, 5);
 }
 
+// Monsters don't cast through castSpell() - they use Actor::AI_SpellAttack, which switches on the spell id.
+// Now that MM6 monster spells resolve to NATIVE MM6 ids (MonsterSpellNamesResolve), AI_SpellAttack has to
+// translate that id to the matching MM7 effect for its switch, exactly like castSpell does - otherwise a
+// native MM6 id with no MM7 case (e.g. Fire Bolt = native id 4 = SPELL_FIRE_FIRE_AURA's slot) hits the
+// switch's default: assert(false) and aborts. Asset/data reads inside the cases stay native (MM6's
+// projectile bank is native-indexed).
+GAME_TEST(Mm6, MonsterCastsSpell) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Goblinwatch is indoor, so the projectile's sector lookup is well-defined.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+    ASSERT_FALSE(pActors.empty());
+
+    // Make an actor cast MM6 Goblin C's spell attack ("Fire Bolt" = native spell id 4, a projectile). Its
+    // native id is SPELL_FIRE_FIRE_AURA's slot; translateForCast maps it to MM7's Fire Bolt effect.
+    Actor &caster = pActors[0];
+    caster.monsterInfo = pMonsterStats->infos[MonsterId(78)];
+    SpellId nativeSpell = caster.monsterInfo.spell1Id;
+    ASSERT_EQ(nativeSpell, SPELL_FIRE_FIRE_AURA); // MM6 native id 4 = "Fire Bolt".
+    ASSERT_EQ(translateForCast(nativeSpell, GAME_VERSION_MM6), SPELL_FIRE_FIRE_BOLT);
+
+    size_t spritesBefore = pSpriteObjects.size();
+
+    AIDirection dir;
+    dir.uDistance = 1500;
+    dir.uDistanceXZ = 1500;
+    // Before the AI_SpellAttack fix this aborts on the switch's default: assert(false); after it, the Fire
+    // Bolt case launches a projectile carrying the NATIVE spell id with MM6's native-indexed projectile sprite.
+    Actor::AI_SpellAttack(0, &dir, nativeSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
+
+    int projectiles = std::ranges::count_if(pSpriteObjects, [nativeSpell](const SpriteObject &obj) {
+        return obj.uSpellID == nativeSpell && obj.uObjectDescID != 0;
+    });
+    EXPECT_GE(projectiles, 1);
+    EXPECT_GT(pSpriteObjects.size(), spritesBefore);
+}
+
 GAME_TEST(Mm6, SpellManaCosts) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

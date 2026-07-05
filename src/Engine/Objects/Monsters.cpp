@@ -33,9 +33,9 @@ SpellId ParseSpellType(std::string_view name, GameVersion version) {
         // MM6's monster spell names come from MM6's own spells.txt, and the spell that sits at a given id
         // often differs from MM7's, so the MM7 name map below would resolve them to the wrong id (or miss
         // them entirely). Resolve the name against the loaded MM6 spell table instead and return the NATIVE
-        // MM6 SpellId; castSpell()'s translateForCast maps that to the matching MM7 effect at cast time.
-        // spells.txt is initialized before monsters.txt in Engine::SecondaryInitialization, so pSpellStats
-        // is populated by the time this runs.
+        // MM6 SpellId; when the monster casts it, Actor::AI_SpellAttack runs the id through translateForCast
+        // to reach the matching MM7 effect. spells.txt is initialized before monsters.txt in
+        // Engine::SecondaryInitialization, so pSpellStats is populated by the time this runs.
         assert(pSpellStats && "MM6 monster spell names require pSpellStats to be initialized first");
         for (SpellId spell : pSpellStats->pInfos.indices()) {
             const SpellInfo &info = pSpellStats->pInfos[spell];

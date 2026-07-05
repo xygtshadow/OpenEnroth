@@ -1454,8 +1454,8 @@ static void reconstruct(const MonsterInfo_MM6 &src, MonsterInfo_MM7 *dst) {
     dst->attack2MissileType = reconstructMm6MissileType(src.attack2MissileType);
     // The ddm-embedded stat block stores the spell as a native MM6 spell id, which is exactly what the
     // monsters.txt parser now produces too (ParseSpellType returns native MM6 ids for MM6). The id is kept
-    // native here; castSpell()'s translateForCast maps it to the matching MM7 effect at cast time, so no
-    // conversion is needed - including for MM6-only spells.
+    // native here; when the monster casts, Actor::AI_SpellAttack runs it through translateForCast to reach
+    // the matching MM7 effect, so no conversion is needed here - including for MM6-only spells.
     dst->spell1UseChance = src.spell1UseChance;
     dst->spell1Id = src.spell1Id;
     dst->spell1SkillMastery = src.spell1SkillMastery; // Same packing as the MM7 joined skill format.
