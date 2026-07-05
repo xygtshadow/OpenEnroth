@@ -94,5 +94,17 @@ struct OverlayList {
  */
 void drawMm6PartyBuffStatusOverlays();
 
+/**
+ * One-shot portrait cast-fx overlay id for a native MM6 spell id, or 0 if the spell casts no portrait fx.
+ * Transcribed from MM6.EXE's per-spell `addScreenOverlay` sites in the CastSpell dispatch (0x422C93). Only
+ * buff/heal/utility spells have an entry - attack spells (Fire Bolt, Fireball, ...) draw no portrait fx.
+ * MM6 sessions only (MM7's doverlay entries are all null sprites, so a spawned overlay would draw nothing).
+ *
+ * @param mm6SpellId                    Native MM6 spell id (i.e. `std::to_underlying(uSpellID)` while running
+ *                                      MM6, before any translateForCast remap).
+ * @return                              doverlay.bin overlay id, or 0 for spells with no cast fx.
+ */
+int mm6SpellCastFxOverlayId(int mm6SpellId);
+
 extern ActiveOverlayList *pActiveOverlayList;
 extern OverlayList *pOverlayList;

@@ -2632,6 +2632,59 @@ GAME_TEST(Mm6, OverlaysRenderAndExpire) {
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
 }
 
+GAME_TEST(Mm6, SpellCastFx) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    engine->config->debug.AllMagic.setValue(true); // Cast lands every time - no mana/skill/mastery gating.
+    game.tick(1);
+
+    // Count active one-shot cast-fx overlays sitting on a character-portrait anchor (target 100..103) that
+    // resolve to a given doverlay overlay id.
+    auto portraitFxFor = [](int overlayId) {
+        int count = 0;
+        for (const ActiveOverlay &slot : pActiveOverlayList->pOverlays) {
+            if (slot.animLength <= 0 || slot.target < 100 || slot.target > 103)
+                continue;
+            if (slot.indexToOverlayList < 0 || slot.indexToOverlayList >= static_cast<int>(pOverlayList->pOverlays.size()))
+                continue;
+            if (pOverlayList->pOverlays[slot.indexToOverlayList].uOverlayID == overlayId)
+                count++;
+        }
+        return count;
+    };
+
+    // MM6 spell id 12 is Wizard Eye, a party-wide utility buff. Casting it flashes overlay 2000 over the
+    // portraits (MM6.EXE CastSpell dispatch 0x422C93). It applies a party buff without running through the
+    // MM7 SetPlayerBuffAnim path, so its cast fx must come from the shared cast tail, not the buff-anim hook.
+    pActiveOverlayList->Reset();
+    EXPECT_EQ(portraitFxFor(2000), 0); // Fail-first anchor: nothing spawned before the cast.
+    pushSpellOrRangedAttack(static_cast<SpellId>(12), 0, CombinedSkillValue::none(), 0, 1);
+    game.tick(1);
+    // A party-target spell loops the fx over all four portraits (anchors 100..103).
+    EXPECT_EQ(portraitFxFor(2000), 4);
+    // The cast fx is a one-shot (not a buff-owned persistent overlay), so it expires on its own.
+    for (const ActiveOverlay &slot : pActiveOverlayList->pOverlays)
+        if (slot.animLength > 0 && slot.target >= 100 && slot.target <= 103)
+            EXPECT_FALSE(slot.flags & OVERLAY_FLAG_BUFF_OWNED);
+
+    // A character-targeted spell flashes over only the targeted portrait. MM6 spell id 68 is First Aid,
+    // whose effect (Heal) targets a single character; drive it through the target-picking path onto
+    // character 2 and check the fx lands on anchor 102 alone.
+    pActiveOverlayList->Reset();
+    pushSpellOrRangedAttack(static_cast<SpellId>(68), 0, CombinedSkillValue::none(), 0, 0);
+    spellTargetPicked(Pid(), 2);
+    game.tick(1);
+    EXPECT_EQ(portraitFxFor(7010), 1); // Only the targeted portrait.
+    bool onChar2 = false;
+    for (const ActiveOverlay &slot : pActiveOverlayList->pOverlays)
+        if (slot.animLength > 0 && slot.target == 102 &&
+                pOverlayList->pOverlays[slot.indexToOverlayList].uOverlayID == 7010)
+            onChar2 = true;
+    EXPECT_TRUE(onChar2);
+}
+
 GAME_TEST(Mm6, TurnBasedCombatIcon) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

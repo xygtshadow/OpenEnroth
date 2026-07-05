@@ -257,6 +257,57 @@ void drawMm6PartyBuffStatusOverlays() {
     }
 }
 
+//----- mm6: the addScreenOverlay sites in the CastSpell dispatch 0x422C93 --
+int mm6SpellCastFxOverlayId(int mm6SpellId) {
+    // Native MM6 spell id -> one-shot portrait cast-fx overlay id. Buff/heal/utility spells only; attack
+    // spells cast no portrait fx (MM6.EXE has no add site for them). A few spells also spawn a persistent
+    // buff fx (overlays 10000-10014) which is left to the y=254 party-buff status row / tracked as residue.
+    switch (mm6SpellId) {
+        case 3:  return 1020;
+        case 5:  return 1040;
+        case 12: return 2000;
+        case 14: return 2020;
+        case 16: return 2040;
+        case 17: return 2050;
+        case 19: return 2070;
+        case 21: return 2090;
+        case 23: return 3000;
+        case 25: return 3020;
+        case 27: return 3040;
+        case 36: return 4020;
+        case 38: return 4040;
+        case 40: return 2050;
+        case 46: return 5010;
+        case 47: return 5020;
+        case 48: return 5030;
+        case 49: return 5040;
+        case 51: return 5060;
+        case 53: return 5080;
+        case 54: return 5090;
+        case 55: return 5100;
+        case 56: return 6000;
+        case 57: return 6010;
+        case 59: return 6030;
+        case 60: return 6040;
+        case 64: return 6080;
+        case 67: return 7000;
+        case 68: return 7010;
+        case 69: return 7020;
+        case 71: return 7040;
+        case 72: return 7050;
+        case 73: return 7060;
+        case 74: return 7070;
+        case 75: return 7080; // MM6.EXE also spawns 6030 over char 0 here; secondary fx tracked as residue.
+        case 77: return 7100;
+        case 83: return 8050;
+        case 85: return 8070;
+        case 88: return 8100;
+        case 94: return 9050;
+        case 96: return 9070;
+        default: return 0;
+    }
+}
+
 //----- (00458D97) --------------------------------------------------------
 void OverlayList::InitializeSprites() {
     for (size_t i = 0; i < pOverlays.size(); ++i)
