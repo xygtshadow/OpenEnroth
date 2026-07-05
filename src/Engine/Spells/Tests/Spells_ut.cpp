@@ -1,6 +1,4 @@
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "Testing/Game/GameTest.h"
 
@@ -13,21 +11,6 @@
 #include "Library/Random/MersenneTwisterRandomEngine.h"
 
 #include "Utility/Memory/Blob.h"
-
-// Joins cells with '\t' and rows with '\r\n' to mimic the on-disk spells.txt table format that
-// SpellStats::Initialize parses.
-static Blob makeSpellsBlob(const std::vector<std::vector<std::string>> &rows) {
-    std::string bytes;
-    for (const std::vector<std::string> &row : rows) {
-        for (size_t i = 0; i < row.size(); i++) {
-            if (i != 0)
-                bytes += '\t';
-            bytes += row[i];
-        }
-        bytes += "\r\n";
-    }
-    return Blob::fromString(std::move(bytes));
-}
 
 // MM6's spells.txt keeps the same 9-school x 11-spell layout as MM7 (ids 1..99), but the column
 // order differs: MM6 has extra A/X/M columns, and no Grand Master / Stats columns. The native MM6
