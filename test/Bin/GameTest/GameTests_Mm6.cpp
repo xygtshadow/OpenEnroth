@@ -38,9 +38,11 @@
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/NPC.h"
+#include "Engine/Objects/ObjectList.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/CastSpellInfo.h"
 #include "Engine/Spells/SpellEnums.h"
+#include "Engine/Spells/SpellEnumFunctions.h"
 #include "Engine/Spells/Spells.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
@@ -2711,6 +2713,13 @@ GAME_TEST(Mm6, CastShiftedSpell) {
         return obj.uSpellID == static_cast<SpellId>(30) && obj.uObjectDescID != 0;
     });
     EXPECT_GE(projectiles, 1);
+
+    // The projectile sprite stays keyed off the NATIVE id (MM6's dobjlist projectile objects are indexed by
+    // the native MM6 spell slot). MM6 Acid Burst is native id 30, whose slot carries the acid projectile
+    // object; the effect id (MM7 Acid Burst, id 29) is MM6's Enchant Item slot, which has no projectile object
+    // at all - so an effect-keyed sprite would create no projectile here.
+    EXPECT_NE(pObjectList->ObjectIDByItemID(SpellSpriteMapping[static_cast<SpellId>(30)]), 0u);
+    EXPECT_EQ(pObjectList->ObjectIDByItemID(SpellSpriteMapping[SPELL_WATER_ACID_BURST]), 0u);
 }
 
 GAME_TEST(Mm6, CastUniqueSpellAnalog) {
@@ -2732,6 +2741,51 @@ GAME_TEST(Mm6, CastUniqueSpellAnalog) {
         return obj.uSpellID == static_cast<SpellId>(8) && obj.uObjectDescID != 0;
     });
     EXPECT_GE(projectiles, 1);
+}
+
+// MM6 monster spell attacks come from MM6's monsters.txt, which names spells by MM6's own spells.txt names -
+// and the spell that sits at a given id differs from MM7's. ParseSpellType resolves each name against the
+// loaded MM6 spell table into a NATIVE MM6 SpellId; castSpell()'s translateForCast then maps it to the matching
+// MM7 effect. Before this wiring the names were matched against MM7's hardcoded name map, resolving them to the
+// wrong id, or (for MM6-unique names) to SPELL_NONE with an "Unknown monster spell" warning.
+GAME_TEST(Mm6, MonsterSpellNamesResolve) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Goblin C (monster id 78) casts "Fire Bolt". In MM6 "Fire Bolt" is native spell id 4 (spells.txt row 4),
+    // whereas MM7's id 4 is Fire Aura - so the native id lands on SPELL_FIRE_FIRE_AURA's slot, NOT MM7's id-2
+    // Fire Bolt that the old name map returned. translateForCast maps the native id to MM7's Fire Bolt effect.
+    const MonsterInfo &goblin = pMonsterStats->infos[MonsterId(78)];
+    EXPECT_GT(goblin.spell1UseChance, 0);
+    EXPECT_EQ(goblin.spell1Id, SPELL_FIRE_FIRE_AURA); // Native MM6 id 4 = "Fire Bolt".
+    EXPECT_TRUE(isRegularSpell(goblin.spell1Id));
+    EXPECT_EQ(translateForCast(goblin.spell1Id, GAME_VERSION_MM6), SPELL_FIRE_FIRE_BOLT);
+
+    // Ooze B (id 116) casts "Poison Spray", an MM6-only name absent from MM7's monster-spell map (it resolved
+    // to SPELL_NONE plus a warning before the fix). MM6's "Poison Spray" is native id 26.
+    const MonsterInfo &ooze = pMonsterStats->infos[MonsterId(116)];
+    EXPECT_GT(ooze.spell1UseChance, 0);
+    EXPECT_EQ(ooze.spell1Id, SPELL_WATER_ICE_BOLT); // Native MM6 id 26 = "Poison Spray".
+    EXPECT_TRUE(isRegularSpell(ooze.spell1Id));
+
+    // Across the whole monster table, every spell-casting monster resolves to a real regular spell, except a
+    // small handful of shipped-data typos ("Dispell Magic" with a doubled L on Beholder C / Lich A / Lich B,
+    // "Psychic Shockt" on Titan B) that match no spells.txt name - those keep no spell, as in the original.
+    int resolved = 0;
+    int unresolved = 0;
+    for (MonsterId id : pMonsterStats->infos.indices()) {
+        const MonsterInfo &info = pMonsterStats->infos[id];
+        if (info.spell1UseChance == 0)
+            continue;
+        if (isRegularSpell(info.spell1Id))
+            resolved++;
+        else
+            unresolved++;
+    }
+    EXPECT_GE(resolved, 50); // 55 casters minus the 4 typo rows.
+    EXPECT_LE(unresolved, 5);
 }
 
 GAME_TEST(Mm6, SpellManaCosts) {

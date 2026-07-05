@@ -136,11 +136,18 @@ void CastSpellInfoHelpers::castSpell() {
         // given id often differs between the two games, while this dispatch switches on MM7-named SpellId
         // constants. So every DISPATCH decision below (the undead-target test, the special-cast chain, the
         // effect `switch` and its inner spell-id sub-switches / sub-checks) is keyed by the translated EFFECT
-        // id, whereas every DATA read stays on the NATIVE id: the queued spell id itself, mana/recovery from
-        // pSpellDatas, the projectile sprite (SpellSpriteMapping), the cast sound, the buff animation, the
-        // sprite-owned spell id (initSpellSprite), and the casting skill/school (skillForSpell/isRegularSpell,
-        // which must reflect the native MM6 school). For MM7 (and any non-regular id) translateForCast is the
-        // identity, so the MM7 cast path is byte-for-byte unchanged.
+        // id - the spell's BEHAVIOR runs MM7 engine code. Every DATA read, by contrast, stays on the NATIVE
+        // id: the queued spell id itself, mana/recovery from pSpellDatas, the buff animation, the sprite-owned
+        // spell id (initSpellSprite), the casting skill/school (skillForSpell/isRegularSpell, which must
+        // reflect the native MM6 school), and - importantly - the two pieces of cast VFX, the projectile
+        // sprite (SpellSpriteMapping) and the cast sound (playSpellSound). Those index MM6's OWN asset banks
+        // (the dobjlist projectile objects and the spell sound bank), which are laid out by the native MM6
+        // spell slot, so the native id already selects MM6's correct VFX. Keying them off the effect id would
+        // pick the asset of whatever different spell sits at that slot in MM7 - and, worse, MM6 may have no
+        // asset there at all: MM6 Acid Burst is native id 30 and its dobjlist projectile object lives at that
+        // slot, whereas the effect id (29, MM7 Acid Burst) is the slot MM6 uses for Enchant Item, which has no
+        // projectile object, so an effect-keyed sprite would make the projectile vanish. For MM7 (and any
+        // non-regular id) translateForCast is the identity, so the MM7 cast path is byte-for-byte unchanged.
         SpellId effectId = translateForCast(pCastSpell->uSpellID, engine->gameVersion());
 
         if (pParty->Invisible()) {

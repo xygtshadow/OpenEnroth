@@ -706,17 +706,20 @@ void Engine::SecondaryInitialization() {
     pMapStats = new MapStats();
     pMapStats->Initialize(engine->resources()->eventsData("MapStats.txt"), gameVersion());
 
+    // Spells must be initialized before monsters: MonsterStats::Initialize resolves each MM6 monster's spell
+    // name against the loaded MM6 spell table (pSpellStats->pInfos) via ParseSpellType, so pSpellStats has to
+    // be populated first. The two tables are otherwise independent, so this ordering is safe for MM7 too.
+    pSpellStats = new SpellStats();
+    pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"), gameVersion());
+    if (gameVersion() == GAME_VERSION_MM6)
+        applyMm6SpellDatas();  // Replace the MM7 mana/recovery numbers in pSpellDatas with MM6's.
+
     pMonsterStats = new MonsterStats();
     pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"), gameVersion());
     // placemon.txt (unique-monster names), hostile.txt (inter-monster hostility) and history.txt
     // (date->event log) are absent from MM6's icons.lod. eventsDataIfPresent yields an empty blob
     // when missing, and each Initialize below no-ops on empty input (keeping its built-in defaults).
     pMonsterStats->InitializePlacements(engine->resources()->eventsDataIfPresent("placemon.txt"));
-
-    pSpellStats = new SpellStats();
-    pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"), gameVersion());
-    if (gameVersion() == GAME_VERSION_MM6)
-        applyMm6SpellDatas();  // Replace the MM7 mana/recovery numbers in pSpellDatas with MM6's.
 
     pHostilityTable = new HostilityTable();
     pHostilityTable->Initialize(engine->resources()->eventsDataIfPresent("hostile.txt"));

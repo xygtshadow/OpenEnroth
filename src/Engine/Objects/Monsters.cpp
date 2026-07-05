@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "Engine/Spells/Spells.h"
+
 #include "Library/Logger/Logger.h"
 #include "Library/Serialization/Serialization.h"
 
@@ -26,7 +28,27 @@ MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, Game
 MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str);
 
 //----- (004548E2) --------------------------------------------------------
-SpellId ParseSpellType(std::string_view name) {
+SpellId ParseSpellType(std::string_view name, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's monster spell names come from MM6's own spells.txt, and the spell that sits at a given id
+        // often differs from MM7's, so the MM7 name map below would resolve them to the wrong id (or miss
+        // them entirely). Resolve the name against the loaded MM6 spell table instead and return the NATIVE
+        // MM6 SpellId; castSpell()'s translateForCast maps that to the matching MM7 effect at cast time.
+        // spells.txt is initialized before monsters.txt in Engine::SecondaryInitialization, so pSpellStats
+        // is populated by the time this runs.
+        assert(pSpellStats && "MM6 monster spell names require pSpellStats to be initialized first");
+        for (SpellId spell : pSpellStats->pInfos.indices()) {
+            const SpellInfo &info = pSpellStats->pInfos[spell];
+            if (ascii::noCaseEquals(name, info.name) || ascii::noCaseEquals(name, info.pShortName))
+                return spell;
+        }
+        // A handful of MM6's shipped monsters.txt spell cells carry data typos that match no spells.txt name
+        // ("Dispell Magic" with a doubled L on Beholder C / Lich A / Lich B, and "Psychic Shockt" on Titan B).
+        // Those monsters get no spell attack, exactly as in the original game.
+        logger->warning("Unknown MM6 monster spell {}", name);
+        return SPELL_NONE;
+    }
+
     static const std::map<std::string, SpellId, ascii::NoCaseLess> monsterSpellMap = {
         {"Acid Burst",        SPELL_WATER_ACID_BURST},
         {"Blades",             SPELL_EARTH_BLADES},
@@ -406,7 +428,7 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
 
     // Spell cells. Format: "<spell name>,<mastery>[,]<skill>".
     // Spell names may contain spaces. Efreet's spell cell is "Lightning Bolt,M10", so the second comma is optional.
-    auto parseSpellEntry = [](std::string_view cell, SpellId &outSpellId, CombinedSkillValue &outMastery) {
+    auto parseSpellEntry = [version](std::string_view cell, SpellId &outSpellId, CombinedSkillValue &outMastery) {
         outSpellId = SPELL_NONE;
         outMastery = CombinedSkillValue::none();
         if (cell.size() < 2)
@@ -414,7 +436,7 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
         std::array<std::string_view, 3> parts = split(removeQuotes(cell)).by(',');
         if (parts[0].empty())
             return;
-        outSpellId = ParseSpellType(parts[0]);
+        outSpellId = ParseSpellType(parts[0], version);
         std::string_view mastery = parts[1];
         std::string_view skill = parts[2];
         if (skill.empty() && mastery.size() > 1) {
