@@ -83,6 +83,23 @@ int CalcSpellDamage(SpellId uSpellID, int spellLevel, Mastery skillMastery, int 
 bool IsSpellQuickCastableOnShiftClick(SpellId uSpellID);
 
 /**
+ * Translates a native spell id into the `SpellId` whose EFFECT should run when casting it.
+ *
+ * MM6 and MM7 both have 99 regular spells packed into the identical 9-school x 11-spell layout at ids
+ * 1..99, but the spell that sits at a given id often differs between the two games. The cast dispatch in
+ * `castSpell()` switches on MM7-named `SpellId` constants, so an MM6 spell has to be mapped to the MM7
+ * spell that produces the matching effect before it's dispatched.
+ *
+ * For MM7 (and for any non-regular spell id, or any id with no MM6 remap) this is the identity function,
+ * so MM7 behavior is entirely unchanged.
+ *
+ * @param nativeId                      Native spell id, as it appears in the running game's data.
+ * @param version                       Which game is running.
+ * @return                              MM7 `SpellId` whose effect should be cast.
+ */
+SpellId translateForCast(SpellId nativeId, GameVersion version);
+
+/**
  * Function for processing spells cast from game scripts.
  */
 void eventCastSpell(SpellId uSpellID, Mastery skillMastery, int skillLevel, Vec3f from, Vec3f to);  // sub_448DF8

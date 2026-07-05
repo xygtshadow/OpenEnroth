@@ -575,6 +575,70 @@ void SpellStats::Initialize(const Blob &spells, GameVersion version) {
     controlUndead.pGrandmasterSkillDesc = replaceAll(controlUndead.pGrandmasterSkillDesc, "Mind Magic", "Dark Magic");
 }
 
+SpellId translateForCast(SpellId nativeId, GameVersion version) {
+    // MM7 is a pure identity, and any non-regular spell id (bow/laser projectiles, quest markers, ...)
+    // has no MM6 remap - pass it straight through.
+    if (version != GAME_VERSION_MM6 || !isRegularSpell(nativeId))
+        return nativeId;
+
+    // MM6 spell id -> MM7 SpellId whose effect matches the MM6 spell. Only ids that differ are listed;
+    // identity is the default, so an MM6 spell that already lines up with the MM7 spell at the same id
+    // (Torch Light@1, Flame Arrow->Fire Bolt@2, Protection buffs@3/14/25/69, Guardian Angel->Preservation@50,
+    // Meditation->Remove Fear@56 [none], First Aid->Heal@68, ...) needs no entry here.
+    static const std::map<SpellId, SpellId> mm6CastEffects = {
+        // 22 remaps - the MM6 spell exists in MM7, just at a different id.
+        {SPELL_FIRE_FIRE_AURA,               SPELL_FIRE_FIRE_BOLT},              // id4  MM6 Fire Bolt
+        {SPELL_AIR_JUMP,                     SPELL_AIR_FEATHER_FALL},            // id16 MM6 Feather Fall
+        {SPELL_AIR_INVISIBILITY,             SPELL_AIR_JUMP},                    // id19 MM6 Jump
+        {SPELL_WATER_ICE_BOLT,               SPELL_WATER_POISON_SPRAY},          // id26 MM6 Poison Spray
+        {SPELL_WATER_RECHARGE_ITEM,          SPELL_WATER_ICE_BOLT},              // id28 MM6 Ice Bolt
+        {SPELL_WATER_ACID_BURST,             SPELL_WATER_ENCHANT_ITEM},          // id29 MM6 Enchant Item
+        {SPELL_WATER_ENCHANT_ITEM,           SPELL_WATER_ACID_BURST},            // id30 MM6 Acid Burst
+        {SPELL_EARTH_PROTECTION_FROM_EARTH,  SPELL_BODY_PROTECTION_FROM_MAGIC},  // id36 MM6 Protection from Magic
+        {SPELL_SPIRIT_SPIRIT_LASH,           SPELL_SPIRIT_TURN_UNDEAD},          // id52 MM6 Turn Undead
+        {SPELL_MIND_MIND_BLAST,              SPELL_MIND_REMOVE_FEAR},            // id57 MM6 Remove Fear
+        {SPELL_MIND_PROTECTION_FROM_MIND,    SPELL_MIND_MIND_BLAST},             // id58 MM6 Mind Blast
+        {SPELL_MIND_CHARM,                   SPELL_MIND_CURE_PARALYSIS},         // id60 MM6 Cure Paralysis
+        {SPELL_MIND_CURE_PARALYSIS,          SPELL_MIND_CHARM},                  // id61 MM6 Charm
+        {SPELL_MIND_BERSERK,                 SPELL_MIND_MASS_FEAR},              // id62 MM6 Mass Fear
+        {SPELL_MIND_ENSLAVE,                 SPELL_EARTH_TELEKINESIS},           // id66 MM6 Telekinesis
+        {SPELL_LIGHT_PARALYZE,               SPELL_EARTH_SLOW},                  // id81 MM6 Slow
+        {SPELL_LIGHT_SUMMON_ELEMENTAL,       SPELL_LIGHT_DESTROY_UNDEAD},        // id82 MM6 Destroy Undead
+        {SPELL_LIGHT_DAY_OF_PROTECTION,      SPELL_LIGHT_HOUR_OF_POWER},         // id85 MM6 Hour of Power
+        {SPELL_LIGHT_HOUR_OF_POWER,          SPELL_LIGHT_PARALYZE},              // id86 MM6 Paralyze
+        {SPELL_DARK_SHRINKING_RAY,           SPELL_DARK_SHARPMETAL},             // id92 MM6 Shrapmetal
+        {SPELL_DARK_SHARPMETAL,              SPELL_DARK_SHRINKING_RAY},          // id93 MM6 Shrinking Ray
+        {SPELL_DARK_CONTROL_UNDEAD,          SPELL_LIGHT_DAY_OF_PROTECTION},     // id94 MM6 Day of Protection
+
+        // 16 analogs - MM6-unique spell mapped to the closest MM7 effect (at a different id).
+        {SPELL_FIRE_FIRE_SPIKE,              SPELL_FIRE_INFERNO},                // id7  MM6 Ring of Fire -> Inferno (fire AoE)
+        {SPELL_FIRE_IMMOLATION,              SPELL_FIRE_FIREBALL},               // id8  MM6 Fire Blast -> Fireball
+        {SPELL_AIR_FEATHER_FALL,             SPELL_AIR_SPARKS},                  // id13 MM6 Static Charge -> Sparks
+        {SPELL_WATER_POISON_SPRAY,           SPELL_WATER_ICE_BOLT},              // id24 MM6 Cold Beam -> Ice Bolt (cold bolt)
+        {SPELL_EARTH_SLOW,                   SPELL_EARTH_DEADLY_SWARM},          // id35 MM6 Magic Arrow -> Deadly Swarm (single earth proj)
+        {SPELL_EARTH_TELEKINESIS,            SPELL_LIGHT_PARALYZE},              // id42 MM6 Turn to Stone -> Paralyze (petrify~paralyze)
+        {SPELL_SPIRIT_DETECT_LIFE,           SPELL_SPIRIT_SPIRIT_LASH},          // id45 MM6 Spirit Arrow -> Spirit Lash
+        {SPELL_SPIRIT_FATE,                  SPELL_BODY_FIRST_AID},              // id47 MM6 Healing Touch -> Heal (cross-school)
+        {SPELL_SPIRIT_TURN_UNDEAD,           SPELL_SPIRIT_FATE},                 // id48 MM6 Lucky Day -> Fate (luck buff)
+        {SPELL_MIND_TELEPATHY,               SPELL_SPIRIT_BLESS},                // id59 MM6 Precision -> Bless (attack buff, cross-school)
+        {SPELL_MIND_MASS_FEAR,               SPELL_MIND_BERSERK},                // id63 MM6 Feeblemind -> Berserk (mind debuff)
+        {SPELL_BODY_REGENERATION,            SPELL_BODY_FIRST_AID},              // id71 MM6 Cure Wounds -> Heal
+        {SPELL_BODY_HAMMERHANDS,             SPELL_FIRE_HASTE},                  // id73 MM6 Speed -> Haste (cross-school)
+        {SPELL_BODY_PROTECTION_FROM_MAGIC,   SPELL_BODY_HAMMERHANDS},            // id75 MM6 Power -> Hammerhands (self dmg buff)
+        {SPELL_DARK_PAIN_REFLECTION,         SPELL_DARK_SOULDRINKER},            // id95 MM6 Finger of Death -> Souldrinker (heavy dark dmg)
+        {SPELL_DARK_SACRIFICE,               SPELL_LIGHT_SUNRAY},                // id96 MM6 Moon Ray -> Sunray (ray dmg, cross-school)
+
+        // 4 [none] placeholders - MM6-unique with no real MM7 analog, mapped to the safest nearest effect
+        // and tracked as residue.
+        {SPELL_LIGHT_LIGHT_BOLT,             SPELL_BODY_FIRST_AID},              // id78 MM6 Create Food -> Heal [NONE-analog placeholder]
+        {SPELL_LIGHT_DESTROY_UNDEAD,         SPELL_LIGHT_DISPEL_MAGIC},          // id79 MM6 Golden Touch -> Dispel [NONE-analog placeholder]
+        {SPELL_DARK_VAMPIRIC_WEAPON,         SPELL_DARK_TOXIC_CLOUD},            // id91 MM6 Mass Curse -> Toxic Cloud [NONE-analog placeholder]
+        {SPELL_DARK_SOULDRINKER,             SPELL_DARK_TOXIC_CLOUD},            // id99 MM6 Dark Containment -> Toxic Cloud [NONE-analog placeholder]
+    };
+
+    return valueOr(mm6CastEffects, nativeId, nativeId);
+}
+
 void eventCastSpell(SpellId uSpellID, Mastery skillMastery, int skillLevel, Vec3f from, Vec3f to) {
     // For bug catching
     assert(skillMastery >= MASTERY_NOVICE && skillMastery <= MASTERY_GRANDMASTER);

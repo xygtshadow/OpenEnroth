@@ -7,6 +7,7 @@
 #include "Engine/Random/Random.h"
 #include "Engine/Spells/Spells.h"
 #include "Engine/Spells/SpellEnums.h"
+#include "Engine/Spells/SpellEnumFunctions.h"
 
 #include "Library/Random/MersenneTwisterRandomEngine.h"
 
@@ -36,6 +37,32 @@ GAME_TEST(SpellsMm6, ParsesMm6Layout) {
     EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pMasterSkillDesc, "cost 0");   // col 11
     EXPECT_TRUE(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pGrandmasterSkillDesc.empty()); // MM6 has no GM tier
     EXPECT_EQ(stats.pInfos[SPELL_LIGHT_PARALYZE].damageType, DAMAGE_LIGHT);
+}
+
+// MM6 and MM7 share the 9-school x 11-spell layout at ids 1..99, but the spell sitting at a given id
+// often differs, so casting an MM6 spell must run the MM7 effect that matches the MM6 spell. Verifies
+// translateForCast: MM7 is a pure identity, non-regular ids pass through, and MM6 remaps/analogs land
+// on the right effect while staying within the regular-spell range.
+GAME_TEST(SpellsMm6, TranslateForCast) {
+    // MM7 is always identity.
+    for (SpellId s : allRegularSpells())
+        EXPECT_EQ(translateForCast(s, GAME_VERSION_MM7), s);
+    // Non-regular ids pass through under MM6.
+    EXPECT_EQ(translateForCast(SPELL_BOW_ARROW, GAME_VERSION_MM6), SPELL_BOW_ARROW);
+    // Aligned MM6 spell -> identity.
+    EXPECT_EQ(translateForCast(SPELL_FIRE_TORCH_LIGHT, GAME_VERSION_MM6), SPELL_FIRE_TORCH_LIGHT);
+    // Remaps.
+    EXPECT_EQ(translateForCast(static_cast<SpellId>(26), GAME_VERSION_MM6), SPELL_WATER_POISON_SPRAY);
+    EXPECT_EQ(translateForCast(static_cast<SpellId>(36), GAME_VERSION_MM6), SPELL_BODY_PROTECTION_FROM_MAGIC);
+    EXPECT_EQ(translateForCast(static_cast<SpellId>(81), GAME_VERSION_MM6), SPELL_EARTH_SLOW);
+    EXPECT_EQ(translateForCast(static_cast<SpellId>(93), GAME_VERSION_MM6), SPELL_DARK_SHRINKING_RAY);
+    // Analog.
+    EXPECT_EQ(translateForCast(static_cast<SpellId>(42), GAME_VERSION_MM6), SPELL_LIGHT_PARALYZE); // Turn to Stone
+    // Same-id analog stays identity-valued.
+    EXPECT_EQ(translateForCast(SPELL_FIRE_FIRE_BOLT, GAME_VERSION_MM6), SPELL_FIRE_FIRE_BOLT); // Flame Arrow
+    // Every result is itself a regular spell (no out-of-range effect).
+    for (SpellId s : allRegularSpells())
+        EXPECT_TRUE(isRegularSpell(translateForCast(s, GAME_VERSION_MM6)));
 }
 
 // Tests for spell damage formulas from MM7 v1.1. Issue: #2055.
