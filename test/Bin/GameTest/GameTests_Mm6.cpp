@@ -39,6 +39,7 @@
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/NPC.h"
 #include "Engine/Objects/SpriteObject.h"
+#include "Engine/Spells/CastSpellInfo.h"
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Spells/Spells.h"
 #include "Engine/Tables/HouseTable.h"
@@ -2679,4 +2680,56 @@ GAME_TEST(Mm6, SpellNamesLoad) {
     EXPECT_EQ(pSpellStats->pInfos[SPELL_FIRE_FIRE_BOLT].name, "Flame Arrow");
     EXPECT_EQ(pSpellStats->pInfos[SPELL_LIGHT_PARALYZE].name, "Slow");
     EXPECT_FALSE(pSpellStats->pInfos[SPELL_DARK_SOULDRINKER].name.empty()); // MM6 id 99 = Dark Containment
+}
+
+// The MM6 and MM7 spell tables share the identical 9-school x 11-spell id layout, but the spell that sits
+// at a given id often differs between the two games. The cast runtime dispatches on MM7-named SpellId
+// constants, so an MM6 spell has to be routed through translateForCast to the MM7 spell whose effect (and
+// targeting mode) matches. These two gates cast such remapped MM6 spells and check that the intended effect,
+// not MM7's same-id effect, runs. (They are the fail-first tests for that wiring: without translateForCast in
+// the dispatch path both produce no projectile.)
+GAME_TEST(Mm6, CastShiftedSpell) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    engine->config->debug.AllMagic.setValue(true); // Cast lands every time - no mana/skill/mastery gating.
+
+    // MM6 spell id 30 is Acid Burst, a projectile. MM7's id 30 is Enchant Item, an inventory-target spell that
+    // launches no projectile and opens the item-enchant window instead. This is one half of MM6's id29/id30
+    // swap (Enchant Item and Acid Burst trade slots relative to MM7). Casting the MM6 spell must fire an acid
+    // burst, not enter item-enchant targeting.
+    // Quick-cast it (nonzero overrideSoundId, as the quick-spell button does) so a projectile spell fires
+    // immediately instead of opening an actor-targeting window.
+    pushSpellOrRangedAttack(static_cast<SpellId>(30), 0, CombinedSkillValue::none(), 0, 1);
+    game.tick(1);
+
+    // The item-enchant targeting mode must NOT have been entered, and a projectile carrying the native MM6
+    // spell id 30 must have been launched (the Acid Burst effect ran).
+    EXPECT_FALSE(IsEnchantingInProgress);
+    int projectiles = std::ranges::count_if(pSpriteObjects, [](const SpriteObject &obj) {
+        return obj.uSpellID == static_cast<SpellId>(30) && obj.uObjectDescID != 0;
+    });
+    EXPECT_GE(projectiles, 1);
+}
+
+GAME_TEST(Mm6, CastUniqueSpellAnalog) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    engine->config->debug.AllMagic.setValue(true);
+
+    // MM6 spell id 8 is Fire Blast, a fireball-like projectile with no same-id MM7 equivalent - MM7's id 8 is
+    // Immolation, a self-only party buff that launches no projectile. translateForCast maps the MM6 spell to
+    // MM7's Fireball projectile effect. Without it, casting id 8 would just apply the Immolation buff and
+    // create nothing to observe.
+    pushSpellOrRangedAttack(static_cast<SpellId>(8), 0, CombinedSkillValue::none(), 0, 1);
+    game.tick(1);
+
+    // A projectile carrying the native MM6 spell id 8 must have been launched (a fire projectile effect ran).
+    int projectiles = std::ranges::count_if(pSpriteObjects, [](const SpriteObject &obj) {
+        return obj.uSpellID == static_cast<SpellId>(8) && obj.uObjectDescID != 0;
+    });
+    EXPECT_GE(projectiles, 1);
 }

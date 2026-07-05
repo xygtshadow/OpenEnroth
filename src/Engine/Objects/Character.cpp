@@ -3650,7 +3650,10 @@ void Character::useItem(int targetCharacter, bool isPortraitClick) {
 
         // TODO(Nik-RE-dev): spell scroll is removed before actual casting and will be consumed even if casting is canceled.
         SpellId scrollSpellId = spellForScroll(pParty->pPickedItem.itemId);
-        if (isSpellTargetsItem(scrollSpellId)) {
+        // Whether the scroll targets an inventory item is an EFFECT property, so key it on the translated
+        // effect id - in MM6 the scroll's native spell often differs from the MM7 spell at that id. The native
+        // scrollSpellId is still what's cast below (pushScrollSpell / UIMSG_SpellScrollUse). Identity for MM7.
+        if (isSpellTargetsItem(translateForCast(scrollSpellId, engine->gameVersion()))) {
             pParty->takeHoldingItem();
             pGUIWindow_CurrentMenu = nullptr;
             current_screen_type = SCREEN_GAME;

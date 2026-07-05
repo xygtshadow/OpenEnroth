@@ -132,6 +132,17 @@ void CastSpellInfoHelpers::castSpell() {
             continue;  // spell item blank skip to next
         }
 
+        // MM6 and MM7 pack their 99 regular spells into the identical id layout, but the spell sitting at a
+        // given id often differs between the two games, while this dispatch switches on MM7-named SpellId
+        // constants. So every DISPATCH decision below (the undead-target test, the special-cast chain, the
+        // effect `switch` and its inner spell-id sub-switches / sub-checks) is keyed by the translated EFFECT
+        // id, whereas every DATA read stays on the NATIVE id: the queued spell id itself, mana/recovery from
+        // pSpellDatas, the projectile sprite (SpellSpriteMapping), the cast sound, the buff animation, the
+        // sprite-owned spell id (initSpellSprite), and the casting skill/school (skillForSpell/isRegularSpell,
+        // which must reflect the native MM6 school). For MM7 (and any non-regular id) translateForCast is the
+        // identity, so the MM7 cast path is byte-for-byte unchanged.
+        SpellId effectId = translateForCast(pCastSpell->uSpellID, engine->gameVersion());
+
         if (pParty->Invisible()) {
             // casting a spell breaks invisibility
             pParty->pPartyBuffs[PARTY_BUFF_INVISIBILITY].Reset();
@@ -161,9 +172,9 @@ void CastSpellInfoHelpers::castSpell() {
         // Otherwise pick closest live actor
         if (!spell_targeted_at) {
             bool target_undead;
-            if (pCastSpell->uSpellID == SPELL_LIGHT_DESTROY_UNDEAD ||
-                    pCastSpell->uSpellID == SPELL_SPIRIT_TURN_UNDEAD ||
-                    pCastSpell->uSpellID == SPELL_DARK_CONTROL_UNDEAD) {
+            if (effectId == SPELL_LIGHT_DESTROY_UNDEAD ||
+                    effectId == SPELL_SPIRIT_TURN_UNDEAD ||
+                    effectId == SPELL_DARK_CONTROL_UNDEAD) {
                 target_undead = true;
             } else {
                 target_undead = false;
@@ -243,7 +254,7 @@ void CastSpellInfoHelpers::castSpell() {
 
         // First process special "pseudo" spells like bow or blaster shots
         // and spells that open additional menus like town portal or lloyd beacon
-        if (pCastSpell->uSpellID == SPELL_BOW_ARROW) {
+        if (effectId == SPELL_BOW_ARROW) {
             int arrows = 1;
             if (spell_mastery >= MASTERY_MASTER) {
                 arrows = 2;
@@ -274,7 +285,7 @@ void CastSpellInfoHelpers::castSpell() {
                 }
             }
             setSpellRecovery(pCastSpell, pPlayer->GetAttackRecoveryTime(true));
-        } else if (pCastSpell->uSpellID == SPELL_LASER_PROJECTILE) {
+        } else if (effectId == SPELL_LASER_PROJECTILE) {
             initSpellSprite(&pSpellSprite, spell_level, spell_mastery, pCastSpell);
             // TODO(pskelton): was pParty->uPartyHeight / 2
             pSpellSprite.vPosition = pParty->pos + Vec3f(0, 0, pParty->height / 3);
@@ -297,7 +308,7 @@ void CastSpellInfoHelpers::castSpell() {
             }
 
             setSpellRecovery(pCastSpell, pPlayer->GetAttackRecoveryTime(false));
-        } else if (pCastSpell->uSpellID == SPELL_WATER_TOWN_PORTAL) {
+        } else if (effectId == SPELL_WATER_TOWN_PORTAL) {
             int success_chance_percent = 10 * spell_level;
             bool castSuccessful = true;
             if (spell_mastery != MASTERY_GRANDMASTER) {
@@ -316,7 +327,7 @@ void CastSpellInfoHelpers::castSpell() {
                 engine->_messageQueue->addMessageCurrentFrame(UIMSG_OnCastTownPortal, Pid(OBJECT_Character, pCastSpell->casterCharacterIndex).packed(), param2);
                 pAudioPlayer->playSpellSound(pCastSpell->uSpellID, false, SOUND_MODE_EXCLUSIVE);
             }
-        } else if (pCastSpell->uSpellID == SPELL_WATER_LLOYDS_BEACON) {
+        } else if (effectId == SPELL_WATER_LLOYDS_BEACON) {
             if (engine->_currentLoadedMapId == MAP_ARENA) {
                 spellFailed(pCastSpell, LSTR_SPELL_FAILED);
             } else {
@@ -325,7 +336,7 @@ void CastSpellInfoHelpers::castSpell() {
                 pCastSpell->flags |= ON_CAST_NoRecoverySpell;
             }
         } else {
-            switch (pCastSpell->uSpellID) {
+            switch (effectId) {
                 case SPELL_FIRE_TORCH_LIGHT:
                 {
                     int spell_power;
@@ -484,7 +495,7 @@ void CastSpellInfoHelpers::castSpell() {
                     pSpellSprite.spell_target_pid = spell_targeted_at;
                     pSpellSprite.field_60_distance_related_prolly_lod = target_direction.uDistance;
                     pSpellSprite.uFacing = target_direction.uYawAngle;
-                    if (pCastSpell->uSpellID == SPELL_AIR_LIGHTNING_BOLT) {
+                    if (effectId == SPELL_AIR_LIGHTNING_BOLT) {
                         pSpellSprite.uAttributes |= SPRITE_SKIP_A_FRAME;
                     }
                     if (pParty->bTurnBasedModeOn) {
@@ -706,7 +717,7 @@ void CastSpellInfoHelpers::castSpell() {
                         continue;
                     }
 
-                    switch (pCastSpell->uSpellID) {
+                    switch (effectId) {
                         case SPELL_FIRE_FIRE_AURA:
                             switch (spell_mastery) {
                                 case MASTERY_NOVICE:
@@ -776,7 +787,7 @@ void CastSpellInfoHelpers::castSpell() {
                 {
                     int spell_power = std::to_underlying(spell_mastery) * spell_level;
                     PartyBuff resist;
-                    switch (pCastSpell->uSpellID) {
+                    switch (effectId) {
                         case SPELL_FIRE_PROTECTION_FROM_FIRE:
                             resist = PARTY_BUFF_RESIST_FIRE;
                             break;
@@ -925,7 +936,7 @@ void CastSpellInfoHelpers::castSpell() {
 
                     int spell_power;
                     PartyBuff buff;
-                    switch (pCastSpell->uSpellID) {
+                    switch (effectId) {
                         case SPELL_AIR_SHIELD:
                             spell_power = 0;
                             buff = PARTY_BUFF_SHIELD;
@@ -3015,7 +3026,14 @@ void pushSpellOrRangedAttack(SpellId spell,
     assert(casterIndex >= 0 && casterIndex < 4);
     Character *character = &pParty->pCharacters[casterIndex];
     if (!(flags & ON_CAST_TargetIsParty)) {
-        switch (spell) {
+        // The targeting mode must match the EFFECT that will run, not the MM7 spell that happens to sit at
+        // this id: in MM6 e.g. id30 Acid Burst (a projectile) shares its id with MM7's Enchant Item, so it
+        // must use projectile targeting, not item-enchant targeting - and its id29 counterpart Enchant Item
+        // must use item targeting. Only this switch is translated; the native `spell` is still what gets
+        // stored in the cast queue below (so castSpell reads native mana/sprite/sound/skill). For MM7
+        // translateForCast is the identity, so the targeting behavior is unchanged.
+        SpellId effectId = translateForCast(spell, engine->gameVersion());
+        switch (effectId) {
             case SPELL_SPIRIT_FATE:
             case SPELL_BODY_FIRST_AID:
             case SPELL_DARK_REANIMATE:
