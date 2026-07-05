@@ -301,6 +301,160 @@ IndexedArray<SpellData, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> pSpellDatas = {
     {SPELL_DARK_SOULDRINKER,            SpellData(60, 60, 60, 60,  300,  300,  300,  300, 25,  8, 0, MASTERY_GRANDMASTER)}
 };
 
+namespace {
+
+/** Per-mastery MM6 spell point cost and recovery time for a single spell. See `applyMm6SpellDatas`. */
+struct Mm6SpellCost {
+    std::array<uint16_t, 3> mana;      // [Novice, Expert, Master] spell points.
+    std::array<uint16_t, 3> recovery;  // [Novice, Expert, Master] recovery time, in game ticks.
+};
+
+/**
+ * MM6 per-mastery spell point costs and recovery times, extracted verbatim from MM6.EXE's SpellInfo
+ * table (MMExtension `Game.Spells`, VA 0x4BDD70; 99 entries of 0xE bytes each: `SpellPoints[3]`
+ * int16 @0x0, `Delay[3]` int16 @0x6, `Bits` uint16 @0xC). MM6 has only three skill masteries
+ * (Novice/Expert/Master), so there is no Grandmaster tier in the source data.
+ *
+ * The keys are MM7 `SpellId` names, but they denote the *native* MM6 spell in that id slot (which is
+ * how `pSpellDatas` is indexed). The MM6 spell at a given id is often a different spell than the MM7
+ * name suggests (e.g. native id 2 is "Flame Arrow" in MM6, not Fire Bolt) - only the stats matter.
+ *
+ * Cross-validated: decoding MM7.EXE's SpellInfo table (VA 0x4E3C48, 0x14-byte entries) with the same
+ * reader reproduces the mana and recovery of all 99 `pSpellDatas` rows exactly. Regenerate with
+ * `docs/scratch/dump_spelldata.py`.
+ */
+const IndexedArray<Mm6SpellCost, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6SpellCosts = {
+    {SPELL_FIRE_TORCH_LIGHT,             {{  1,  1,  1}, {  60,  60,  60}}},
+    {SPELL_FIRE_FIRE_BOLT,               {{  2,  1,  0}, { 100,  90,  80}}},
+    {SPELL_FIRE_PROTECTION_FROM_FIRE,    {{  3,  3,  3}, { 120, 120, 120}}},
+    {SPELL_FIRE_FIRE_AURA,               {{  4,  4,  4}, { 110, 100,  90}}},
+    {SPELL_FIRE_HASTE,                   {{  5,  5,  5}, { 120, 120, 120}}},
+    {SPELL_FIRE_FIREBALL,                {{  8,  8,  8}, { 110, 100,  90}}},
+    {SPELL_FIRE_FIRE_SPIKE,              {{ 10, 10, 10}, { 110, 100,  90}}},
+    {SPELL_FIRE_IMMOLATION,              {{ 15, 15, 15}, { 110,  90,  70}}},
+    {SPELL_FIRE_METEOR_SHOWER,           {{ 20, 20, 20}, { 120, 110, 100}}},
+    {SPELL_FIRE_INFERNO,                 {{ 25, 25, 25}, { 140, 120, 100}}},
+    {SPELL_FIRE_INCINERATE,              {{ 30, 30, 30}, { 150, 130, 110}}},
+
+    {SPELL_AIR_WIZARD_EYE,               {{  1,  1,  1}, {  60,  60,  60}}},
+    {SPELL_AIR_FEATHER_FALL,             {{  2,  2,  0}, { 100,  90,  90}}},
+    {SPELL_AIR_PROTECTION_FROM_AIR,      {{  3,  3,  3}, { 120, 120, 120}}},
+    {SPELL_AIR_SPARKS,                   {{  4,  4,  4}, { 110, 100,  90}}},
+    {SPELL_AIR_JUMP,                     {{  5,  5,  5}, { 120, 120, 120}}},
+    {SPELL_AIR_SHIELD,                   {{  8,  8,  8}, { 120, 120, 120}}},
+    {SPELL_AIR_LIGHTNING_BOLT,           {{ 10, 10, 10}, { 110, 100,  90}}},
+    {SPELL_AIR_INVISIBILITY,             {{ 15, 15, 15}, { 110,  90,  70}}},
+    {SPELL_AIR_IMPLOSION,                {{ 20, 20, 20}, { 120, 110, 100}}},
+    {SPELL_AIR_FLY,                      {{ 25, 25, 25}, { 250, 250, 250}}},
+    {SPELL_AIR_STARBURST,                {{ 30, 30, 30}, { 150, 130, 110}}},
+
+    {SPELL_WATER_AWAKEN,                 {{  1,  1,  1}, {  60,  60,  60}}},
+    {SPELL_WATER_POISON_SPRAY,           {{  2,  1,  0}, {  90,  80,  80}}},
+    {SPELL_WATER_PROTECTION_FROM_WATER,  {{  3,  3,  3}, { 120, 120, 120}}},
+    {SPELL_WATER_ICE_BOLT,               {{  4,  4,  4}, { 110, 100,  90}}},
+    {SPELL_WATER_WATER_WALK,             {{  5,  5,  5}, { 150, 120, 120}}},
+    {SPELL_WATER_RECHARGE_ITEM,          {{  8,  8,  8}, { 110, 100,  90}}},
+    {SPELL_WATER_ACID_BURST,             {{ 10, 10, 10}, { 140, 140, 140}}},
+    {SPELL_WATER_ENCHANT_ITEM,           {{ 15, 15, 15}, { 110, 100,  90}}},
+    {SPELL_WATER_TOWN_PORTAL,            {{ 20, 20, 20}, { 200, 200, 200}}},
+    {SPELL_WATER_ICE_BLAST,              {{ 25, 25, 25}, { 120, 100,  80}}},
+    {SPELL_WATER_LLOYDS_BEACON,          {{ 30, 30, 30}, { 250, 250, 250}}},
+
+    {SPELL_EARTH_STUN,                   {{  1,  1,  1}, {  80,  80,  80}}},
+    {SPELL_EARTH_SLOW,                   {{  2,  1,  0}, { 100,  90,  80}}},
+    {SPELL_EARTH_PROTECTION_FROM_EARTH,  {{  3,  3,  3}, { 120, 120, 120}}},
+    {SPELL_EARTH_DEADLY_SWARM,           {{  4,  4,  4}, { 110, 100,  90}}},
+    {SPELL_EARTH_STONESKIN,              {{  5,  5,  5}, { 120, 120, 120}}},
+    {SPELL_EARTH_BLADES,                 {{  8,  8,  8}, { 110, 100,  90}}},
+    {SPELL_EARTH_STONE_TO_FLESH,         {{ 10, 10, 10}, { 140, 140, 140}}},
+    {SPELL_EARTH_ROCK_BLAST,             {{ 15, 15, 15}, { 110, 100,  90}}},
+    {SPELL_EARTH_TELEKINESIS,            {{ 20, 20, 20}, { 130, 130, 130}}},
+    {SPELL_EARTH_DEATH_BLOSSOM,          {{ 25, 25, 25}, { 120, 110, 100}}},
+    {SPELL_EARTH_MASS_DISTORTION,        {{ 30, 30, 30}, { 140, 120, 100}}},
+
+    {SPELL_SPIRIT_DETECT_LIFE,           {{  1,  1,  0}, {  90,  80,  80}}},
+    {SPELL_SPIRIT_BLESS,                 {{  2,  2,  2}, { 100, 100, 100}}},
+    {SPELL_SPIRIT_FATE,                  {{  3,  3,  3}, { 100, 100, 100}}},
+    {SPELL_SPIRIT_TURN_UNDEAD,           {{  4,  4,  4}, { 120, 120, 120}}},
+    {SPELL_SPIRIT_REMOVE_CURSE,          {{  5,  5,  5}, { 120, 120, 120}}},
+    {SPELL_SPIRIT_PRESERVATION,          {{  8,  8,  8}, { 120, 120, 120}}},
+    {SPELL_SPIRIT_HEROISM,               {{ 10, 10, 10}, { 120, 120, 120}}},
+    {SPELL_SPIRIT_SPIRIT_LASH,           {{ 15, 15, 15}, { 140, 120, 100}}},
+    {SPELL_SPIRIT_RAISE_DEAD,            {{ 20, 20, 20}, { 240, 240, 240}}},
+    {SPELL_SPIRIT_SHARED_LIFE,           {{ 25, 25, 25}, { 150, 150, 150}}},
+    {SPELL_SPIRIT_RESSURECTION,          {{ 30, 30, 30}, {1000,1000,1000}}},
+
+    {SPELL_MIND_REMOVE_FEAR,             {{  1,  1,  1}, { 120, 120, 120}}},
+    {SPELL_MIND_MIND_BLAST,              {{  2,  2,  2}, { 120, 120, 120}}},
+    {SPELL_MIND_PROTECTION_FROM_MIND,    {{  3,  3,  3}, { 110, 100,  90}}},
+    {SPELL_MIND_TELEPATHY,               {{  4,  4,  4}, { 120, 120, 120}}},
+    {SPELL_MIND_CHARM,                   {{  5,  5,  5}, { 120, 120, 120}}},
+    {SPELL_MIND_CURE_PARALYSIS,          {{  8,  8,  8}, { 100, 100, 100}}},
+    {SPELL_MIND_BERSERK,                 {{ 10, 10, 10}, { 100,  90,  80}}},
+    {SPELL_MIND_MASS_FEAR,               {{ 15, 15, 15}, { 110, 100,  90}}},
+    {SPELL_MIND_CURE_INSANITY,           {{ 20, 20, 20}, { 120, 120, 120}}},
+    {SPELL_MIND_PSYCHIC_SHOCK,           {{ 25, 25, 25}, { 130, 120, 110}}},
+    {SPELL_MIND_ENSLAVE,                 {{ 30, 30, 30}, { 250, 250, 250}}},
+
+    {SPELL_BODY_CURE_WEAKNESS,           {{  1,  1,  1}, { 120, 120, 120}}},
+    {SPELL_BODY_FIRST_AID,               {{  2,  2,  2}, {  80,  80,  80}}},
+    {SPELL_BODY_PROTECTION_FROM_BODY,    {{  3,  3,  3}, { 120, 120, 120}}},
+    {SPELL_BODY_HARM,                    {{  4,  4,  4}, { 110, 100,  90}}},
+    {SPELL_BODY_REGENERATION,            {{  5,  5,  5}, { 100,  90,  80}}},
+    {SPELL_BODY_CURE_POISON,             {{  8,  8,  8}, { 120, 120, 120}}},
+    {SPELL_BODY_HAMMERHANDS,             {{ 10, 10, 10}, { 120, 120, 120}}},
+    {SPELL_BODY_CURE_DISEASE,            {{ 15, 15, 15}, { 120, 120, 120}}},
+    {SPELL_BODY_PROTECTION_FROM_MAGIC,   {{ 20, 20, 20}, { 120, 120, 120}}},
+    {SPELL_BODY_FLYING_FIST,             {{ 25, 25, 25}, { 130, 120, 110}}},
+    {SPELL_BODY_POWER_CURE,              {{ 30, 30, 30}, { 150, 125, 100}}},
+
+    {SPELL_LIGHT_LIGHT_BOLT,             {{ 20, 20, 20}, { 100, 100, 100}}},
+    {SPELL_LIGHT_DESTROY_UNDEAD,         {{ 25, 25, 25}, { 100, 100, 100}}},
+    {SPELL_LIGHT_DISPEL_MAGIC,           {{ 30, 30, 30}, { 120, 110, 100}}},
+    {SPELL_LIGHT_PARALYZE,               {{ 35, 35, 35}, { 120, 100,  80}}},
+    {SPELL_LIGHT_SUMMON_ELEMENTAL,       {{ 40, 40, 40}, { 120, 110, 100}}},
+    {SPELL_LIGHT_DAY_OF_THE_GODS,        {{ 45, 45, 45}, { 500, 500, 500}}},
+    {SPELL_LIGHT_PRISMATIC_LIGHT,        {{ 50, 50, 50}, { 150, 135, 120}}},
+    {SPELL_LIGHT_DAY_OF_PROTECTION,      {{ 55, 55, 55}, { 250, 250, 250}}},
+    {SPELL_LIGHT_HOUR_OF_POWER,          {{ 60, 60, 60}, { 160, 140, 120}}},
+    {SPELL_LIGHT_SUNRAY,                 {{ 65, 65, 65}, { 180, 165, 150}}},
+    {SPELL_LIGHT_DIVINE_INTERVENTION,    {{ 70, 70, 70}, { 300, 300, 300}}},
+
+    {SPELL_DARK_REANIMATE,               {{ 20, 20, 20}, { 100, 100, 100}}},
+    {SPELL_DARK_TOXIC_CLOUD,             {{ 30, 30, 30}, { 120, 110, 100}}},
+    {SPELL_DARK_VAMPIRIC_WEAPON,         {{ 40, 40, 40}, { 120, 120, 120}}},
+    {SPELL_DARK_SHRINKING_RAY,           {{ 50, 50, 50}, { 100,  90,  80}}},
+    {SPELL_DARK_SHARPMETAL,              {{ 60, 60, 60}, { 120, 120, 120}}},
+    {SPELL_DARK_CONTROL_UNDEAD,          {{ 70, 70, 70}, { 500, 500, 500}}},
+    {SPELL_DARK_PAIN_REFLECTION,         {{ 80, 80, 80}, { 130, 130, 130}}},
+    {SPELL_DARK_SACRIFICE,               {{ 90, 90, 90}, { 150, 140, 130}}},
+    {SPELL_DARK_DRAGON_BREATH,           {{100,100,100}, { 160, 140, 120}}},
+    {SPELL_DARK_ARMAGEDDON,              {{150,150,150}, { 250, 250, 250}}},
+    {SPELL_DARK_SOULDRINKER,             {{200,200,200}, { 300, 300, 300}}}
+};
+
+} // namespace
+
+void applyMm6SpellDatas() {
+    for (SpellId spell : pSpellDatas.indices()) {
+        const Mm6SpellCost &cost = kMm6SpellCosts[spell];
+        SpellData &data = pSpellDatas[spell];
+
+        data.mana_per_skill[MASTERY_NOVICE] = cost.mana[0];
+        data.mana_per_skill[MASTERY_EXPERT] = cost.mana[1];
+        data.mana_per_skill[MASTERY_MASTER] = cost.mana[2];
+        data.mana_per_skill[MASTERY_GRANDMASTER] = cost.mana[2];  // MM6 has no Grandmaster tier.
+
+        data.recovery_per_skill[MASTERY_NOVICE] = Duration::fromTicks(cost.recovery[0]);
+        data.recovery_per_skill[MASTERY_EXPERT] = Duration::fromTicks(cost.recovery[1]);
+        data.recovery_per_skill[MASTERY_MASTER] = Duration::fromTicks(cost.recovery[2]);
+        data.recovery_per_skill[MASTERY_GRANDMASTER] = Duration::fromTicks(cost.recovery[2]);
+
+        // baseDamage, bonusSkillDamage, skillMastery and flags are intentionally left at their MM7
+        // pSpellDatas values - MM6's SpellInfo table carries no damage or min-mastery fields.
+    }
+}
+
 IndexedArray<std::array<struct SpellBookIconPos, 12>, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> pIconPos = {
     {MAGIC_SCHOOL_FIRE, {{{0,   0},   {17,  13},  {115, 2},   {217, 15},  {299, 6},   {28,  125},
                           {130, 133}, {294, 114}, {11,  232}, {134, 233}, {237, 171}, {296, 231}}}},

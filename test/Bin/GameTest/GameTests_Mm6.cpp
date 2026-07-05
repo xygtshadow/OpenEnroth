@@ -2733,3 +2733,36 @@ GAME_TEST(Mm6, CastUniqueSpellAnalog) {
     });
     EXPECT_GE(projectiles, 1);
 }
+
+GAME_TEST(Mm6, SpellManaCosts) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // pSpellDatas is statically initialized with MM7 numbers; applyMm6SpellDatas() must have replaced the
+    // mana costs and recovery times with the MM6 values extracted from MM6.EXE's SpellInfo table (VA
+    // 0x4BDD70). These native ids assert values that DIFFER from MM7, proving the MM6 table was applied.
+    // Cross-validated against tartarus.rpgclassics.com/mm6 and the MM7-vs-EXE decode. In MM6, unlike MM7,
+    // mana can drop with mastery and Light/Dark magic is far more expensive.
+
+    // Native id 2 = MM6 "Flame Arrow": mana 2/1/0 across Novice/Expert/Master (MM7 Fire Bolt is a flat 2).
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_FIRE_BOLT].mana_per_skill[MASTERY_NOVICE], 2);
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_FIRE_BOLT].mana_per_skill[MASTERY_EXPERT], 1);
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_FIRE_BOLT].mana_per_skill[MASTERY_MASTER], 0);
+    // MM6 recovery for that spell is 100/90/80 (MM7 is 110/110/100).
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_FIRE_BOLT].recovery_per_skill[MASTERY_NOVICE], Duration::fromTicks(100));
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_FIRE_BOLT].recovery_per_skill[MASTERY_MASTER], Duration::fromTicks(80));
+
+    // Native id 78 = first Light spell: 20 mana in MM6 vs 5 in MM7, recovery 100 vs MM7's 110.
+    EXPECT_EQ(pSpellDatas[SPELL_LIGHT_LIGHT_BOLT].mana_per_skill[MASTERY_NOVICE], 20);
+    EXPECT_EQ(pSpellDatas[SPELL_LIGHT_LIGHT_BOLT].recovery_per_skill[MASTERY_NOVICE], Duration::fromTicks(100));
+
+    // Native id 89 = first Dark spell: 20 mana in MM6 vs 10 in MM7.
+    EXPECT_EQ(pSpellDatas[SPELL_DARK_REANIMATE].mana_per_skill[MASTERY_NOVICE], 20);
+
+    // MM6 has no Grandmaster tier, so the GM slot must mirror the Master value.
+    EXPECT_EQ(pSpellDatas[SPELL_DARK_SOULDRINKER].mana_per_skill[MASTERY_GRANDMASTER],
+              pSpellDatas[SPELL_DARK_SOULDRINKER].mana_per_skill[MASTERY_MASTER]);
+    EXPECT_EQ(pSpellDatas[SPELL_DARK_SOULDRINKER].mana_per_skill[MASTERY_NOVICE], 200); // MM7 is 60.
+}

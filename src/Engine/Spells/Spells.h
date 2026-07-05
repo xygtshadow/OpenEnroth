@@ -105,3 +105,12 @@ SpellId translateForCast(SpellId nativeId, GameVersion version);
 void eventCastSpell(SpellId uSpellID, Mastery skillMastery, int skillLevel, Vec3f from, Vec3f to);  // sub_448DF8
 
 void armageddonProgress();
+
+/**
+ * Overwrites the mana costs and recovery times in `pSpellDatas` with the MM6 values extracted from
+ * MM6.EXE. `pSpellDatas` is statically initialized with MM7 numbers; this must be called once at
+ * engine init when running MM6 (right after `SpellStats::Initialize`), and must not be called for
+ * MM7. `baseDamage`, `bonusSkillDamage`, `skillMastery` and `flags` are left untouched (MM6's spell
+ * table carries no such fields, so those keep their MM7 approximations).
+ */
+void applyMm6SpellDatas();

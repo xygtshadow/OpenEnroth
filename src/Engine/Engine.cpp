@@ -715,6 +715,8 @@ void Engine::SecondaryInitialization() {
 
     pSpellStats = new SpellStats();
     pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"), gameVersion());
+    if (gameVersion() == GAME_VERSION_MM6)
+        applyMm6SpellDatas();  // Replace the MM7 mana/recovery numbers in pSpellDatas with MM6's.
 
     pHostilityTable = new HostilityTable();
     pHostilityTable->Initialize(engine->resources()->eventsDataIfPresent("hostile.txt"));
