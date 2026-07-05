@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 
+#include "Engine/Engine.h"
 #include "Engine/Party.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Overlays.h"
@@ -1070,6 +1071,18 @@ bool IsSpellQuickCastableOnShiftClick(SpellId uSpellID) {
 int CalcSpellDamage(SpellId uSpellID, int spellLevel, Mastery skillMastery, int currentHp) {
     int result;       // eax@1
     unsigned int diceSides;  // [sp-4h] [bp-8h]@9
+
+    // The damage magnitude comes from pSpellDatas / the per-spell formulas below, both keyed by spell id. For
+    // a shifted MM6 spell the native id points at a different MM7 spell's data (often a 0-damage buff, e.g.
+    // MM6 Fire Bolt = native id 4 = Fire Aura's slot), so resolve to the EFFECT spell here - the same "run the
+    // MM7 effect's behavior" rule the cast/impact paths use. Every CalcSpellDamage caller is a damage sink
+    // (projectile/AoE impact, monster spell attack, item damage), and callers derive the damage school from
+    // pSpellStats->pInfos[nativeId] separately (MM6 loads that correctly), so only the magnitude is remapped.
+    // For MM7 (and aligned MM6 spells) translateForCast is the identity, so this is a no-op there.
+    // TODO(mm6): the EXACT MM6 damage numbers (baseDamage/bonusSkillDamage) are still the MM7 effect's; loading
+    // MM6's own values would make the native-id lookup correct without this remap. Tracked as Scope-C residue.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        uSpellID = translateForCast(uSpellID, GAME_VERSION_MM6);
 
     result = 0;
     if (uSpellID == SPELL_FIRE_FIRE_SPIKE) {

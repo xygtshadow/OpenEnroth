@@ -15,6 +15,9 @@
 #include "Engine/AttackList.h"
 #include "Engine/MapInfo.h"
 
+#include "Engine/Spells/Spells.h"
+#include "Engine/Spells/SpellEnumFunctions.h"
+
 #include "Engine/Random/Random.h"
 
 #include "Engine/Objects/Actor.h"
@@ -716,7 +719,22 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
         }
     }
 
-    switch (object->spriteId) {
+    // The impact behavior is selected by the projectile's sprite, but the sprite is keyed on the NATIVE
+    // spell id (MM6's projectile object bank is native-slot-indexed - see castSpell/AI_SpellAttack). For a
+    // shifted MM6 spell the native-slot sprite belongs to a different MM7 spell, so switching on it lands on
+    // the wrong impact case or the damage-less default (e.g. MM6 Fire Bolt = native id 4 -> Fire Aura's
+    // sprite, which has no impact case -> 0 damage). Dispatch on the EFFECT's sprite instead, mirroring the
+    // "native asset, effect behavior" split used everywhere else: the rendered graphic (object->uObjectDescID,
+    // native) is untouched, only the behavior selection is translated. For MM7 - and MM6 aligned spells where
+    // the effect equals the native id - this is a no-op, so the switch is byte-identical there.
+    SpriteId dispatchSprite = object->spriteId;
+    if (engine->gameVersion() == GAME_VERSION_MM6 && isRegularSpell(object->uSpellID)) {
+        SpellId effect = translateForCast(object->uSpellID, GAME_VERSION_MM6);
+        if (effect != object->uSpellID)
+            dispatchSprite = SpellSpriteMapping[effect];
+    }
+
+    switch (dispatchSprite) {
         case SPRITE_SPELL_FIRE_FIRE_SPIKE:
         case SPRITE_SPELL_AIR_SPARKS:
         case SPRITE_SPELL_DARK_TOXIC_CLOUD: {
@@ -1049,7 +1067,11 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
             //         break;
             // }
             bool isDamaged = false;
-            bool isShrinkingRayAoe = (object->spriteId == SPRITE_SPELL_DARK_SHRINKING_RAY) && (object->spell_skill == MASTERY_GRANDMASTER);
+            // Behavior selectors in this case use dispatchSprite (the effect identity), not the rendered
+            // native sprite - a shifted MM6 spell reaches this case via its effect (e.g. MM6 Turn to Stone /
+            // Charm), so the charm/paralyze/shrink branch and the dmgType/buff switch below must key off the
+            // effect. For MM7 dispatchSprite == object->spriteId, so this is unchanged.
+            bool isShrinkingRayAoe = (dispatchSprite == SPRITE_SPELL_DARK_SHRINKING_RAY) && (object->spell_skill == MASTERY_GRANDMASTER);
             if (pid.type() != OBJECT_Actor) {
                 if (!isShrinkingRayAoe) {
                     SpriteObject::OnInteraction(uLayingItemID);
@@ -1083,7 +1105,7 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
             Mastery skillMastery = object->spell_skill;
             DamageType dmgType;
             ActorBuff buffIdx;
-            switch (object->spriteId) {
+            switch (dispatchSprite) {
                 case SPRITE_SPELL_MIND_CHARM:
                     dmgType = DAMAGE_MIND;
                     buffIdx = ACTOR_BUFF_CHARM;
@@ -1100,7 +1122,7 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
                     assert(false);
                     break;
             }
-            if (object->spriteId == SPRITE_SPELL_DARK_SHRINKING_RAY) {
+            if (dispatchSprite == SPRITE_SPELL_DARK_SHRINKING_RAY) {
                 switch (skillMastery) {
                     case MASTERY_NOVICE:
                         shrinkPower = 2;
@@ -1123,7 +1145,7 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
                 int actorId = pid.id();
                 if (pActors[pid.id()].DoesDmgTypeDoDamage(dmgType)) {
                     isDamaged = true;
-                    if (object->spriteId == SPRITE_SPELL_LIGHT_PARALYZE) {
+                    if (dispatchSprite == SPRITE_SPELL_LIGHT_PARALYZE) {
                         pActors[actorId].aiState = Standing;
                         pActors[actorId].UpdateAnimation();
                     }

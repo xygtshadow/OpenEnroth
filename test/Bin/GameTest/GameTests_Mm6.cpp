@@ -2830,6 +2830,65 @@ GAME_TEST(Mm6, MonsterCastsSpell) {
     EXPECT_GT(pSpriteObjects.size(), spritesBefore);
 }
 
+// A shifted MM6 damage spell must actually deal impact damage. Two layers are needed and both are exercised
+// here: (1) processSpellImpact dispatches on the EFFECT's sprite (the native-slot sprite of e.g. Fire Bolt is
+// Fire Aura's, which has no impact case -> the projectile hit the damage-less default), and (2) CalcSpellDamage
+// resolves the magnitude via the effect spell (the native-slot data is a 0-damage buff). Missing either leaves
+// MM6 Fire Bolt at 0 damage. This drives a player cast into a monster; the same CalcSpellDamage chokepoint and
+// processSpellImpact serve the monster->party direction (see Mm6.MonsterCastsSpell for the monster projectile).
+GAME_TEST(Mm6, ShiftedSpellDealsImpactDamage) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    engine->config->debug.AllMagic.setValue(true); // Casts always land - no mana/skill gating.
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // Indoor, so the projectile's sector is defined.
+    game.tick(1);
+
+    int monId = -1;
+    for (size_t i = 0; i < pActors.size(); i++) {
+        if (pActors[i].hp > 0) {
+            monId = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_NE(monId, -1);
+
+    // Quick-cast a native MM6 fire projectile, then impact it straight onto the monster; return HP lost.
+    auto castImpactDamage = [&](int nativeId) -> int {
+        pActors[monId].hp = 500;
+        pActors[monId].monsterInfo.resFire = 0; // Deterministic: the found monster must not resist the damage.
+        pushSpellOrRangedAttack(static_cast<SpellId>(nativeId), 0, CombinedSkillValue::none(), 0, 1);
+        game.tick(1);
+        int proj = -1;
+        for (size_t j = 0; j < pSpriteObjects.size(); j++)
+            if (pSpriteObjects[j].uSpellID == static_cast<SpellId>(nativeId))
+                proj = static_cast<int>(j);
+        EXPECT_NE(proj, -1) << "native spell " << nativeId << " formed no projectile";
+        if (proj == -1)
+            return 0;
+        // The projectile may have clipped scenery during its creating tick; restore its fresh pre-impact native
+        // sprite so the impact runs cleanly on the monster (updateSpriteOnImpact asserts a projectile sprite).
+        SpriteObject &p = pSpriteObjects[proj];
+        p.uSpellID = static_cast<SpellId>(nativeId);
+        p.spriteId = SpellSpriteMapping[static_cast<SpellId>(nativeId)];
+        p.uObjectDescID = pObjectList->ObjectIDByItemID(p.spriteId);
+        pActors[monId].hp = 500;
+        processSpellImpact(proj, Pid(OBJECT_Actor, monId));
+        return 500 - pActors[monId].hp;
+    };
+
+    // Shifted: MM6 Fire Bolt (native id 4) - the most common monster attack spell. 0 before either layer.
+    EXPECT_GT(castImpactDamage(4), 0);
+
+    // Aligned: MM6 Flame Arrow (native id 2) already sits on the Fire Bolt sprite/data - damage must still
+    // land, proving the central CalcSpellDamage remap didn't break the aligned (identity) path.
+    EXPECT_GT(castImpactDamage(2), 0);
+}
+
 GAME_TEST(Mm6, SpellManaCosts) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
