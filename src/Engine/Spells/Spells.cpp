@@ -382,7 +382,7 @@ const IndexedArray<Mm6SpellCost, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6Sp
     {SPELL_SPIRIT_SPIRIT_LASH,           {{ 15, 15, 15}, { 140, 120, 100}}},
     {SPELL_SPIRIT_RAISE_DEAD,            {{ 20, 20, 20}, { 240, 240, 240}}},
     {SPELL_SPIRIT_SHARED_LIFE,           {{ 25, 25, 25}, { 150, 150, 150}}},
-    {SPELL_SPIRIT_RESSURECTION,          {{ 30, 30, 30}, {1000,1000,1000}}},
+    {SPELL_SPIRIT_RESSURECTION,          {{ 30, 30, 30}, {1000, 1000, 1000}}},
 
     {SPELL_MIND_REMOVE_FEAR,             {{  1,  1,  1}, { 120, 120, 120}}},
     {SPELL_MIND_MIND_BLAST,              {{  2,  2,  2}, { 120, 120, 120}}},
@@ -428,9 +428,9 @@ const IndexedArray<Mm6SpellCost, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6Sp
     {SPELL_DARK_CONTROL_UNDEAD,          {{ 70, 70, 70}, { 500, 500, 500}}},
     {SPELL_DARK_PAIN_REFLECTION,         {{ 80, 80, 80}, { 130, 130, 130}}},
     {SPELL_DARK_SACRIFICE,               {{ 90, 90, 90}, { 150, 140, 130}}},
-    {SPELL_DARK_DRAGON_BREATH,           {{100,100,100}, { 160, 140, 120}}},
-    {SPELL_DARK_ARMAGEDDON,              {{150,150,150}, { 250, 250, 250}}},
-    {SPELL_DARK_SOULDRINKER,             {{200,200,200}, { 300, 300, 300}}}
+    {SPELL_DARK_DRAGON_BREATH,           {{100, 100, 100}, { 160, 140, 120}}},
+    {SPELL_DARK_ARMAGEDDON,              {{150, 150, 150}, { 250, 250, 250}}},
+    {SPELL_DARK_SOULDRINKER,             {{200, 200, 200}, { 300, 300, 300}}}
 };
 
 } // namespace
@@ -450,8 +450,14 @@ void applyMm6SpellDatas() {
         data.recovery_per_skill[MASTERY_MASTER] = Duration::fromTicks(cost.recovery[2]);
         data.recovery_per_skill[MASTERY_GRANDMASTER] = Duration::fromTicks(cost.recovery[2]);
 
-        // baseDamage, bonusSkillDamage, skillMastery and flags are intentionally left at their MM7
-        // pSpellDatas values - MM6's SpellInfo table carries no damage or min-mastery fields.
+        // MM6's highest mastery is Master, so the 11th spell of each school (Grandmaster in MM7) must be
+        // learnable at Master - otherwise the spellbook learn gate (Character.cpp, requiredMastery >
+        // val.mastery()) leaves those 9 spells permanently unlearnable in MM6.
+        if (data.skillMastery == MASTERY_GRANDMASTER)
+            data.skillMastery = MASTERY_MASTER;
+
+        // baseDamage and bonusSkillDamage are intentionally left at their MM7 pSpellDatas values - MM6's
+        // SpellInfo table carries no damage fields. flags are likewise unchanged.
     }
 }
 

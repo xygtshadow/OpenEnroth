@@ -2766,3 +2766,20 @@ GAME_TEST(Mm6, SpellManaCosts) {
               pSpellDatas[SPELL_DARK_SOULDRINKER].mana_per_skill[MASTERY_MASTER]);
     EXPECT_EQ(pSpellDatas[SPELL_DARK_SOULDRINKER].mana_per_skill[MASTERY_NOVICE], 200); // MM7 is 60.
 }
+
+GAME_TEST(Mm6, SpellLearnMastery) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6 caps mastery at Master (no Grandmaster tier). applyMm6SpellDatas() must clamp the min-mastery of
+    // each school's 11th spell down from MM7's Grandmaster to Master; otherwise the spellbook learn gate
+    // (Character.cpp, requiredMastery > val.mastery()) would leave those 9 spells permanently unlearnable.
+    // Native id 11 = Incinerate, the 11th Fire spell (MASTERY_GRANDMASTER in MM7's pSpellDatas).
+    EXPECT_EQ(pSpellDatas[static_cast<SpellId>(11)].skillMastery, MASTERY_MASTER);
+    EXPECT_EQ(pSpellDatas[SPELL_DARK_SOULDRINKER].skillMastery, MASTERY_MASTER); // native id 99, also GM in MM7.
+
+    // Non-top spells keep their existing (sub-Grandmaster) tier - the clamp only touches Grandmaster rows.
+    EXPECT_EQ(pSpellDatas[SPELL_FIRE_TORCH_LIGHT].skillMastery, MASTERY_NOVICE); // native id 1.
+}
