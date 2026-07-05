@@ -40,6 +40,7 @@
 #include "Engine/Objects/NPC.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/SpellEnums.h"
+#include "Engine/Spells/Spells.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/MessageScrollTable.h"
@@ -2665,4 +2666,17 @@ GAME_TEST(Mm6, TurnBasedCombatIcon) {
     turnBasedOverlay.draw(); // No overlay when combat is over - must be a no-op.
 
     turnBasedOverlay.reset();
+}
+
+GAME_TEST(Mm6, SpellNamesLoad) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6's spells.txt is parsed natively: the same 1..99 spell ids as MM7, but read with MM6's column
+    // layout. A few sampled ids: 2 = Flame Arrow, 81 = Slow, 99 = Dark Containment.
+    EXPECT_EQ(pSpellStats->pInfos[SPELL_FIRE_FIRE_BOLT].name, "Flame Arrow");
+    EXPECT_EQ(pSpellStats->pInfos[SPELL_LIGHT_PARALYZE].name, "Slow");
+    EXPECT_FALSE(pSpellStats->pInfos[SPELL_DARK_SOULDRINKER].name.empty()); // MM6 id 99 = Dark Containment
 }

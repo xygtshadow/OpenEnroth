@@ -484,19 +484,6 @@ bool SpellBuff::Apply(Time expire_time, Mastery uSkillMastery,
 }
 
 void SpellStats::Initialize(const Blob &spells, GameVersion version) {
-    if (version == GAME_VERSION_MM6) {
-        // MM6's spells.txt is present but its spell SET differs from MM7's: both have 99 spells in the
-        // same 9 school blocks, but 51/99 id positions are a different spell and 29 MM6 spells have no
-        // MM7 equivalent. The engine's SpellId enum is MM7-shaped, so token[0] does NOT identify the
-        // same spell across games - parsing MM6 with the MM7 layout would assign names to the wrong
-        // spells (and the MM6 '#'/column layout would throw outright). Modelling MM6's spell set is a
-        // separate, larger task (see docs/pending/mm6-spell-model.md); for now MM6 spell info is
-        // deliberately left unpopulated so engine bring-up can proceed.
-        logger->warning("MM6 spells.txt parsing is not implemented yet - spell names/descriptions will be empty. "
-                        "The MM6 spell set differs from MM7 and needs a dedicated SpellId mapping.");
-        return;
-    }
-
     static const std::map<std::string, DamageType, ascii::NoCaseLess> spellSchoolMaps = { // TODO(captainurist): #enum, use enum serialization
         {"fire", DAMAGE_FIRE},
         {"air", DAMAGE_AIR},
@@ -509,6 +496,35 @@ void SpellStats::Initialize(const Blob &spells, GameVersion version) {
         {"dark", DAMAGE_DARK},
         {"magic", DAMAGE_MAGIC},
     };
+
+    if (version == GAME_VERSION_MM6) {
+        // MM6's spells.txt keeps MM7's 9-school x 11-spell layout (ids 1..99), so the native MM6 spell id
+        // (token[0]) is the SpellId directly. Only the columns differ: MM6 has extra A/X/M columns before
+        // the description, and no Grand Master tier / Stats-flags columns.
+        //   cols: 0=id 1=level 2=name 3=school 4=short 5=A 6=X 7=M 8=description 9=Normal 10=Expert 11=Master
+        // The file has two blank ruler rows, then a '#' column-header row, then the data (with per-school
+        // section-header rows whose first column is empty). We drop the two ruler rows and skip both the
+        // section headers (empty first column) and the '#' header row - more robust than a fixed .drop(3),
+        // which would break if the header layout shifts.
+        for (std::string_view line : split(spells.str()).by("\r\n").drop(2).skip("")) {
+            std::array<std::string_view, 12> tokens = split(line).by('\t');
+            if (tokens[0].empty() || tokens[0] == "#")
+                continue; // Skip section headers and the '#' column-header row.
+
+            SpellId uSpellID = static_cast<SpellId>(fromString<int>(tokens[0]));
+            pInfos[uSpellID].name = removeQuotes(tokens[2]);
+            pInfos[uSpellID].damageType = valueOr(spellSchoolMaps, tokens[3], DAMAGE_PHYSICAL);
+            pInfos[uSpellID].pShortName = removeQuotes(tokens[4]);
+            pInfos[uSpellID].pDescription = removeQuotes(tokens[8]);
+            pInfos[uSpellID].pBasicSkillDesc = removeQuotes(tokens[9]);
+            pInfos[uSpellID].pExpertSkillDesc = removeQuotes(tokens[10]);
+            pInfos[uSpellID].pMasterSkillDesc = removeQuotes(tokens[11]);
+            // MM6 has no Grand Master tier and no Stats/flags column, so pGrandmasterSkillDesc is left empty
+            // and no spell flags are parsed here. The MM7-only shift-click / Control Undead patches below
+            // must not run for MM6, hence the early return.
+        }
+        return;
+    }
 
     // spells.txt table structure: index | ... | name (localized) | school (not localized) | ...
     // Section header lines have an empty first column and are skipped.

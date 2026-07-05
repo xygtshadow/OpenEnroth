@@ -29,27 +29,27 @@ static Blob makeSpellsBlob(const std::vector<std::vector<std::string>> &rows) {
     return Blob::fromString(std::move(bytes));
 }
 
-// MM6's spells.txt is present but its spell SET differs from MM7's (51/99 id positions are a different
-// spell; 29 MM6 spells have no MM7 equivalent), so token[0] does not map to the MM7-shaped SpellId
-// enum. MM6 spell info is therefore deliberately deferred for now: Initialize(version=MM6) must not
-// throw (a naive MM7-layout parse hits the MM6 '#' header row and throws "'#' is not a number") and
-// must leave pInfos unpopulated.
-GAME_TEST(SpellsMm6, InitializeDefers) {
+// MM6's spells.txt keeps the same 9-school x 11-spell layout as MM7 (ids 1..99), but the column
+// order differs: MM6 has extra A/X/M columns, and no Grand Master / Stats columns. The native MM6
+// spell id (token[0]) is the SpellId, so parsing must read the MM6 columns and land names/descriptions
+// on the right slots.
+GAME_TEST(SpellsMm6, ParsesMm6Layout) {
+    // MM6 spells.txt: two blank ruler rows, a '#' header row, then data.
+    // cols: 0=id 1=lvl 2=name 3=school 4=short 5=A 6=X 7=M 8=desc 9=normal 10=expert 11=master
+    std::string text =
+        "\t\t\t\t\t\t\t\t\t\t\t\r\n"
+        "\t\t\t\t\t\t\t\t\t\t\t\r\n"
+        "#\tFire Spells\t\tRes\tShort Name\tA\tX\tM\tSpell Description\tNormal\tExpert\tMaster\r\n"
+        "2\t2\tFlame Arrow\tFire\tFlame Arrow\t2\t1\t0\tFires a flaming arrow.\tcost 2\tcost 1\tcost 0\r\n"
+        "81\t9\tSlow\tLight\tSlow\t1\t1\t1\tSlows a target.\ta\tb\tc\r\n";
     SpellStats stats;
-    Blob blob = makeSpellsBlob({
-        {""}, // MM6 has TWO leading blank rows (MM7 has one)...
-        {""},
-        // ...then the '#' column header (MM6 layout: extra A/X/M cols, no Grand Master / Stats)...
-        {"#", "Fire Spells", "", "Res", "Short Name", "A", "X", "M", "Spell Description", "Normal",
-         "Expert", "Master"},
-        // ...then data. MM6 id 2 is "Flame Arrow", a spell that does not exist in MM7.
-        {"2", "2", "Flame Arrow", "Fire", "Flame Arrow", "2", "1", "0", "desc", "norm", "exp", "mast"},
-    });
-
-    stats.Initialize(blob, GAME_VERSION_MM6);
-
-    // Deferred: no MM6 spell names land on (the wrong) MM7 SpellId slots.
-    EXPECT_TRUE(stats.pInfos[SPELL_FIRE_FIRE_BOLT].name.empty());
+    stats.Initialize(Blob::fromString(text), GAME_VERSION_MM6);
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].name, "Flame Arrow");   // MM6 id 2
+    EXPECT_EQ(stats.pInfos[SPELL_LIGHT_PARALYZE].name, "Slow");          // MM6 id 81
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pShortName, "Flame Arrow");
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pDescription, "Fires a flaming arrow.");
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pBasicSkillDesc, "cost 2");
+    EXPECT_EQ(stats.pInfos[SPELL_LIGHT_PARALYZE].damageType, DAMAGE_LIGHT);
 }
 
 // Tests for spell damage formulas from MM7 v1.1. Issue: #2055.
