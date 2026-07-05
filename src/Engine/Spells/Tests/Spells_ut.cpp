@@ -32,6 +32,9 @@ GAME_TEST(SpellsMm6, ParsesMm6Layout) {
     EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pShortName, "Flame Arrow");
     EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pDescription, "Fires a flaming arrow.");
     EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pBasicSkillDesc, "cost 2");
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pExpertSkillDesc, "cost 1");   // col 10
+    EXPECT_EQ(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pMasterSkillDesc, "cost 0");   // col 11
+    EXPECT_TRUE(stats.pInfos[SPELL_FIRE_FIRE_BOLT].pGrandmasterSkillDesc.empty()); // MM6 has no GM tier
     EXPECT_EQ(stats.pInfos[SPELL_LIGHT_PARALYZE].damageType, DAMAGE_LIGHT);
 }
 
