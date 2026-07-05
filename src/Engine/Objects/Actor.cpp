@@ -1335,7 +1335,9 @@ void Actor::AI_SpellAttack2(unsigned int uActorID, Pid edx0,
         v3->velocity.z = 0;
         v3->velocity.y = 0;
         v3->velocity.x = 0;
-        if (ShouldMonsterPlayAttackAnim(v3->monsterInfo.spell2Id)) {
+        // One of the two sibling monster-AI dispatch points to AI_SpellAttack: translate the native MM6 spell
+        // id to its effect before the anim switch (this switch is keyed on MM7-named ids). MM7 is identity.
+        if (ShouldMonsterPlayAttackAnim(translateForCast(v3->monsterInfo.spell2Id, engine->gameVersion()))) {
             v3->currentActionLength = 64_ticks;
             v3->currentActionTime = 0_ticks;
             v3->aiState = Fidgeting;
@@ -1410,7 +1412,9 @@ void Actor::AI_SpellAttack1(unsigned int uActorID, Pid sTargetPid,
         v3->velocity.z = 0;
         v3->velocity.y = 0;
         v3->velocity.x = 0;
-        if (ShouldMonsterPlayAttackAnim(v3->monsterInfo.spell1Id)) {
+        // Sibling monster-AI dispatch point (see the spell2 call above / AI_SpellAttack): translate the native
+        // MM6 spell id to its effect before the anim switch. MM7 is identity.
+        if (ShouldMonsterPlayAttackAnim(translateForCast(v3->monsterInfo.spell1Id, engine->gameVersion()))) {
             v3->currentActionLength = 64_ticks;
             v3->currentActionTime = 0_ticks;
             v3->aiState = Fidgeting;
@@ -3067,6 +3071,11 @@ int Actor::DamageMonsterFromParty(Pid a1, unsigned int uActorID_Monster, const V
                 v61 = 1;
         }
 
+        // Invariant: these special cases match on the NATIVE spell id and are correct only because no
+        // translateForCast entry maps TO Blades/Stun, and native ids 33 (Bow) / 38 (Stone Skin) etc. are
+        // identity in MM6 - so no shifted MM6 spell lands here. The generic `default` translates the magnitude
+        // via CalcSpellDamage. A future MM6 remap onto one of these special-cased spells would need this switch
+        // translated too.
         switch (projectileSprite->uSpellID) {
             case SPELL_LASER_PROJECTILE:
                 // TODO: should be changed to GetActual* equivalents?
@@ -3673,8 +3682,13 @@ ActorAbility Actor::special_ability_use_check(int a2) {
     if (this->monsterInfo.specialAbilityType == MONSTER_SPECIAL_ABILITY_SUMMON && this->monsterInfo.specialAbilityDamageDiceBonus < 3 && grng->random(100) < 5)
         this->SummonMinion(a2);
 
-    bool okToCastSpell1 = this->_427102_IsOkToCastSpell(this->monsterInfo.spell1Id);
-    bool okToCastSpell2 = this->_427102_IsOkToCastSpell(this->monsterInfo.spell2Id);
+    // These two _427102_IsOkToCastSpell calls (and the ShouldMonsterPlayAttackAnim calls above) are the
+    // sibling monster-AI dispatch points to AI_SpellAttack, whose switches are keyed on MM7-named spell ids.
+    // Translate the native MM6 spell id to its effect so the buff-active checks gate on the right spell (e.g.
+    // Healing Touch native 47 -> First Aid, not Fate). translateForCast maps SPELL_NONE to itself, so the
+    // data-typo monsters still never cast. MM7 is identity.
+    bool okToCastSpell1 = this->_427102_IsOkToCastSpell(translateForCast(this->monsterInfo.spell1Id, engine->gameVersion()));
+    bool okToCastSpell2 = this->_427102_IsOkToCastSpell(translateForCast(this->monsterInfo.spell2Id, engine->gameVersion()));
     if (okToCastSpell1 && this->monsterInfo.spell1UseChance && grng->random(100) < this->monsterInfo.spell1UseChance)
         return ABILITY_SPELL1;
     if (okToCastSpell2 && this->monsterInfo.spell2UseChance && grng->random(100) < this->monsterInfo.spell2UseChance)
