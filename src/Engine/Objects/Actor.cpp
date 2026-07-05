@@ -250,6 +250,12 @@ void Actor::AI_SpellAttack(unsigned int uActorID, AIDirection *pDir,
         case SPELL_LIGHT_LIGHT_BOLT:
         case SPELL_DARK_TOXIC_CLOUD:
         case SPELL_DARK_DRAGON_BREATH:
+        // MM6-only monster damage effects - no MM7 monster casts these, so these labels are unreachable in MM7,
+        // but MM6 Oozes (Poison Spray), Druidesses (Deadly Swarm) and Clerics (Flying Fist) do. Their effect
+        // sprites are damage cases in processSpellImpact, so reuse the single-projectile launch below.
+        case SPELL_WATER_POISON_SPRAY:
+        case SPELL_EARTH_DEADLY_SWARM:
+        case SPELL_BODY_FLYING_FIST:
             sprite.spriteId = SpellSpriteMapping[uSpellID];
             sprite.uObjectDescID = GetObjDescId(uSpellID);
             sprite.containing_item.Reset();
@@ -688,6 +694,15 @@ void Actor::AI_SpellAttack(unsigned int uActorID, AIDirection *pDir,
             break;
 
         default:
+            // MM6 monsters cast spell effects MM7 monsters never do. Most are handled above, but a few (e.g.
+            // Souldrinker from Finger of Death, and the two shipped-data-typo spells that resolve to
+            // SPELL_NONE) have no AI_SpellAttack case - no-op them gracefully rather than aborting. For MM7 an
+            // unknown monster spell here is a real bug, so keep the assert.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                logger->warning("MM6 monster spell effect {} (native id {}) has no AI_SpellAttack case; skipping cast",
+                                std::to_underlying(effectId), std::to_underlying(uSpellID));
+                break;
+            }
             assert(false);
             break;
     }

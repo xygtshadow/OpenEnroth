@@ -2889,6 +2889,47 @@ GAME_TEST(Mm6, ShiftedSpellDealsImpactDamage) {
     EXPECT_GT(castImpactDamage(2), 0);
 }
 
+// AI_SpellAttack's switch only had cases for the effects MM7 monsters cast. MM6 monsters cast more: some are
+// damage projectiles now added to the launch group (Ooze Poison Spray, Druidess Deadly Swarm, Cleric Flying
+// Fist), while a few (Minotaur's Finger of Death -> Souldrinker, and the two data-typo SPELL_NONE spells) have
+// no case and must no-op gracefully instead of hitting the switch's default: assert(false).
+GAME_TEST(Mm6, MonsterCastsUncoveredSpell) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
+    ASSERT_FALSE(pActors.empty());
+
+    Actor &caster = pActors[0];
+    AIDirection dir;
+    dir.uDistance = 1500;
+    dir.uDistanceXZ = 1500;
+
+    // Added case: Ooze B (id 116) casts "Poison Spray" (native id 26 -> effect Poison Spray), now a
+    // projectile-launch case, so a projectile carrying the native id is fired.
+    caster.monsterInfo = pMonsterStats->infos[MonsterId(116)];
+    SpellId oozeSpell = caster.monsterInfo.spell1Id;
+    ASSERT_EQ(translateForCast(oozeSpell, GAME_VERSION_MM6), SPELL_WATER_POISON_SPRAY);
+    Actor::AI_SpellAttack(0, &dir, oozeSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
+    int poisonProjectiles = std::ranges::count_if(pSpriteObjects, [oozeSpell](const SpriteObject &obj) {
+        return obj.uSpellID == oozeSpell && obj.uObjectDescID != 0;
+    });
+    EXPECT_GE(poisonProjectiles, 1);
+
+    // Deferred effect: Minotaur C (id 108) casts "Finger of Death" (native id 95 -> effect Souldrinker), which
+    // has no AI_SpellAttack case. The MM6-gated default must no-op it - no abort, no projectile. Reaching the
+    // asserts below at all means it did not abort on the switch's default: assert(false).
+    caster.monsterInfo = pMonsterStats->infos[MonsterId(108)];
+    SpellId fingerSpell = caster.monsterInfo.spell1Id;
+    ASSERT_EQ(translateForCast(fingerSpell, GAME_VERSION_MM6), SPELL_DARK_SOULDRINKER);
+    size_t spritesBefore = pSpriteObjects.size();
+    Actor::AI_SpellAttack(0, &dir, fingerSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
+    EXPECT_EQ(pSpriteObjects.size(), spritesBefore);
+}
+
 GAME_TEST(Mm6, SpellManaCosts) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
