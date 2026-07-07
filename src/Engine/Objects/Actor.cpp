@@ -693,11 +693,28 @@ void Actor::AI_SpellAttack(unsigned int uActorID, AIDirection *pDir,
             pAudioPlayer->playSound(SOUND_Sacrifice2, SOUND_MODE_PID, Pid(OBJECT_Actor, uActorID));
             break;
 
+        case SPELL_DARK_SOULDRINKER:
+            // MM6 Finger of Death (native id 95) is a chance-to-instakill and resolves to Souldrinker's effect
+            // id. No MM7 monster casts Souldrinker (it would have hit the default assert below), so this case is
+            // MM6-only: the monster tries to slay a single party member outright, 3/4/5% per point of skill at
+            // Novice/Expert/Master. On a miss nothing happens; for MM7 fall through to the default assert.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                int percentPerSkill = masteryLevel >= MASTERY_MASTER ? 5 : masteryLevel == MASTERY_EXPERT ? 4 : 3;
+                if (grng->random(100) < percentPerSkill * realPoints) {
+                    Character &victim = pParty->pCharacters[stru_50C198.which_player_to_attack(actorPtr)];
+                    if (victim.conditions.hasNone({CONDITION_DEAD, CONDITION_PETRIFIED, CONDITION_ERADICATED}))
+                        victim.SetCondition(CONDITION_DEAD, 1);
+                }
+                pAudioPlayer->playSpellSound(uSpellID, false, SOUND_MODE_PID, Pid(OBJECT_Actor, uActorID));
+                break;
+            }
+            assert(false);
+            break;
+
         default:
-            // MM6 monsters cast spell effects MM7 monsters never do. Most are handled above, but a few (e.g.
-            // Souldrinker from Finger of Death, and the two shipped-data-typo spells that resolve to
-            // SPELL_NONE) have no AI_SpellAttack case - no-op them gracefully rather than aborting. For MM7 an
-            // unknown monster spell here is a real bug, so keep the assert.
+            // MM6 monsters cast spell effects MM7 monsters never do. Most are handled above, but a few (the two
+            // shipped-data-typo spells that resolve to SPELL_NONE) have no AI_SpellAttack case - no-op them
+            // gracefully rather than aborting. For MM7 an unknown monster spell here is a real bug, so assert.
             if (engine->gameVersion() == GAME_VERSION_MM6) {
                 logger->warning("MM6 monster spell effect {} (native id {}) has no AI_SpellAttack case; skipping cast",
                                 std::to_underlying(effectId), std::to_underlying(uSpellID));

@@ -2974,15 +2974,61 @@ GAME_TEST(Mm6, MonsterCastsUncoveredSpell) {
     });
     EXPECT_GE(poisonProjectiles, 1);
 
-    // Deferred effect: Minotaur C (id 108) casts "Finger of Death" (native id 95 -> effect Souldrinker), which
-    // has no AI_SpellAttack case. The MM6-gated default must no-op it - no abort, no projectile. Reaching the
-    // asserts below at all means it did not abort on the switch's default: assert(false).
-    caster.monsterInfo = pMonsterStats->infos[MonsterId(108)];
+    // Still-uncovered effect: some shipped MM6 monsters name their spell with a typo ("Dispell Magic",
+    // "Psychic Shockt") that matches no spells.txt entry and resolves to SPELL_NONE. That has no AI_SpellAttack
+    // case, so the MM6-gated default must no-op it - no abort, no projectile. Reaching the asserts below at all
+    // means it did not abort on the switch's default: assert(false). (Finger of Death used to sit here; it is
+    // now a real monster cast - see Mm6.MonsterCastsFingerOfDeath.)
+    MonsterId typoCaster = MONSTER_INVALID;
+    for (MonsterId id : pMonsterStats->infos.indices()) {
+        const MonsterInfo &info = pMonsterStats->infos[id];
+        if (info.spell1UseChance > 0 && !isRegularSpell(info.spell1Id)) {
+            typoCaster = id;
+            break;
+        }
+    }
+    ASSERT_NE(typoCaster, MONSTER_INVALID);
+    caster.monsterInfo = pMonsterStats->infos[typoCaster];
+    SpellId typoSpell = caster.monsterInfo.spell1Id;
+    ASSERT_FALSE(isRegularSpell(typoSpell));
+    size_t spritesBefore = pSpriteObjects.size();
+    Actor::AI_SpellAttack(0, &dir, typoSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
+    EXPECT_EQ(pSpriteObjects.size(), spritesBefore);
+}
+
+// MM6 Finger of Death is also a monster spell (Minotaur C among others). Monsters cast through AI_SpellAttack,
+// whose switch now handles Souldrinker (Finger of Death's effect id) for MM6: the monster tries to slay one
+// party member outright, 3/4/5% per point of skill. It used to be a documented no-op (see the earlier form of
+// Mm6.MonsterCastsUncoveredSpell). No MM7 monster casts Souldrinker, so the case is MM6-only.
+GAME_TEST(Mm6, MonsterCastsFingerOfDeath) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
+    ASSERT_FALSE(pActors.empty());
+
+    for (const Character &character : pParty->pCharacters)
+        ASSERT_FALSE(character.conditions.has(CONDITION_DEAD)); // All four start alive.
+
+    Actor &caster = pActors[0];
+    caster.monsterInfo = pMonsterStats->infos[MonsterId(108)]; // Minotaur C casts Finger of Death.
     SpellId fingerSpell = caster.monsterInfo.spell1Id;
     ASSERT_EQ(translateForCast(fingerSpell, GAME_VERSION_MM6), SPELL_DARK_SOULDRINKER);
-    size_t spritesBefore = pSpriteObjects.size();
-    Actor::AI_SpellAttack(0, &dir, fingerSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
-    EXPECT_EQ(pSpriteObjects.size(), spritesBefore);
+
+    AIDirection dir;
+    dir.uDistance = 1500;
+    dir.uDistanceXZ = 1500;
+    // Skill 20 Master -> 5% * 20 = 100% success, so exactly one party member is slain.
+    Actor::AI_SpellAttack(0, &dir, fingerSpell, ABILITY_SPELL1, CombinedSkillValue(20, MASTERY_MASTER));
+
+    int dead = 0;
+    for (const Character &character : pParty->pCharacters)
+        if (character.conditions.has(CONDITION_DEAD))
+            dead++;
+    EXPECT_EQ(dead, 1);
 }
 
 GAME_TEST(Mm6, SpellManaCosts) {
