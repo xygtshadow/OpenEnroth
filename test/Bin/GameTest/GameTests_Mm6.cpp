@@ -35,6 +35,7 @@
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/ItemEnumFunctions.h"
 #include "Engine/Objects/CombinedSkillValue.h"
+#include "Engine/Objects/Decoration.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/NPC.h"
@@ -560,6 +561,68 @@ GAME_TEST(Mm6, AllMapEventsParse) {
         parsed++;
     }
     EXPECT_EQ(parsed, 67); // All of MM6's maps.
+}
+
+GAME_TEST(Mm6, ClassPromotion) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6 stores a character's class as a byte, base*3 + tier, base order Knight/Cleric/Sorcerer/
+    // Paladin/Archer/Druid (see mm6-character-model.md). Promotion events drive it via
+    // If(Class == byte) / Set(Class, byte); the byte must map onto the engine's MM7-shaped Class enum,
+    // else a promotion gate misfires (a Paladin, CLASS_PALADIN=12, fails If(Class == 9)) or lands on
+    // a garbage class (Set(Class, 10) would be CLASS_MASTER, not Crusader).
+    struct PromotionCase { int mm6Byte; Class expected; };
+    static const std::array<PromotionCase, 18> cases = {{
+        {0, CLASS_KNIGHT}, {1, CLASS_CAVALIER}, {2, CLASS_CHAMPION},
+        {3, CLASS_CLERIC}, {4, CLASS_PRIEST}, {5, CLASS_PRIEST_OF_SUN},
+        {6, CLASS_SORCERER}, {7, CLASS_WIZARD}, {8, CLASS_ARCHAMGE},
+        {9, CLASS_PALADIN}, {10, CLASS_CRUSADER}, {11, CLASS_HERO},
+        {12, CLASS_ARCHER}, {13, CLASS_WARRIOR_MAGE}, {14, CLASS_MASTER_ARCHER},
+        {15, CLASS_DRUID}, {16, CLASS_GREAT_DRUID}, {17, CLASS_ARCH_DRUID},
+    }};
+
+    Character &character = pParty->pCharacters[0];
+    for (const PromotionCase &c : cases) {
+        // Set(Class, byte) - the promotion "grant" - lands on the right enum class...
+        character.SetVariable(VAR_Class, c.mm6Byte);
+        EXPECT_EQ(character.classType, c.expected) << "Set(Class, " << c.mm6Byte << ")";
+        // ...and If(Class == byte) - the promotion "gate" - matches the class just set, and nothing else.
+        EXPECT_TRUE(character.CompareVariable(VAR_Class, c.mm6Byte)) << "If(Class == " << c.mm6Byte << ")";
+        if (c.mm6Byte != 9) // Paladin.
+            EXPECT_FALSE(character.CompareVariable(VAR_Class, 9)) << "byte 9 must not match byte " << c.mm6Byte;
+    }
+
+    // Promotion grows HP/SP by a tier: Paladin(3/1) -> Crusader(4/2) -> Hero(5/3) per level.
+    character.SetVariable(VAR_Class, 9); // Paladin.
+    int paladinHp = character.GetMaxHealth(), paladinSp = character.GetMaxMana();
+    character.SetVariable(VAR_Class, 10); // Crusader.
+    int crusaderHp = character.GetMaxHealth(), crusaderSp = character.GetMaxMana();
+    character.SetVariable(VAR_Class, 11); // Hero.
+    EXPECT_GT(crusaderHp, paladinHp);
+    EXPECT_GT(crusaderSp, paladinSp);
+    EXPECT_GT(character.GetMaxHealth(), crusaderHp);
+    EXPECT_GT(character.GetMaxMana(), crusaderSp);
+
+    // End-to-end: run the real Cleric->Priest promotion (global event 36), the effect an NPC promotion
+    // topic executes. Its class byte differs from its enum (Cleric=3 vs CLASS_CLERIC=24), so it only
+    // promotes once the translation is in place. Start at step 4 to skip the QBits[106] quest gate and
+    // its promotion-speech ShowMessage; the mechanic (per-member ForPartyMember -> If(Class==3) ->
+    // Set(Class,4)) runs from there. Global events resolve against the global map only while a level
+    // decoration is active, so point at a scratch one for the call. The default MM6 party's Serena is
+    // the Cleric (member 2); the non-Clerics must be left untouched.
+    Character &serena = pParty->pCharacters[2];
+    ASSERT_EQ(serena.classType, CLASS_CLERIC);
+    Class roderickClass = pParty->pCharacters[0].classType; // Roderick, a Paladin - not a Cleric.
+    LevelDecoration scratchDecoration;
+    LevelDecoration *savedDecoration = activeLevelDecoration;
+    activeLevelDecoration = &scratchDecoration;
+    eventProcessor(36, Pid(), false, 4);
+    activeLevelDecoration = savedDecoration;
+    EXPECT_EQ(serena.classType, CLASS_PRIEST);
+    EXPECT_EQ(pParty->pCharacters[0].classType, roderickClass);
 }
 
 GAME_TEST(Mm6, RiddlePasswordPrompt) {

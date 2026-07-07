@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <utility>
 
@@ -149,6 +150,27 @@ inline Class getTier3DarkClass(Class classType) {
 inline int getClassTier(Class classType) {
     int index = (std::to_underlying(classType) & 3);
     return index == 3 ? 3 : index + 1;
+}
+
+/**
+ * Translates an MM6 class byte onto the engine's `Class` enum, which follows MM7's numbering.
+ *
+ * MM6 stores a character's class as a single byte, `base * 3 + tier`, with the six base classes
+ * ordered Knight(0), Cleric(3), Sorcerer(6), Paladin(9), Archer(12), Druid(15) and tiers 0/1/2
+ * (e.g. Paladin/Crusader/Hero). The `Class` enum instead lays each line out as `base * 4 + tier`
+ * (there is a fourth MM7-only tier per line), so MM6 promotion events - which drive `Set(Class, N)`
+ * and `If(Class == N)` with these bytes - must be translated or they misfire. MM6's three tiers
+ * occupy the first three of each MM7 line.
+ *
+ * @param mm6ClassByte                  MM6 class byte, 0..17.
+ * @return                              Matching `Class` enum value (identity for out-of-range input).
+ */
+inline Class classFromMm6ClassByte(int mm6ClassByte) {
+    static constexpr std::array<Class, 6> mm6BaseClasses = {
+        CLASS_KNIGHT, CLASS_CLERIC, CLASS_SORCERER, CLASS_PALADIN, CLASS_ARCHER, CLASS_DRUID};
+    if (mm6ClassByte < 0 || mm6ClassByte > 17)
+        return static_cast<Class>(mm6ClassByte); // Not one of MM6's 18 classes; leave untranslated.
+    return static_cast<Class>(std::to_underlying(mm6BaseClasses[mm6ClassByte / 3]) + mm6ClassByte % 3);
 }
 
 /**

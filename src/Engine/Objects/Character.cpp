@@ -3905,8 +3905,12 @@ bool Character::CompareVariable(EvtVariable VarNum, int pValue) {
     switch (VarNum) {
         case VAR_Sex:
             return pValue == std::to_underlying(this->uSex);
-        case VAR_Class:
-            return pValue == std::to_underlying(this->classType);
+        case VAR_Class: {
+            // MM6 promotion gates compare against MM6's class byte (base*3 + tier); translate it before
+            // comparing with the character's (MM7-shaped) class. MM7 compares the enum value directly.
+            Class other = engine->gameVersion() == GAME_VERSION_MM6 ? classFromMm6ClassByte(pValue) : (Class)pValue;
+            return this->classType == other;
+        }
         case VAR_Race:
             return pValue == std::to_underlying(GetRace());
         case VAR_CurrentHP:
@@ -4314,9 +4318,12 @@ void Character::SetVariable(EvtVariable var_type, int var_value) {
             this->uSex = (Sex)var_value;
             PlayAwardSound_Anim();
             return;
-        case VAR_Class:
-            this->classType = (Class)var_value;
-            if ((Class)var_value == CLASS_LICH) {
+        case VAR_Class: {
+            // MM6 promotion events set the class using MM6's class byte (base*3 + tier); translate it
+            // onto the engine's MM7-shaped Class enum. MM7 stores the enum value directly.
+            Class newClass = engine->gameVersion() == GAME_VERSION_MM6 ? classFromMm6ClassByte(var_value) : (Class)var_value;
+            this->classType = newClass;
+            if (newClass == CLASS_LICH) {
                 for (InventoryEntry entry : inventory.entries()) {
                     if (entry->itemId == ITEM_QUEST_LICH_JAR_EMPTY) {
                         entry->itemId = ITEM_QUEST_LICH_JAR_FULL;
@@ -4344,6 +4351,7 @@ void Character::SetVariable(EvtVariable var_type, int var_value) {
             }
             PlayAwardSound_Anim();
             return;
+        }
         case VAR_CurrentHP:
             this->health = var_value;
             PlayAwardSound_Anim();
