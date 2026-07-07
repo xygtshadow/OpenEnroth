@@ -142,6 +142,29 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
             break;
         }
 
+        case SPELL_LIGHT_DESTROY_UNDEAD: {  // MM6 id 79 = Golden Touch.
+            // Converts a selected inventory item into gold worth 40/60/80% of its value at Novice/Expert/Master,
+            // with a 10% chance per point of skill to succeed. On failure the item is broken (hardened items
+            // survive, matching Enchant Item). The item target is picked by the enchant UI, exactly like Enchant
+            // Item, so it arrives in targetCharacterIndex/targetInventoryIndex.
+            Character *target = &pParty->pCharacters[pCastSpell->targetCharacterIndex];
+            InventoryEntry entry = target->inventory.entry(pCastSpell->targetInventoryIndex);
+            Item *item = entry.get();
+            if (!item) {
+                spellFailed(pCastSpell, LSTR_SPELL_FAILED);
+                setSpellRecovery(pCastSpell, failureRecoveryTime);
+                return true;
+            }
+            if (grng->random(100) < 10 * spellLevel) {
+                int percent = spellMastery >= MASTERY_MASTER ? 80 : spellMastery == MASTERY_EXPERT ? 60 : 40;
+                pParty->AddGold(item->GetValue() * percent / 100);
+                target->inventory.take(entry);
+            } else if (!(item->flags & ITEM_HARDENED)) {
+                item->SetBroken();
+            }
+            break;
+        }
+
         case SPELL_DARK_PAIN_REFLECTION: {  // MM6 id 95 = Finger of Death.
             // Attempts to immediately slay a single creature: 3/4/5% chance to succeed per point of skill at
             // Novice/Expert/Master. On success the target dies outright and rewards the party exactly like any
@@ -3136,13 +3159,18 @@ void pushSpellOrRangedAttack(SpellId spell,
         SpellId effectId = translateForCast(spell, engine->gameVersion());
 
         // A few MM6-unique spells need a targeting mode their translated MM7 effect doesn't imply: Create Food
-        // is a party-wide cast with no target picker, and Finger of Death targets a single creature (its effect,
-        // Souldrinker, is a targetless viewport AoE). Resolve those by the native id, then blank effectId so the
-        // effect-based switch below adds no further targeting flag; every other spell (and all of MM7) is
-        // untouched. castSpell runs the bespoke MM6 behavior from the native id (see castMm6UniqueSpell).
+        // is a party-wide cast with no target picker, Golden Touch picks an inventory item, and Finger of Death
+        // targets a single creature (its effect, Souldrinker, is a targetless viewport AoE). Resolve those by
+        // the native id, then blank effectId so the effect-based switch below adds no further targeting flag;
+        // every other spell (and all of MM7) is untouched. castSpell runs the bespoke MM6 behavior from the
+        // native id (see castMm6UniqueSpell).
         if (engine->gameVersion() == GAME_VERSION_MM6) {
             switch (spell) {
                 case SPELL_LIGHT_LIGHT_BOLT:  // MM6 id 78 = Create Food.
+                    effectId = SPELL_NONE;
+                    break;
+                case SPELL_LIGHT_DESTROY_UNDEAD:  // MM6 id 79 = Golden Touch (pick an inventory item to sell).
+                    flags |= ON_CAST_TargetedEnchantment;
                     effectId = SPELL_NONE;
                     break;
                 case SPELL_DARK_PAIN_REFLECTION:  // MM6 id 95 = Finger of Death.

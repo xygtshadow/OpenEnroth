@@ -55,6 +55,7 @@
 #include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMessageScroll.h"
+#include "GUI/UI/UISpell.h"
 #include "GUI/UI/Houses/Shops.h"
 #include "GUI/UI/Houses/Transport.h"
 
@@ -3029,6 +3030,46 @@ GAME_TEST(Mm6, MonsterCastsFingerOfDeath) {
         if (character.conditions.has(CONDITION_DEAD))
             dead++;
     EXPECT_EQ(dead, 1);
+}
+
+// MM6 Golden Touch (native id 79) converts a chosen inventory item into gold. It has no MM7 counterpart -
+// translateForCast maps it onto Dispel Magic, which would dispel every creature in sight instead. It is an
+// inventory-target spell (like Enchant Item): the MM6 targeting override routes it into the item picker, and
+// castMm6UniqueSpell runs the conversion once an item is chosen.
+GAME_TEST(Mm6, GoldenTouch) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+    pParty->SetGold(0);
+
+    // Put a plain, valuable item in character 0's backpack to convert.
+    Character &caster = pParty->pCharacters[0];
+    InventoryEntry item = caster.inventory.add(Item(ItemId(84)));
+    ASSERT_TRUE(item);
+    int value = item->GetValue();
+    ASSERT_GT(value, 0);
+    int itemIndex = item.index();
+
+    // Casting non-quick (overrideSoundId 0) must enter the inventory item picker, proving the MM6 targeting
+    // override routed Golden Touch to item targeting rather than Dispel's targetless mass cast.
+    pushSpellOrRangedAttack(static_cast<SpellId>(79), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 0);
+    game.tick(1);
+    ASSERT_TRUE(IsEnchantingInProgress);
+
+    // Mirror the inventory-item click (UICharacter.cpp): hand the queued cast its item target and clear the
+    // enchant-in-progress state so castSpell runs it next tick.
+    CastSpellInfo *info = pGUIWindow_CastTargetedSpell->spellInfo();
+    info->flags &= ~ON_CAST_TargetedEnchantment;
+    info->targetCharacterIndex = 0;
+    info->targetInventoryIndex = itemIndex;
+    IsEnchantingInProgress = false;
+    game.tick(1);
+
+    // Skill 10 -> 100% success; Master -> 80% of the item's value in gold, and the item is consumed.
+    EXPECT_EQ(pParty->GetGold(), value * 80 / 100);
+    EXPECT_FALSE(caster.inventory.entry(itemIndex));
 }
 
 GAME_TEST(Mm6, SpellManaCosts) {
