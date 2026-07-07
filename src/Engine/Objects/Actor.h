@@ -260,6 +260,10 @@ class Actor {
     Duration massDistortionTime; // Value of pMiscTimer when mass distortion was cast. This was stored in the buffs table
                                  // in vanilla, which made little sense. Buff table stores game time, putting a value of
                                  // a misc timer in there is very questionable.
+    Time cursedExpireTime; // Game time until which this monster is cursed by MM6's Mass Curse (misses every attack).
+                           // MM6-only, and transient like massDistortionTime: not part of the fixed MM7 save format,
+                           // so it does not survive save/load. Zero (the default) means not cursed. Nothing in MM7
+                           // sets it, so the ActorHitOrMiss curse check is a no-op there.
 };
 
 extern std::deque<Actor> pActors;

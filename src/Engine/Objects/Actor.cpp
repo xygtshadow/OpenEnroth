@@ -3752,6 +3752,11 @@ bool Actor::ActorHitOrMiss(Character *pPlayer) {
     signed int v4;  // esi@8
     int v5;         // esi@8
 
+    // MM6's Mass Curse inflicts the cursed condition, which makes a monster miss every attack until it wears
+    // off. Only MM6's castMm6UniqueSpell sets cursedExpireTime, so this is a no-op in MM7.
+    if (this->cursedExpireTime > pParty->GetPlayingTime())
+        return false;
+
     v3 = 0;
     if (this->buffs[ACTOR_BUFF_HOUR_OF_POWER].Active())
         v3 = this->buffs[ACTOR_BUFF_HOUR_OF_POWER].power;

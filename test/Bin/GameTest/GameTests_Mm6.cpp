@@ -3290,3 +3290,61 @@ GAME_TEST(Mm6, DayOfTheGods) {
         }
     }
 }
+
+// MM6 Mass Curse (native id 91, the third Dark spell) has no MM7 counterpart, so translateForCast runs it as
+// Toxic Cloud - a poison AoE. Its real effect (spells.txt: "Inflicts the cursed condition on all monsters in
+// the sight of the caster"; MM6.EXE 0x42928b) is to curse every monster in the caster's line of sight for
+// 2/3/4 minutes per point of skill at Novice/Expert/Master. A cursed monster misses every attack
+// (Actor::ActorHitOrMiss returns false) until the curse expires. The state is a transient
+// Actor::cursedExpireTime, not a persisted buff - MM7 never curses monsters, so the hook is a no-op there.
+GAME_TEST(Mm6, MassCurse) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv, a goblin in view.
+    game.tick(1);
+
+    // Mass Curse only reaches monsters in the caster's line of sight, so work with whatever is actually in the
+    // viewport at the spawn rather than teleporting a monster around (indoor rendering culls by sector).
+    std::vector<Actor *> inView = render->getActorsInViewport(4096);
+    ASSERT_FALSE(inView.empty());
+    Actor *mon = inView[0];
+    Character &target = pParty->pCharacters[0];
+
+    // Effect hook: a cursed monster misses every attack; an un-cursed one lands some over many attempts.
+    mon->cursedExpireTime = Time();
+    int hitsWhenUncursed = 0;
+    for (int i = 0; i < 500; i++)
+        if (mon->ActorHitOrMiss(&target))
+            hitsWhenUncursed++;
+    EXPECT_GT(hitsWhenUncursed, 0);
+
+    mon->cursedExpireTime = pParty->GetPlayingTime() + Duration::fromMinutes(10);
+    for (int i = 0; i < 500; i++)
+        EXPECT_FALSE(mon->ActorHitOrMiss(&target));
+
+    mon->cursedExpireTime = Time(); // Clear before exercising the real cast.
+
+    // Cast Mass Curse at Novice, skill 10 -> 2 min/skill * 10 = 20 minutes of curse on every monster in sight.
+    // Nothing moves the party or monsters between this snapshot and the cast, so the same actors are in view.
+    Time castStart = pParty->GetPlayingTime();
+    pushSpellOrRangedAttack(static_cast<SpellId>(91), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+    Time castEnd = pParty->GetPlayingTime();
+
+    // At least the monsters that were in view got cursed, and every cursed monster has exactly the Novice
+    // duration (2 minutes per skill point).
+    Actor *cursedMon = nullptr;
+    for (Actor *actor : inView) {
+        if (actor->cursedExpireTime > castStart) {
+            cursedMon = actor;
+            EXPECT_GE(actor->cursedExpireTime, castStart + Duration::fromMinutes(20));
+            EXPECT_LE(actor->cursedExpireTime, castEnd + Duration::fromMinutes(20));
+        }
+    }
+    ASSERT_NE(cursedMon, nullptr) << "Mass Curse should have cursed at least one monster in view";
+    EXPECT_FALSE(cursedMon->ActorHitOrMiss(&target)); // End to end: the cast cursed it, so it now misses.
+}
