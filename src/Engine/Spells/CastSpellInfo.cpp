@@ -15,6 +15,7 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Localization.h"
 #include "Engine/Objects/Actor.h"
+#include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/ObjectList.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Objects/NPC.h"
@@ -113,6 +114,64 @@ static void setSpellRecovery(CastSpellInfo *pCastSpell,
     // It's here to set character portrain emotion on spell cast.
     // There's no actual spell speech.
     pPlayer->playReaction(SPEECH_CAST_SPELL);
+}
+
+/**
+ * Casts the MM6-unique spells whose behavior has no MM7 counterpart, keyed by the NATIVE MM6 spell id.
+ *
+ * castSpell()'s effect switch below is keyed on the translated MM7 effect id, so these spells would otherwise
+ * run a wrong analog (e.g. MM6 Finger of Death, a chance-to-instakill, maps onto Souldrinker's life-drain AoE).
+ * This runs their real MM6 behavior instead and applies the shared cast tail (spend mana, set recovery, play
+ * the native cast sound) itself. It returns false for any id it does not handle, leaving that spell to the
+ * effect switch. Only ever called for MM6 (the caller gates on gameVersion), so the MM7 cast path is untouched.
+ */
+static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Mastery spellMastery,
+                               Pid spellTargetedAt, int requiredMana, Duration recoveryTime,
+                               Duration failureRecoveryTime) {
+    Character *caster = &pParty->pCharacters[pCastSpell->casterCharacterIndex];
+
+    switch (pCastSpell->uSpellID) {
+        case SPELL_LIGHT_LIGHT_BOLT: {  // MM6 id 78 = Create Food (first Light spell).
+            // Creates 1 day of food plus 1/2/3 more days per 10 points of skill (Novice/Expert/Master), but
+            // only if the party has less food than that - it fills up to the amount, never adds on top. MM6
+            // measures food in days; OpenEnroth's ration counter maps one day to one ration.
+            int daysPerTenSkill = spellMastery >= MASTERY_MASTER ? 3 : spellMastery == MASTERY_EXPERT ? 2 : 1;
+            int rations = 1 + daysPerTenSkill * (spellLevel / 10);
+            if (pParty->GetFood() < rations)
+                pParty->SetFood(rations);
+            break;
+        }
+
+        case SPELL_DARK_PAIN_REFLECTION: {  // MM6 id 95 = Finger of Death.
+            // Attempts to immediately slay a single creature: 3/4/5% chance to succeed per point of skill at
+            // Novice/Expert/Master. On success the target dies outright and rewards the party exactly like any
+            // other kill; on a miss nothing happens.
+            if (spellTargetedAt.type() != OBJECT_Actor) {
+                spellFailed(pCastSpell, LSTR_SPELL_FAILED);
+                setSpellRecovery(pCastSpell, failureRecoveryTime);
+                return true;
+            }
+            int percentPerSkill = spellMastery >= MASTERY_MASTER ? 5 : spellMastery == MASTERY_EXPERT ? 4 : 3;
+            if (grng->random(100) < percentPerSkill * spellLevel) {
+                int monsterId = spellTargetedAt.id();
+                Actor &monster = pActors[monsterId];
+                Actor::Die(monsterId);
+                Actor::ApplyFineForKillingPeasant(monsterId);
+                Actor::AggroSurroundingPeasants(monsterId, 1);
+                if (monster.monsterInfo.exp)
+                    pParty->GivePartyExp(pMonsterStats->infos[monster.monsterInfo.id].exp);
+            }
+            break;
+        }
+
+        default:
+            return false;
+    }
+
+    caster->SpendMana(requiredMana);
+    setSpellRecovery(pCastSpell, recoveryTime);
+    pAudioPlayer->playSpellSound(pCastSpell->uSpellID, false, SOUND_MODE_EXCLUSIVE);
+    return true;
 }
 
 // TODO(pskelton): caster index not supplied to buffs ".Apply"
@@ -259,6 +318,16 @@ void CastSpellInfoHelpers::castSpell() {
         }
 
         assert(pCastSpell->uSpellID != SPELL_101 && "Unknown spell effect #101 (prolly flaming bow arrow");
+
+        // MM6 has a few spells with no MM7 counterpart whose behavior the effect switch below (keyed on the
+        // translated MM7 effect) cannot reproduce - it would run a wrong analog. Handle those here, keyed on
+        // the native MM6 spell id, before the switch. Anything not handled falls through unchanged.
+        if (engine->gameVersion() == GAME_VERSION_MM6 &&
+                castMm6UniqueSpell(pCastSpell, spell_level, spell_mastery, spell_targeted_at, uRequiredMana,
+                                   recoveryTime, failureRecoveryTime)) {
+            pCastSpell->uSpellID = SPELL_NONE;
+            continue;
+        }
 
         // First process special "pseudo" spells like bow or blaster shots
         // and spells that open additional menus like town portal or lloyd beacon
@@ -3065,6 +3134,27 @@ void pushSpellOrRangedAttack(SpellId spell,
         // stored in the cast queue below (so castSpell reads native mana/sprite/sound/skill). For MM7
         // translateForCast is the identity, so the targeting behavior is unchanged.
         SpellId effectId = translateForCast(spell, engine->gameVersion());
+
+        // A few MM6-unique spells need a targeting mode their translated MM7 effect doesn't imply: Create Food
+        // is a party-wide cast with no target picker, and Finger of Death targets a single creature (its effect,
+        // Souldrinker, is a targetless viewport AoE). Resolve those by the native id, then blank effectId so the
+        // effect-based switch below adds no further targeting flag; every other spell (and all of MM7) is
+        // untouched. castSpell runs the bespoke MM6 behavior from the native id (see castMm6UniqueSpell).
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            switch (spell) {
+                case SPELL_LIGHT_LIGHT_BOLT:  // MM6 id 78 = Create Food.
+                    effectId = SPELL_NONE;
+                    break;
+                case SPELL_DARK_PAIN_REFLECTION:  // MM6 id 95 = Finger of Death.
+                    if (!overrideSoundId)
+                        flags |= ON_CAST_TargetedActor;
+                    effectId = SPELL_NONE;
+                    break;
+                default:
+                    break;
+            }
+        }
+
         switch (effectId) {
             case SPELL_SPIRIT_FATE:
             case SPELL_BODY_FIRST_AID:

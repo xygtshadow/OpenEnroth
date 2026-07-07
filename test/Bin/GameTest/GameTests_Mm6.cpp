@@ -58,6 +58,8 @@
 #include "GUI/UI/Houses/Shops.h"
 #include "GUI/UI/Houses/Transport.h"
 
+#include "Io/Mouse.h"
+
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
 
@@ -3031,4 +3033,72 @@ GAME_TEST(Mm6, SpellLearnMastery) {
 
     // Non-top spells keep their existing (sub-Grandmaster) tier - the clamp only touches Grandmaster rows.
     EXPECT_EQ(pSpellDatas[SPELL_FIRE_TORCH_LIGHT].skillMastery, MASTERY_NOVICE); // native id 1.
+}
+
+// MM6 Create Food (native id 78, the first Light spell) has no MM7 counterpart - translateForCast maps it onto
+// First Aid, which would heal a targeted character instead of stocking the party's food. castMm6UniqueSpell
+// runs the real effect: it fills the party's food up to 1 day + 1/2/3 days per 10 skill (Novice/Expert/Master),
+// but only when the current supply is lower.
+GAME_TEST(Mm6, CreateFood) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Master, skill 10 -> 1 + 3 * (10 / 10) = 4 days of food. Quick-cast (nonzero overrideSoundId) so it casts
+    // immediately with no target picker; the MM6 targeting override keeps this a party-wide, targetless cast.
+    pParty->SetFood(0);
+    pushSpellOrRangedAttack(static_cast<SpellId>(78), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(pParty->GetFood(), 4);
+
+    // Casting again with more food already on hand than the spell would create is a no-op - it fills up to the
+    // amount, never adds on top.
+    pParty->SetFood(20);
+    pushSpellOrRangedAttack(static_cast<SpellId>(78), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(pParty->GetFood(), 20);
+}
+
+// MM6 Finger of Death (native id 95) tries to instantly slay a single creature, 3/4/5% per point of skill at
+// Novice/Expert/Master. translateForCast maps it onto Souldrinker (a viewport-wide life-drain AoE), so without
+// castMm6UniqueSpell it would drain the whole room instead of gambling on one target. On success the target
+// dies outright and the party is rewarded exactly like any other kill.
+GAME_TEST(Mm6, FingerOfDeath) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+    game.tick(1);
+
+    int monId = -1;
+    for (size_t i = 0; i < pActors.size(); i++) {
+        if (pActors[i].CanAct() && pActors[i].hp > 0 && pActors[i].monsterInfo.exp > 0) {
+            monId = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_NE(monId, -1);
+
+    int expBefore = 0;
+    for (const Character &character : pParty->pCharacters)
+        expBefore += character.experience;
+
+    // Point at the target so castSpell picks it, then cast at skill 20 Master -> 5% * 20 = 100% success (a
+    // guaranteed kill). Quick-cast so no targeting window opens; the mouse target is used directly.
+    mouse->uPointingObjectID = Pid(OBJECT_Actor, monId);
+    pushSpellOrRangedAttack(static_cast<SpellId>(95), 0, CombinedSkillValue(20, MASTERY_MASTER), 0, 1);
+    game.tick(1);
+
+    EXPECT_EQ(pActors[monId].aiState, Dying); // Slain outright.
+    EXPECT_LE(pActors[monId].hp, 0);
+
+    int expAfter = 0;
+    for (const Character &character : pParty->pCharacters)
+        expAfter += character.experience;
+    EXPECT_GT(expAfter, expBefore); // The kill rewarded party experience.
 }
