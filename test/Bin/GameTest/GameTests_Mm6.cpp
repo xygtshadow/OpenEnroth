@@ -3189,3 +3189,104 @@ GAME_TEST(Mm6, FingerOfDeath) {
         expAfter += character.experience;
     EXPECT_GT(expAfter, expBefore); // The kill rewarded party experience.
 }
+
+// MM6's single-stat buff family - Lucky Day (48, Luck), Meditation (56, Intellect+Personality),
+// Precision (59, Accuracy), Speed (73, Speed) and Power (75, Might+Endurance) - has no MM7 counterpart,
+// so translateForCast runs each as an unrelated analog. castMm6UniqueSpell instead applies the real
+// per-stat character buff: +(10 + 2/skill at Novice, 3/skill at Expert & Master) for one hour per skill
+// point (MM6.EXE CastSpell dispatch 0x422C93; the duration lea-chain is a flat 3600*L game-ticks for
+// every mastery, the same unit that makes Torch Light "1 hour per point of skill"). Novice/Expert buff a
+// single chosen character; Master hits the whole party (spells.txt "Spell affects entire party").
+GAME_TEST(Mm6, SingleStatBuffs) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Precision at Novice, skill 10 -> +(2*10 + 10) = 30 Accuracy for 10 hours, on the picked character
+    // (char 2) alone. Passing a CombinedSkillValue makes it a free, exact-mastery cast; the MM6 targeting
+    // override opens the character picker below Master, driven here with spellTargetPicked.
+    Character &c0 = pParty->pCharacters[0];
+    Character &c2 = pParty->pCharacters[2];
+    int accBefore = c2.GetActualAccuracy();
+    Time castStart = pParty->GetPlayingTime();
+    pushSpellOrRangedAttack(static_cast<SpellId>(59), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 0);
+    spellTargetPicked(Pid(), 2);
+    game.tick(1);
+    Time castEnd = pParty->GetPlayingTime();
+    EXPECT_TRUE(c2.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].Active());
+    EXPECT_EQ(c2.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].power, 30);
+    EXPECT_GE(c2.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].expireTime, castStart + Duration::fromHours(10));
+    EXPECT_LE(c2.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].expireTime, castEnd + Duration::fromHours(10));
+    EXPECT_EQ(c2.GetActualAccuracy(), accBefore + 30); // The buff feeds the actual stat.
+    EXPECT_FALSE(c0.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].Active()); // Single target - char 0 untouched.
+
+    // Expert bumps the per-skill bonus to 3: +(3*10 + 10) = 40, still single target.
+    pushSpellOrRangedAttack(static_cast<SpellId>(59), 0, CombinedSkillValue(10, MASTERY_EXPERT), 0, 0);
+    spellTargetPicked(Pid(), 2);
+    game.tick(1);
+    EXPECT_EQ(c2.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].power, 40);
+    EXPECT_FALSE(c0.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].Active());
+
+    // Master keeps the 3/skill bonus (40) but affects the entire party - no picker.
+    pushSpellOrRangedAttack(static_cast<SpellId>(59), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 1);
+    game.tick(1);
+    for (Character &character : pParty->pCharacters)
+        EXPECT_EQ(character.pCharacterBuffs[CHARACTER_BUFF_ACCURACY].power, 40);
+
+    // Each family member buffs its own attribute(s). Cast every one at Master, skill 10 -> power 40; the
+    // five spells touch disjoint stats, so all buffs coexist on the party.
+    struct StatBuff { int id; std::vector<CharacterBuff> stats; };
+    std::vector<StatBuff> family = {
+        {48, {CHARACTER_BUFF_LUCK}},
+        {56, {CHARACTER_BUFF_INTELLIGENCE, CHARACTER_BUFF_PERSONALITY}},
+        {59, {CHARACTER_BUFF_ACCURACY}},
+        {73, {CHARACTER_BUFF_SPEED}},
+        {75, {CHARACTER_BUFF_STRENGTH, CHARACTER_BUFF_ENDURANCE}},
+    };
+    for (const StatBuff &spell : family) {
+        pushSpellOrRangedAttack(static_cast<SpellId>(spell.id), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 1);
+        game.tick(1);
+    }
+    for (Character &character : pParty->pCharacters)
+        for (const StatBuff &spell : family)
+            for (CharacterBuff buff : spell.stats)
+                EXPECT_EQ(character.pCharacterBuffs[buff].power, 40)
+                    << "spell " << spell.id << " buff " << std::to_underlying(buff);
+}
+
+// MM6 Day of the Gods (83) casts the whole single-stat buff family - Power, Meditation, Speed, Lucky Day
+// and Precision - on the entire party at an effective strength of 2x/3x/4x Light skill (Novice/Expert/
+// Master), i.e. +(mult*L + 10) to each of the seven attributes for mult*L hours (MM6.EXE 0x428A43). It maps
+// onto MM7's Day of the Gods, whose case asserts(false) on Novice (MM7 has no Novice Day of the Gods) - so
+// without the MM6 handling a Novice cast aborts. (MM6 also folds in Guardian Angel; no OpenEnroth buff yet.)
+GAME_TEST(Mm6, DayOfTheGods) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    const std::array<CharacterBuff, 7> stats = {
+        CHARACTER_BUFF_STRENGTH, CHARACTER_BUFF_ENDURANCE, CHARACTER_BUFF_INTELLIGENCE,
+        CHARACTER_BUFF_PERSONALITY, CHARACTER_BUFF_ACCURACY, CHARACTER_BUFF_SPEED, CHARACTER_BUFF_LUCK};
+
+    // (mastery, effective multiplier). Novice does NOT abort - that is the bug this fixes.
+    struct Tier { Mastery mastery; int mult; };
+    for (const Tier &tier : {Tier{MASTERY_NOVICE, 2}, Tier{MASTERY_EXPERT, 3}, Tier{MASTERY_MASTER, 4}}) {
+        int expectedPower = tier.mult * 10 + 10;
+        Duration expectedDuration = Duration::fromHours(tier.mult * 10);
+        Time castStart = pParty->GetPlayingTime();
+        pushSpellOrRangedAttack(static_cast<SpellId>(83), 0, CombinedSkillValue(10, tier.mastery), 0, 1);
+        game.tick(1);
+        Time castEnd = pParty->GetPlayingTime();
+        for (Character &character : pParty->pCharacters) {
+            for (CharacterBuff buff : stats) {
+                EXPECT_TRUE(character.pCharacterBuffs[buff].Active());
+                EXPECT_EQ(character.pCharacterBuffs[buff].power, expectedPower)
+                    << "mastery " << std::to_underlying(tier.mastery) << " buff " << std::to_underlying(buff);
+                EXPECT_GE(character.pCharacterBuffs[buff].expireTime, castStart + expectedDuration);
+                EXPECT_LE(character.pCharacterBuffs[buff].expireTime, castEnd + expectedDuration);
+            }
+        }
+    }
+}

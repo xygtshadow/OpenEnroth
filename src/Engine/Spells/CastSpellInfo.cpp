@@ -1,5 +1,6 @@
 #include "CastSpellInfo.h"
 
+#include <initializer_list>
 #include <memory>
 #include <vector>
 #include <string>
@@ -117,6 +118,30 @@ static void setSpellRecovery(CastSpellInfo *pCastSpell,
 }
 
 /**
+ * Applies one member of MM6's single-stat temporary buff family (Lucky Day / Meditation / Precision /
+ * Speed / Power): a +power bonus to each listed attribute buff for one hour per skill point, refreshing on
+ * recast (SpellBuff::Apply keeps the later expiry). Power is 10 + 2/skill at Novice, 10 + 3/skill at Expert
+ * and Master (MM6 spells.txt); the duration is a flat one hour per skill point at every mastery (MM6.EXE
+ * 0x422C93, the same unit as Torch Light's "1 hour per point of skill"). Below Master it buffs the one chosen
+ * character (targetCharacterIndex); at Master MM6 buffs the whole party.
+ */
+static void applyMm6StatBuff(CastSpellInfo *pCastSpell, int spellLevel, Mastery spellMastery,
+                             std::initializer_list<CharacterBuff> stats) {
+    int power = 10 + spellLevel * (spellMastery >= MASTERY_EXPERT ? 3 : 2);
+    Time expireTime = pParty->GetPlayingTime() + Duration::fromHours(spellLevel);
+    auto buffCharacter = [&](Character &character) {
+        for (CharacterBuff stat : stats)
+            character.pCharacterBuffs[stat].Apply(expireTime, spellMastery, power, 0, 0);
+    };
+    if (spellMastery >= MASTERY_MASTER) {
+        for (Character &character : pParty->pCharacters)
+            buffCharacter(character);
+    } else {
+        buffCharacter(pParty->pCharacters[pCastSpell->targetCharacterIndex]);
+    }
+}
+
+/**
  * Casts the MM6-unique spells whose behavior has no MM7 counterpart, keyed by the NATIVE MM6 spell id.
  *
  * castSpell()'s effect switch below is keyed on the translated MM7 effect id, so these spells would otherwise
@@ -184,6 +209,45 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
                 if (monster.monsterInfo.exp)
                     pParty->GivePartyExp(pMonsterStats->infos[monster.monsterInfo.id].exp);
             }
+            break;
+        }
+
+        case SPELL_SPIRIT_TURN_UNDEAD:  // MM6 id 48 = Lucky Day (Luck).
+            applyMm6StatBuff(pCastSpell, spellLevel, spellMastery, {CHARACTER_BUFF_LUCK});
+            break;
+
+        case SPELL_MIND_REMOVE_FEAR:  // MM6 id 56 = Meditation (Intellect + Personality).
+            applyMm6StatBuff(pCastSpell, spellLevel, spellMastery,
+                             {CHARACTER_BUFF_INTELLIGENCE, CHARACTER_BUFF_PERSONALITY});
+            break;
+
+        case SPELL_MIND_TELEPATHY:  // MM6 id 59 = Precision (Accuracy).
+            applyMm6StatBuff(pCastSpell, spellLevel, spellMastery, {CHARACTER_BUFF_ACCURACY});
+            break;
+
+        case SPELL_BODY_HAMMERHANDS:  // MM6 id 73 = Speed (Speed).
+            applyMm6StatBuff(pCastSpell, spellLevel, spellMastery, {CHARACTER_BUFF_SPEED});
+            break;
+
+        case SPELL_BODY_PROTECTION_FROM_MAGIC:  // MM6 id 75 = Power (Might + Endurance).
+            applyMm6StatBuff(pCastSpell, spellLevel, spellMastery,
+                             {CHARACTER_BUFF_STRENGTH, CHARACTER_BUFF_ENDURANCE});
+            break;
+
+        case SPELL_LIGHT_DAY_OF_THE_GODS: {  // MM6 id 83 = Day of the Gods.
+            // Casts the whole single-stat buff family on the entire party at an effective strength of
+            // 2x/3x/4x Light skill for Novice/Expert/Master: +(mult*L + 10) to each of the seven attributes
+            // for mult*L hours (MM6.EXE 0x428A43). MM6 also folds in Guardian Angel, which has no OpenEnroth
+            // character buff yet - deferred with the standalone Guardian Angel spell. The MM7 spell sitting at
+            // this id asserts(false) on Novice, so intercepting here also fixes a Novice-cast abort in MM6.
+            int mult = spellMastery >= MASTERY_MASTER ? 4 : spellMastery == MASTERY_EXPERT ? 3 : 2;
+            int power = mult * spellLevel + 10;
+            Time expireTime = pParty->GetPlayingTime() + Duration::fromHours(mult * spellLevel);
+            for (Character &character : pParty->pCharacters)
+                for (CharacterBuff stat : {CHARACTER_BUFF_STRENGTH, CHARACTER_BUFF_ENDURANCE,
+                                           CHARACTER_BUFF_INTELLIGENCE, CHARACTER_BUFF_PERSONALITY,
+                                           CHARACTER_BUFF_ACCURACY, CHARACTER_BUFF_SPEED, CHARACTER_BUFF_LUCK})
+                    character.pCharacterBuffs[stat].Apply(expireTime, spellMastery, power, 0, 0);
             break;
         }
 
@@ -3176,6 +3240,22 @@ void pushSpellOrRangedAttack(SpellId spell,
                 case SPELL_DARK_PAIN_REFLECTION:  // MM6 id 95 = Finger of Death.
                     if (!overrideSoundId)
                         flags |= ON_CAST_TargetedActor;
+                    effectId = SPELL_NONE;
+                    break;
+                case SPELL_SPIRIT_TURN_UNDEAD:  // MM6 id 48 = Lucky Day.
+                case SPELL_MIND_REMOVE_FEAR:    // MM6 id 56 = Meditation.
+                case SPELL_MIND_TELEPATHY:      // MM6 id 59 = Precision.
+                case SPELL_BODY_HAMMERHANDS:    // MM6 id 73 = Speed.
+                case SPELL_BODY_PROTECTION_FROM_MAGIC:  // MM6 id 75 = Power.
+                    // The single-stat buff family targets one character below Master and the whole party at
+                    // Master (spells.txt "affects entire party"). castMm6UniqueSpell applies the effect.
+                    if (!checkSkill)
+                        checkSkill = character->pActiveSkills[skillForSpell(spell)];
+                    if (checkSkill.mastery() < MASTERY_MASTER && !engine->config->debug.AllMagic.value())
+                        flags |= ON_CAST_TargetedCharacter;
+                    effectId = SPELL_NONE;
+                    break;
+                case SPELL_LIGHT_DAY_OF_THE_GODS:  // MM6 id 83 = Day of the Gods (always whole-party).
                     effectId = SPELL_NONE;
                     break;
                 default:
