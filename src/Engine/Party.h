@@ -366,6 +366,14 @@ struct Party {
 
     std::array<bool, 4> playerAlreadyPicked = {{}};  // Was at offset 0xAE3368 in vanilla, we moved it into Party in OE.
 
+    // MM6's Guardian Angel is a whole-party compact: while active, a total party defeat resurrects the party
+    // (see the GAME_STATE_PARTY_DIED handler) for half its gold instead of the normal all-gold-lost respawn.
+    // Transient and MM6-only, exactly like Actor::cursedExpireTime for Mass Curse - it is not part of the fixed
+    // MM7 save format, so it does not survive save/load; zero (the default) means inactive, and nothing in MM7
+    // ever sets it. The stored mastery selects the resurrect HP tier (Novice 1 / Expert half / Master full).
+    Time _mm6GuardianAngelExpireTime;
+    Mastery _mm6GuardianAngelMastery = MASTERY_NONE;
+
     /**
      * @return                          1-based index of currently active character. Zero means that there is no
      *                                  active character.

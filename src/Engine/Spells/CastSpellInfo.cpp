@@ -234,6 +234,18 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
                              {CHARACTER_BUFF_STRENGTH, CHARACTER_BUFF_ENDURANCE});
             break;
 
+        case SPELL_SPIRIT_PRESERVATION:  // MM6 id 50 = Guardian Angel.
+            // A whole-party compact with the Higher Powers: while active, a total party defeat resurrects the
+            // party for half its gold instead of the normal all-gold-lost respawn, restoring 1/half/full HP per
+            // character at Novice/Expert/Master. The resurrect itself lives in Game.cpp's GAME_STATE_PARTY_DIED
+            // handler, which reads the transient party field this sets. Lasts 1 hour per point of skill at every
+            // mastery (MM6.EXE 0x426b97, the same 3600*L tick chain as the stat buffs). Stored as a transient
+            // field rather than CHARACTER_BUFF_PRESERVATION because MM6 GA does not turn a lethal blow into
+            // unconsciousness the way MM7 Preservation (the id this translates to) does.
+            pParty->_mm6GuardianAngelExpireTime = pParty->GetPlayingTime() + Duration::fromHours(spellLevel);
+            pParty->_mm6GuardianAngelMastery = spellMastery;
+            break;
+
         case SPELL_LIGHT_DAY_OF_THE_GODS: {  // MM6 id 83 = Day of the Gods.
             // Casts the whole single-stat buff family on the entire party at an effective strength of
             // 2x/3x/4x Light skill for Novice/Expert/Master: +(mult*L + 10) to each of the seven attributes
@@ -248,6 +260,10 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
                                            CHARACTER_BUFF_INTELLIGENCE, CHARACTER_BUFF_PERSONALITY,
                                            CHARACTER_BUFF_ACCURACY, CHARACTER_BUFF_SPEED, CHARACTER_BUFF_LUCK})
                     character.pCharacterBuffs[stat].Apply(expireTime, spellMastery, power, 0, 0);
+            // Day of the Gods also grants Guardian Angel to the whole party (MM6.EXE 0x428A43); it shares the
+            // Day of the Gods duration and mastery. See the Guardian Angel case above / Game.cpp's defeat handler.
+            pParty->_mm6GuardianAngelExpireTime = expireTime;
+            pParty->_mm6GuardianAngelMastery = spellMastery;
             break;
         }
 
@@ -3267,6 +3283,7 @@ void pushSpellOrRangedAttack(SpellId spell,
                         flags |= ON_CAST_TargetedCharacter;
                     effectId = SPELL_NONE;
                     break;
+                case SPELL_SPIRIT_PRESERVATION:    // MM6 id 50 = Guardian Angel (always whole-party, no picker).
                 case SPELL_LIGHT_DAY_OF_THE_GODS:  // MM6 id 83 = Day of the Gods (always whole-party).
                     effectId = SPELL_NONE;
                     break;

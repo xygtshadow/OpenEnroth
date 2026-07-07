@@ -3348,3 +3348,70 @@ GAME_TEST(Mm6, MassCurse) {
     ASSERT_NE(cursedMon, nullptr) << "Mass Curse should have cursed at least one monster in view";
     EXPECT_FALSE(cursedMon->ActorHitOrMiss(&target)); // End to end: the cast cursed it, so it now misses.
 }
+
+// MM6 Guardian Angel (native id 50) has no MM7 counterpart, so translateForCast runs it as Preservation
+// (which turns a lethal blow into unconsciousness). Its real effect (spells.txt) is a whole-party compact:
+// while it is active, a total party defeat resurrects the party for HALF its gold instead of the normal
+// all-gold-lost respawn, restoring 1 / half / full HP per character at Novice/Expert/Master. It lasts 1 hour
+// per point of skill at every mastery (MM6.EXE 0x426b97, the same 3600*L tick chain as the stat buffs). The
+// state is a transient party field (Party::_mm6GuardianAngelExpireTime), like Actor::cursedExpireTime for
+// Mass Curse - MM7 never sets it, so nothing here fires in an MM7 game.
+GAME_TEST(Mm6, GuardianAngel) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Cast: whole party (no target picker, like Day of the Gods), 1 hour per skill point at every mastery,
+    // with the mastery stored to pick the resurrect HP tier. skill 10 -> 10 hours.
+    Time castStart = pParty->GetPlayingTime();
+    pushSpellOrRangedAttack(static_cast<SpellId>(50), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 1);
+    game.tick(1);
+    Time castEnd = pParty->GetPlayingTime();
+    EXPECT_GT(pParty->_mm6GuardianAngelExpireTime, castEnd); // Active.
+    EXPECT_GE(pParty->_mm6GuardianAngelExpireTime, castStart + Duration::fromHours(10));
+    EXPECT_LE(pParty->_mm6GuardianAngelExpireTime, castEnd + Duration::fromHours(10));
+    EXPECT_EQ(pParty->_mm6GuardianAngelMastery, MASTERY_MASTER);
+
+    auto killWholeParty = [&]() {
+        for (Character &character : pParty->pCharacters)
+            character.conditions.set(CONDITION_DEAD, pParty->GetPlayingTime());
+        game.tick(10);
+    };
+
+    // While Guardian Angel is active, a total party defeat resurrects everyone for HALF the party's gold (not
+    // all of it) with HP by mastery, and the game keeps playing. Novice = 1 HP, Expert = half HP, Master =
+    // full HP.
+    auto expectResurrect = [&](Mastery mastery, auto hpForMax) {
+        pParty->_mm6GuardianAngelExpireTime = pParty->GetPlayingTime() + Duration::fromHours(10);
+        pParty->_mm6GuardianAngelMastery = mastery;
+        pParty->SetGold(1000);
+        std::array<int, 4> maxHealth;
+        for (int i = 0; i < 4; i++)
+            maxHealth[i] = pParty->pCharacters[i].GetMaxHealth();
+        killWholeParty();
+        EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
+        EXPECT_EQ(pParty->GetGold(), 500) << "mastery " << std::to_underlying(mastery);
+        for (int i = 0; i < 4; i++) {
+            EXPECT_TRUE(pParty->pCharacters[i].CanAct());
+            EXPECT_EQ(pParty->pCharacters[i].health, hpForMax(maxHealth[i]))
+                << "mastery " << std::to_underlying(mastery) << " char " << i;
+        }
+    };
+    expectResurrect(MASTERY_NOVICE, [](int) { return 1; });               // Novice: 1 HP each.
+    expectResurrect(MASTERY_EXPERT, [](int maxHp) { return maxHp / 2; }); // Expert: half HP.
+    expectResurrect(MASTERY_MASTER, [](int maxHp) { return maxHp; });     // Master: full HP.
+
+    // Guardian Angel is a resurrection compact, not the week-long defeat penalty, so it does not advance the
+    // calendar - it survives a resurrect and keeps protecting the party until its own timer expires.
+    EXPECT_GT(pParty->_mm6GuardianAngelExpireTime, pParty->GetPlayingTime());
+
+    // Control: with no Guardian Angel active, the same defeat loses ALL the gold and leaves everyone at 1 HP.
+    pParty->_mm6GuardianAngelExpireTime = Time();
+    pParty->SetGold(1000);
+    killWholeParty();
+    EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
+    EXPECT_EQ(pParty->GetGold(), 0);
+    for (Character &character : pParty->pCharacters)
+        EXPECT_EQ(character.health, 1);
+}

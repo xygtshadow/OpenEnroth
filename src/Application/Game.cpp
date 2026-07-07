@@ -1684,6 +1684,17 @@ void Game::gameLoop() {
             }
             if (uGameState == GAME_STATE_PARTY_DIED) {
                 pAudioPlayer->stopSounds();
+
+                // MM6's Guardian Angel turns this defeat into a resurrection compact: while the party buff is
+                // active, the party is revived for HALF its gold (not all of it) with HP by mastery, and the
+                // usual week-long time penalty is skipped (so the buff survives to protect against later deaths
+                // until its own timer expires). Captured here, before the resets below clear party state. This
+                // is MM6-only and never fires in MM7 - nothing there sets the field. See castMm6UniqueSpell.
+                bool mm6GuardianAngel = engine->gameVersion() == GAME_VERSION_MM6 &&
+                                        pParty->_mm6GuardianAngelExpireTime > pParty->GetPlayingTime();
+                Mastery mm6GuardianAngelMastery = pParty->_mm6GuardianAngelMastery;
+                int mm6GoldBeforeDeath = pParty->GetGold();
+
                 pParty->pHirelings[0] = NPCData();
                 pParty->pHirelings[1] = NPCData();
                 for (int i = 0; i < (signed int)pNPCStats->uNumNewNPCs; ++i) {
@@ -1698,9 +1709,10 @@ void Game::gameLoop() {
                     character.SetVariable(VAR_Award, std::to_underlying(AWARD_DEATHS));
                 }
                 pParty->days_played_without_rest = 0;
-                pParty->GetPlayingTime() += Duration::fromDays(7);  // += 2580480
+                if (!mm6GuardianAngel)
+                    pParty->GetPlayingTime() += Duration::fromDays(7);  // += 2580480
                 pParty->uFlags &= ~(PARTY_FLAG_WATER_DAMAGE | PARTY_FLAG_BURNING);
-                pParty->SetGold(0);
+                pParty->SetGold(mm6GuardianAngel ? mm6GoldBeforeDeath / 2 : 0);
                 pActiveOverlayList->Reset();
                 pParty->pPartyBuffs.fill(SpellBuff());
 
@@ -1716,7 +1728,17 @@ void Game::gameLoop() {
                                        // 0, 0xA0u);//(pConditions, 0, 160)
                                        // memset(pParty->pCharacters[i].pCharacterBuffs.data(),
                                        // 0, 0x180u);//(pCharacterBuffs[0], 0, 384)
-                    character.health = 1;
+                    if (mm6GuardianAngel) {
+                        // Guardian Angel restores each character to life with 1 / half / full HP at
+                        // Novice/Expert/Master (spells.txt). Conditions are already reset above, so
+                        // GetMaxHealth is the clean maximum.
+                        int maxHealth = character.GetMaxHealth();
+                        character.health = mm6GuardianAngelMastery >= MASTERY_MASTER ? maxHealth
+                                         : mm6GuardianAngelMastery == MASTERY_EXPERT ? maxHealth / 2
+                                         : 1;
+                    } else {
+                        character.health = 1;
+                    }
                 }
                 pParty->setActiveCharacterIndex(1);
 
