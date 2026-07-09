@@ -469,6 +469,12 @@ void Character::SalesProcess(InventoryEntry entry, HouseId houseId) {
     float shop_mult = houseTable[houseId].fPriceMultiplier;
     int sell_price = PriceCalculator::itemSellingPriceForPlayer(this, *entry, shop_mult);
 
+    // MM6 general stores (the alchemy-shop slot) buy anything, but pay only half - their 2dEvents rows
+    // are annotated '"Sell Anything"' / 'Value /2', and MM7 still carries the matching
+    // SHOP_SCREEN_SELL_FOR_CHEAP display path from this MM6 mechanic.
+    if (pItemTable->version == GAME_VERSION_MM6 && houseTable[houseId].uType == HOUSE_TYPE_ALCHEMY_SHOP)
+        sell_price = std::max(1, sell_price / 2);
+
     // remove item and add gold
     inventory.take(entry);
     pParty->AddGold(sell_price);
@@ -7062,6 +7068,8 @@ MerchantPhrase Character::SelectPhrasesTransaction(Item *pItem, HouseType buildi
                 return MERCHANT_PHRASE_INCOMPATIBLE_ITEM;
             break;
         case HOUSE_TYPE_ALCHEMY_SHOP:
+            if (pItemTable->version == GAME_VERSION_MM6)
+                break; // MM6 general stores trade in anything, and the MM7 id ceilings don't fit MM6 ids.
             if (idemId >= ITEM_ARTIFACT_HERMES_SANDALS && !isRecipe(idemId))
                 return MERCHANT_PHRASE_INVALID_ACTION;
             if (equipType != ITEM_TYPE_REAGENT && equipType != ITEM_TYPE_POTION && equipType != ITEM_TYPE_MESSAGE_SCROLL)
@@ -7084,6 +7092,9 @@ MerchantPhrase Character::SelectPhrasesTransaction(Item *pItem, HouseType buildi
             // price = 1;
             // else
             price = PriceCalculator::itemSellingPriceForPlayer(this, *pItem, multiplier);
+            break;
+        case SHOP_SCREEN_SELL_FOR_CHEAP: // MM6 general stores buy anything at half price.
+            price = std::max(1, PriceCalculator::itemSellingPriceForPlayer(this, *pItem, multiplier) / 2);
             break;
         case SHOP_SCREEN_IDENTIFY:
             price = PriceCalculator::itemIdentificationPriceForPlayer(this, multiplier);

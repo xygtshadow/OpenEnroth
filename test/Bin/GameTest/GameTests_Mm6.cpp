@@ -16,6 +16,7 @@
 #include "Engine/MapEnumFunctions.h"
 #include "Engine/MapInfo.h"
 #include "Engine/Party.h"
+#include "Engine/PriceCalculator.h"
 #include "Engine/Resources/EngineFileSystem.h"
 #include "Engine/Resources/ResourceManager.h"
 #include "Engine/mm7_data.h"
@@ -971,6 +972,128 @@ GAME_TEST(Mm6, BuyFromWeaponShop) {
     EXPECT_TRUE(pParty->activeCharacter().inventory.find(stockItem));
 
     // Leave the buy screen, then the shop.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// Clicks a proprietor dialogue option (a shop menu entry, a transport schedule line, a town-hall
+// service, ...) in an open house dialogue. The option buttons are re-laid-out to rendered-text metrics
+// on draw, so locate them by message param.
+static void clickProprietorOption(EngineController &game, DialogueId option) {
+    ASSERT_NE(pDialogueWindow, nullptr);
+    const GUIButton *optionButton = nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(option))
+            optionButton = button;
+    ASSERT_NE(optionButton, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, optionButton->rect.x + optionButton->rect.w / 2,
+                               optionButton->rect.y + optionButton->rect.h / 2);
+    game.tick(2);
+}
+
+// MM6 "General Store" is its alchemist-shop analog: MM6.EXE maps the 2dEvents Type prefix "gen" to
+// house type 4 (the alchemist slot), and stocks it from the EXE's own general-store tables (standard
+// @0x4C459C, special @0x4C47B8, generators @0x49FB40/0x49FD40): six shelf slots, each rolling one of
+// six columns - a random cloak or boots at the store's treasure level, two empty-bottle columns (163)
+// and the three herbs (162/161/160), everything identified; special goods share the table at treasure
+// level 1. General stores also buy ANY item at half the usual sell price (2dEvents annotates them
+// '"Sell Anything"' / 'Value /2'; MM7 still carries the SHOP_SCREEN_SELL_FOR_CHEAP enum from this).
+GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The 2dEvents parse must land General Stores on the type-4 alchemy-shop slot.
+    EXPECT_EQ(houseTable[HouseId(42)].uType, HOUSE_TYPE_ALCHEMY_SHOP);
+
+    // Enter Traveler's Supply - the New Sorpigal general store (oute3 event 9 = SpeakInHouse(42)).
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 9 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(42));
+
+    pParty->SetGold(2000); // Enough for any treasure-level-1 cloak or boots.
+
+    // Pick "Buy Standard Goods" - this generates both stocks from the MM6 general-store model.
+    clickProprietorOption(game, DIALOGUE_SHOP_BUY_STANDARD);
+
+    auto isGeneralStoreWare = [](const Item &item) {
+        if (item.itemId == ItemId(163) || item.itemId == ItemId(162) ||
+            item.itemId == ItemId(161) || item.itemId == ItemId(160))
+            return true; // Empty Bottle / Widoweeps Berries / Phirna Root / Poppysnaps.
+        ItemType type = pItemTable->items[item.itemId].type;
+        return type == ITEM_TYPE_CLOAK || type == ITEM_TYPE_BOOTS;
+    };
+
+    const std::array<Item, 12> &stock = pParty->standartItemsInShops[HouseId(42)];
+    const std::array<Item, 12> &specialStock = pParty->specialItemsInShops[HouseId(42)];
+    for (int i = 0; i < 6; i++) {
+        ASSERT_NE(stock[i].itemId, ITEM_NULL) << i;
+        EXPECT_TRUE(isGeneralStoreWare(stock[i])) << static_cast<int>(stock[i].itemId);
+        ASSERT_NE(specialStock[i].itemId, ITEM_NULL) << i;
+        EXPECT_TRUE(isGeneralStoreWare(specialStock[i])) << static_cast<int>(specialStock[i].itemId);
+    }
+    for (int i = 6; i < 12; i++) {
+        EXPECT_EQ(stock[i].itemId, ITEM_NULL) << i; // MM6 general stores have 6 shelf slots, not 12.
+        EXPECT_EQ(specialStock[i].itemId, ITEM_NULL) << i;
+    }
+
+    // Buy shelf slot 1: the top-row hit test centers the icon at x = 75 * slot + 40, bottom at y = 152.
+    Item wanted = stock[1];
+    int goldBefore = pParty->GetGold();
+    int buyPrice = PriceCalculator::itemBuyingPriceForPlayer(&pParty->activeCharacter(), wanted.GetValue(),
+                                                             houseTable[HouseId(42)].fPriceMultiplier);
+    game.pressAndReleaseButton(BUTTON_LEFT, 75 + 40, 152 - shop_ui_items_in_store[1]->height() / 2);
+    game.tick(2);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - buyPrice);
+    EXPECT_EQ(stock[1].itemId, ITEM_NULL); // The shelf slot sold out.
+    EXPECT_TRUE(pParty->activeCharacter().inventory.find(wanted.itemId));
+
+    // Sell ANYTHING: an MM7 alchemist would refuse a sword, the MM6 general store buys it -
+    // at half the usual sell price.
+    InventoryEntry sword = pParty->activeCharacter().inventory.tryAdd(Item(ItemId(5))); // Lionheart Sword.
+    ASSERT_TRUE(sword);
+    int sellPrice = std::max(1, PriceCalculator::itemSellingPriceForPlayer(&pParty->activeCharacter(), *sword,
+                                                                           houseTable[HouseId(42)].fPriceMultiplier) / 2);
+    Recti swordCells = sword.geometry(); // In 32px inventory-grid cells, grid origin is at (14, 17).
+    Pointi swordCenter(14 + 32 * swordCells.x + 16 * swordCells.w, 17 + 32 * swordCells.y + 16 * swordCells.h);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE); // Leave the buy screen.
+    game.tick(2);
+    clickProprietorOption(game, DIALOGUE_SHOP_DISPLAY_EQUIPMENT);
+    clickProprietorOption(game, DIALOGUE_SHOP_SELL);
+
+    goldBefore = pParty->GetGold();
+    game.pressAndReleaseButton(BUTTON_LEFT, swordCenter.x, swordCenter.y);
+    game.tick(2);
+    EXPECT_EQ(pParty->GetGold(), goldBefore + sellPrice);
+    EXPECT_FALSE(pParty->activeCharacter().inventory.find(ItemId(5)));
+
+    // Leave the sell screen, the inventory screen, then the shop.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
@@ -2613,21 +2736,6 @@ static void advanceToTravelDay(EngineController &game, HouseId houseId) {
         game.tick(1);
     }
     ASSERT_TRUE(isTravelAvailable(houseId));
-}
-
-// Clicks a proprietor dialogue option (a transport schedule line, a town-hall service, ...) in an open
-// house dialogue. The option buttons are re-laid-out to rendered-text metrics on draw, so locate them
-// by message param.
-static void clickProprietorOption(EngineController &game, DialogueId option) {
-    ASSERT_NE(pDialogueWindow, nullptr);
-    const GUIButton *optionButton = nullptr;
-    for (const GUIButton *button : pDialogueWindow->vButtons)
-        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(option))
-            optionButton = button;
-    ASSERT_NE(optionButton, nullptr);
-    game.pressAndReleaseButton(BUTTON_LEFT, optionButton->rect.x + optionButton->rect.w / 2,
-                               optionButton->rect.y + optionButton->rect.h / 2);
-    game.tick(2);
 }
 
 GAME_TEST(Mm6, TravelByCoachAndBoat) {

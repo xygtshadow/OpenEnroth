@@ -886,6 +886,8 @@ bool Item::canSellRepairIdentifyAt(HouseId houseId) {
         case HOUSE_TYPE_MAGIC_SHOP:
             return (this->skill() == SKILL_MISC && !isRecipe(this->itemId)) || this->isBook();
         case HOUSE_TYPE_ALCHEMY_SHOP:
+            if (pItemTable->version == GAME_VERSION_MM6)
+                return true; // MM6 general stores (the alchemy-shop slot) buy anything - at half price.
             return this->isReagent() ||
                    this->isPotion() ||
                    (this->isMessageScroll() && isRecipe(this->itemId));

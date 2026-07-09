@@ -74,6 +74,9 @@ void initializeHouses(const Blob &houses, GameVersion version) {
                                                    // MM6's data spells it "Merc Guild", which this exact-string map misses,
                                                    // so those rows currently fall through to the type-18 default
                                                    // (docs/pending/mm6-house-types.md).
+        {"General Store", HOUSE_TYPE_ALCHEMY_SHOP}, // This is MM6 only. MM6.EXE maps "gen" to type 4, the alchemist slot -
+                                                    // general stores ARE MM6's alchemy-shop analog (herbs, bottles, and a
+                                                    // random-items shelf; see GUIWindow_AlchemyShop::generateShopItems).
     };
 
     // MM6's 2dEvents.txt keeps the same 24-column layout as MM7, but stores free-form text in several

@@ -203,6 +203,21 @@ static constexpr IndexedArray<ItemTreasureLevel, HOUSE_FIRST_ALCHEMY_SHOP, HOUSE
     {HOUSE_53,                              ITEM_TREASURE_LEVEL_2}
 }};
 
+// MM6 general stores land on the alchemy-shop slot ("gen" -> type 4 in MM6.EXE's 2dEvents parser), and
+// their house ids 42-47 line up positionally with MM7's alchemist ids. These are the random-shelf-slot
+// treasure levels from MM6.EXE's general-store stock table @0x4C459C (its special-goods twin @0x4C47B8
+// is all level 1). The MM7 enumerator names below are just the positional slots - the actual stores are
+// Traveler's Supply (42) / Lock, Stock, and Barrel (43) / Trader Joe's (44) / Abdul's Discount Goods (45) /
+// General Store (46) / Outland Trading Post (47).
+static constexpr IndexedArray<ItemTreasureLevel, HOUSE_ALCHEMY_SHOP_EMERALD_ISLAND, HOUSE_ALCHEMY_SHOP_BRACADA_DESERT> mm6GeneralStoreLevels = {{
+    {HOUSE_ALCHEMY_SHOP_EMERALD_ISLAND,     ITEM_TREASURE_LEVEL_1},
+    {HOUSE_ALCHEMY_SHOP_HARMONDALE,         ITEM_TREASURE_LEVEL_2},
+    {HOUSE_ALCHEMY_SHOP_ERATHIA,            ITEM_TREASURE_LEVEL_2},
+    {HOUSE_ALCHEMY_SHOP_TULAREAN_FOREST,    ITEM_TREASURE_LEVEL_2},
+    {HOUSE_ALCHEMY_SHOP_DEYJA,              ITEM_TREASURE_LEVEL_3},
+    {HOUSE_ALCHEMY_SHOP_BRACADA_DESERT,     ITEM_TREASURE_LEVEL_3}
+}};
+
 GraphicsImage *shop_ui_background = nullptr;
 
 std::array<GraphicsImage *, 12> shop_ui_items_in_store;
@@ -292,8 +307,11 @@ void GUIWindow_Shop::sellDialogue() {
         Pointi gridPos = mapToInventoryGrid(pt, Pointi(14, 17));
 
         if (InventoryEntry entry = pParty->activeCharacter().inventory.entry(gridPos)) {
-            MerchantPhrase phrases_id = pParty->activeCharacter().SelectPhrasesTransaction(entry.get(), buildingType(), houseId(), SHOP_SCREEN_SELL);
-            std::string str = BuildDialogueString(pMerchantsSellPhrases[phrases_id], pParty->activeCharacterIndex() - 1, houseNpcs[currentHouseNpc].npc, entry.get(), houseId(), SHOP_SCREEN_SELL);
+            // MM6 general stores (the alchemy-shop slot) buy anything, but only at half price.
+            ShopScreen sellScreen = engine->gameVersion() == GAME_VERSION_MM6 && buildingType() == HOUSE_TYPE_ALCHEMY_SHOP
+                ? SHOP_SCREEN_SELL_FOR_CHEAP : SHOP_SCREEN_SELL;
+            MerchantPhrase phrases_id = pParty->activeCharacter().SelectPhrasesTransaction(entry.get(), buildingType(), houseId(), sellScreen);
+            std::string str = BuildDialogueString(pMerchantsSellPhrases[phrases_id], pParty->activeCharacterIndex() - 1, houseNpcs[currentHouseNpc].npc, entry.get(), houseId(), sellScreen);
             int vertMargin = (SIDE_TEXT_BOX_BODY_TEXT_HEIGHT - assets->pFontArrus->CalcTextHeight(str, dialogwin.w, 0)) / 2 + SIDE_TEXT_BOX_BODY_TEXT_OFFSET;
             DrawTitleText(assets->pFontArrus.get(), 0, vertMargin, colorTable.White, str, 3, dialogwin);
         }
@@ -673,6 +691,40 @@ void GUIWindow_MagicShop::generateShopItems(bool isSpecial) {
 
 void GUIWindow_AlchemyShop::generateShopItems(bool isSpecial) {
     std::array<Item, 12> &itemArray = isSpecial ? pParty->specialItemsInShops[houseId()] : pParty->standartItemsInShops[houseId()];
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 general store, from MM6.EXE's stock generators @0x49FB40 (standard) / @0x49FD40 (special):
+        // six shelf slots, each rolling one of the six columns of the store's stock-table row - a random
+        // cloak or boots at the store's treasure level (the EXE picks type 37/39, its cloak/boots ids),
+        // two empty-bottle columns and the three herbs as literal item ids, everything identified.
+        ItemTreasureLevel treasureLvl = isSpecial ? ITEM_TREASURE_LEVEL_1 : mm6GeneralStoreLevels[houseId()];
+        for (Item &item : itemArray)
+            item.Reset();
+        for (int i = 0; i < 6; i++) {
+            switch (grng->random(6)) {
+              case 0:
+                pItemTable->generateItem(treasureLvl, grng->random(2) ? RANDOM_ITEM_CLOAK : RANDOM_ITEM_BOOTS, &itemArray[i]);
+                break;
+              case 1:
+              case 2:
+                itemArray[i].itemId = ItemId(163); // Empty Bottle.
+                break;
+              case 3:
+                itemArray[i].itemId = ItemId(162); // Widoweeps Berries.
+                break;
+              case 4:
+                itemArray[i].itemId = ItemId(161); // Phirna Root.
+                break;
+              case 5:
+                itemArray[i].itemId = ItemId(160); // Poppysnaps.
+                break;
+            }
+            itemArray[i].SetIdentified();
+        }
+        pParty->InTheShopFlags[houseId()] = 0;
+        return;
+    }
+
     ItemTreasureLevel treasureLvl = isSpecial ? alchemyShopVariationSpecial[houseId()] : alchemyShopVariationStandard[houseId()];
     RandomItemType bottomRowItemClass = isSpecial ? RANDOM_ITEM_POTION : RANDOM_ITEM_REAGENT;
 
@@ -734,6 +786,11 @@ std::vector<DialogueId> GUIWindow_MagicShop::listShopLearnableSkills() {
 }
 
 std::vector<DialogueId> GUIWindow_AlchemyShop::listShopLearnableSkills() {
+    // MM6 has neither an Alchemy nor a Monster ID skill - offering the MM7 pair here would teach an MM6
+    // character a skill that doesn't exist in its game. What (if anything) MM6 general stores teach still
+    // needs reversing (docs/pending/mm6-house-types.md).
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return {};
     return {DIALOGUE_LEARN_ALCHEMY, DIALOGUE_LEARN_MONSTER_ID};
 }
 
