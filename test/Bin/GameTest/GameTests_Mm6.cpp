@@ -4879,3 +4879,169 @@ GAME_TEST(Mm6, MagicGuildMembershipAndSpellbooks) {
     }
     leaveHouse(game);
 }
+
+// MM6's NPC skill teachers: dialogue topics 200-259 are reserved for expert/master skill promotion
+// (MM6.EXE topic dispatch @0x496b42, gate computation @0x496c90, learn execute @0x4969c4).
+// Topic = 200 + 2 x skill slot + parity (even = expert, odd = master); slot 28 = Thievery is
+// skipped (a skill index above 27 is incremented), so topics 256-259 teach Disarm Traps and
+// Learning. The offer prose is npctext row [topic]; the refusal texts are npctext rows 260-266;
+// the clickable option label is "Learn" (global.txt 535) once every gate passes: a conscious
+// active character, the skill known, the tier not already held, expert-first for masters,
+// expert = rank 4 + price (weapons/shield 2000, armor + elemental schools 1000, most misc 500),
+// master = a per-skill price and prerequisite (rank 8/10/12 tiers, stats >= 30/40, class
+// promotions or their award bits, reputation >= 1000 (Saintly - MM6 positive reputation is good)
+// for Light / <= -1000 for Dark, fame >= 200 for Diplomacy, a carried blaster for Ancient
+// Weapons), and the gold check last. Learning promotes the ACTIVE character's skill mastery and
+// takes the gold; the teacher's topic is never retired.
+GAME_TEST(Mm6, NpcSkillTeachers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->GetPlayingTime() += Duration::fromHours(2); // 11:00, inside every dwelling's open hours.
+    game.tick(1);
+
+    Character &roderick = pParty->pCharacters[0];
+
+    // Escapes any open dialogue, back to the house screen with clickable portraits.
+    auto escapeToHouseScreen = [&] {
+        for (int i = 0; i < 5 && pDialogueWindow; i++) {
+            game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+            game.tick(2);
+        }
+        ASSERT_EQ(pDialogueWindow, nullptr);
+        ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    };
+    // Opens the teacher's topic from the house screen, checks the offer prose, clicks Learn
+    // (a no-op when a gate refuses) and returns to the house screen.
+    auto attemptLearn = [&](NPCData *npc, DialogueId slot, int topicId) {
+        clickHouseNpcPortrait(game, npc);
+        selectScriptedTopic(game, slot);
+        EXPECT_EQ(current_npc_text, pNPCTopics[topicId - 1].pText); // The offer prose = npctext row [topic].
+        selectScriptedTopic(game, DIALOGUE_MASTERY_TEACHER_LEARN);
+        escapeToHouseScreen();
+    };
+
+    // Expert Staff: Calvin Black, npcdata 31, house 460, first topic 200 ("...an intermediate
+    // skill in the staff (Rank 4) and 2000 gold").
+    NPCData *calvin = &pNPCStats->pNPCData[31];
+    EXPECT_EQ(calvin->name, "Calvin Black");
+    ASSERT_EQ(calvin->house, HouseId(460));
+    ASSERT_EQ(calvin->dialogue_1_evt_id, 200);
+    EXPECT_TRUE(std::string_view(pNPCTopics[200].pTopic).starts_with("Expert Staff Defense"));
+    ASSERT_TRUE(enterHouse(HouseId(460)));
+    createHouseUI(HouseId(460));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    EXPECT_EQ(pParty->activeCharacter().name, roderick.name);
+
+    // Roderick doesn't know Staff at all: refused, nothing charged.
+    pParty->SetGold(10000);
+    attemptLearn(calvin, DIALOGUE_SCRIPTED_LINE_1, 200);
+    EXPECT_EQ(pParty->GetGold(), 10000);
+    EXPECT_FALSE(roderick.pActiveSkills[SKILL_STAFF]);
+
+    // Rank 3 is below the expert requirement of rank 4.
+    roderick.setSkillValue(SKILL_STAFF, CombinedSkillValue(3, MASTERY_NOVICE));
+    attemptLearn(calvin, DIALOGUE_SCRIPTED_LINE_1, 200);
+    EXPECT_EQ(pParty->GetGold(), 10000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_STAFF).mastery(), MASTERY_NOVICE);
+
+    // Rank 4 but 1999 gold: the gold gate refuses.
+    roderick.setSkillValue(SKILL_STAFF, CombinedSkillValue(4, MASTERY_NOVICE));
+    pParty->SetGold(1999);
+    attemptLearn(calvin, DIALOGUE_SCRIPTED_LINE_1, 200);
+    EXPECT_EQ(pParty->GetGold(), 1999);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_STAFF).mastery(), MASTERY_NOVICE);
+
+    // Rank 4 + 2500 gold: promoted to expert for exactly 2000.
+    pParty->SetGold(2500);
+    attemptLearn(calvin, DIALOGUE_SCRIPTED_LINE_1, 200);
+    EXPECT_EQ(pParty->GetGold(), 500);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_STAFF), CombinedSkillValue(4, MASTERY_EXPERT));
+
+    // Already an expert: the repeat visit refuses and charges nothing.
+    attemptLearn(calvin, DIALOGUE_SCRIPTED_LINE_1, 200);
+    EXPECT_EQ(pParty->GetGold(), 500);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_STAFF), CombinedSkillValue(4, MASTERY_EXPERT));
+    leaveHouse(game);
+
+    // Master Merchant: Will Ottoman, npcdata 29, house 397, first topic 245 - rank 7,
+    // Personality >= 30, 4000 gold ("...for 4000 gold, provided you have the skill (Rank 7)...").
+    NPCData *ottoman = &pNPCStats->pNPCData[29];
+    EXPECT_EQ(ottoman->name, "Will Ottoman");
+    ASSERT_EQ(ottoman->house, HouseId(397));
+    ASSERT_EQ(ottoman->dialogue_1_evt_id, 245);
+    ASSERT_TRUE(enterHouse(HouseId(397)));
+    createHouseUI(HouseId(397));
+    game.tick(2);
+    pParty->SetGold(10000);
+
+    // Rank 7 but no expert tier yet: masters teach experts only.
+    roderick.setSkillValue(SKILL_MERCHANT, CombinedSkillValue(7, MASTERY_NOVICE));
+    attemptLearn(ottoman, DIALOGUE_SCRIPTED_LINE_1, 245);
+    EXPECT_EQ(pParty->GetGold(), 10000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_MERCHANT).mastery(), MASTERY_NOVICE);
+
+    // Expert at rank 7 but not charming enough: Personality below 30 refuses.
+    roderick.setSkillValue(SKILL_MERCHANT, CombinedSkillValue(7, MASTERY_EXPERT));
+    int personalityBefore = roderick._stats[ATTRIBUTE_PERSONALITY];
+    roderick._stats[ATTRIBUTE_PERSONALITY] = 1;
+    ASSERT_LT(roderick.GetActualPersonality(), 30);
+    attemptLearn(ottoman, DIALOGUE_SCRIPTED_LINE_1, 245);
+    EXPECT_EQ(pParty->GetGold(), 10000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_MERCHANT).mastery(), MASTERY_EXPERT);
+
+    // Personality 30: promoted to master for exactly 4000.
+    roderick._stats[ATTRIBUTE_PERSONALITY] = 30;
+    ASSERT_GE(roderick.GetActualPersonality(), 30);
+    attemptLearn(ottoman, DIALOGUE_SCRIPTED_LINE_1, 245);
+    EXPECT_EQ(pParty->GetGold(), 6000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_MERCHANT), CombinedSkillValue(7, MASTERY_MASTER));
+    roderick._stats[ATTRIBUTE_PERSONALITY] = personalityBefore;
+    leaveHouse(game);
+
+    // Master of Light: Ki Lo Nee, npcdata 272, house 444, first topic 239 - free, but only for a
+    // Saintly party (reputation >= 1000; MM6's scale is positive = good, MM6.EXE titles @0x489c60).
+    NPCData *kiLoNee = &pNPCStats->pNPCData[272];
+    EXPECT_EQ(kiLoNee->name, "Ki Lo Nee");
+    ASSERT_EQ(kiLoNee->house, HouseId(444));
+    ASSERT_EQ(kiLoNee->dialogue_1_evt_id, 239);
+    ASSERT_TRUE(enterHouse(HouseId(444)));
+    createHouseUI(HouseId(444));
+    game.tick(2);
+    roderick.setSkillValue(SKILL_LIGHT, CombinedSkillValue(8, MASTERY_EXPERT));
+
+    currentLocationInfo().reputation = 0;
+    attemptLearn(kiLoNee, DIALOGUE_SCRIPTED_LINE_1, 239);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_LIGHT).mastery(), MASTERY_EXPERT);
+
+    currentLocationInfo().reputation = 1000;
+    attemptLearn(kiLoNee, DIALOGUE_SCRIPTED_LINE_1, 239);
+    EXPECT_EQ(pParty->GetGold(), 6000); // Free.
+    EXPECT_EQ(roderick.getSkillValue(SKILL_LIGHT), CombinedSkillValue(8, MASTERY_MASTER));
+    leaveHouse(game);
+
+    // Master of Ancient Weapons: Rexella, npcdata 130, house 223, first topic 215 - 5000 gold and
+    // the one non-stat prerequisite in the set: the character must be CARRYING a blaster
+    // (an inventory item whose items.txt skill column is Blaster; MM6.EXE 0x496e8f).
+    NPCData *rexella = &pNPCStats->pNPCData[130];
+    EXPECT_EQ(rexella->name, "Rexella "); // Trailing space verbatim from npcdata.txt.
+    ASSERT_EQ(rexella->house, HouseId(223));
+    ASSERT_EQ(rexella->dialogue_1_evt_id, 215);
+    ASSERT_TRUE(enterHouse(HouseId(223)));
+    createHouseUI(HouseId(223));
+    game.tick(2);
+    roderick.setSkillValue(SKILL_BLASTER, CombinedSkillValue(4, MASTERY_EXPERT));
+    pParty->SetGold(6000);
+
+    attemptLearn(rexella, DIALOGUE_SCRIPTED_LINE_1, 215);
+    EXPECT_EQ(pParty->GetGold(), 6000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_BLASTER).mastery(), MASTERY_EXPERT);
+
+    ASSERT_TRUE(roderick.inventory.tryAdd(Item(ItemId(64)))); // items.txt 64 raygun1 "Blaster".
+    attemptLearn(rexella, DIALOGUE_SCRIPTED_LINE_1, 215);
+    EXPECT_EQ(pParty->GetGold(), 1000);
+    EXPECT_EQ(roderick.getSkillValue(SKILL_BLASTER), CombinedSkillValue(4, MASTERY_MASTER));
+    leaveHouse(game);
+}

@@ -71,7 +71,8 @@ static const Mm6GuildHouse *mm6GuildHouse(HouseId houseId) {
 
 // MM6.EXE class-can-learn table @0x4C2694: 6 base classes x 31 MM6 skill slots. Zero means the
 // class can never learn the skill; the meaning of the nonzero grades 1/2/3 is not fully reversed
-// (they likely cap the NPC-teacher promotion tier) - here only zero/nonzero matters.
+// (NOT a teacher-tier cap - the NPC skill-teacher gate @0x496c90 never reads this table; its
+// only class gates are per-skill promotion checks) - here only zero/nonzero matters.
 bool mm6ClassCanLearn(Class classType, Skill skill) {
     static constexpr std::array<std::array<uint8_t, 31>, 6> canLearn = {{
         {{3, 1, 2, 2, 2, 2, 3, 3, 2, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 2, 0, 2, 3, 0, 2, 3}}, // Knight

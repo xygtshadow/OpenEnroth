@@ -21,6 +21,7 @@
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Party.h"
 #include "Engine/Data/HouseEnumFunctions.h"
+#include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Evt/Processor.h"
 #include "Engine/Random/Random.h"
@@ -487,10 +488,215 @@ const std::string &joinGuildOptionString() {
     }
 }
 
+// The MM6 skill taught by NPC-teacher topic 200-259: 200 + 2 x skill slot (+1 for the master
+// teacher), with slot 28 = Thievery skipped - a slot above 27 is incremented, so topics 256-259
+// teach Disarm Traps and Learning (MM6.EXE 0x496c90). MM6 skill slots 0-29 coincide with the
+// engine's Skill enum; slot 30 is Learning.
+static Skill mm6TeacherSkill(int topicId) {
+    int slot = (topicId - 200) / 2;
+    if (slot > 27)
+        slot++;
+    return slot == 30 ? SKILL_LEARNING : static_cast<Skill>(slot);
+}
+
+static bool mm6IsMasterTeacherTopic(int topicId) {
+    return (topicId - 200) % 2 != 0;
+}
+
+// MM6.EXE 0x496c90, the NPC skill-teacher gate: computes the price, checks every prerequisite on
+// the ACTIVE character, and returns the string shown as the clickable option - one of the npctext
+// 260-266 refusals, or "Learn" (global.txt 535) with membershipOrTrainingApproved set. Unlike the
+// guild learn dialogues there is no merchant discount, and the class-can-learn table plays no
+// part - the only class gates are the per-skill promotion checks below.
+static std::string mm6MasteryTeacherOptionString() {
+    Skill skill = mm6TeacherSkill(topicEventId);
+    bool master = mm6IsMasterTeacherTopic(topicEventId);
+
+    membershipOrTrainingApproved = false;
+
+    if (!pParty->hasActiveCharacter())
+        pParty->setActiveToFirstCanAct();
+    Character *student = &pParty->activeCharacter();
+
+    // Not in your condition!
+    if (!student->CanAct())
+        return pNPCTopics[263].pText; // npctext row 264.
+
+    int level = student->getSkillValue(skill).level();
+    Mastery mastery = student->getSkillValue(skill).mastery();
+
+    // You must know the skill before you can become an expert in it!
+    if (!level)
+        return pNPCTopics[261].pText; // npctext row 262.
+
+    // You are already an expert / a master in this skill.
+    if (mastery >= (master ? MASTERY_MASTER : MASTERY_EXPERT))
+        return pNPCTopics[master ? 265 : 264].pText; // npctext rows 266 / 265.
+
+    // You must first be an expert in the skill before you can become a master.
+    if (master && mastery < MASTERY_EXPERT)
+        return pNPCTopics[262].pText; // npctext row 263.
+
+    auto isMm6Class = [&](int mm6ClassByte) {
+        return student->classType == classFromMm6ClassByte(mm6ClassByte);
+    };
+    auto hasAward = [&](int awardId) {
+        return static_cast<bool>(student->_achievedAwardsBits[static_cast<AwardId>(awardId)]);
+    };
+    auto carriesBlaster = [&] {
+        for (InventoryConstEntry entry : student->inventory.entries())
+            if (pItemTable->items[entry->itemId].skill == SKILL_BLASTER)
+                return true;
+        return false;
+    };
+
+    bool canLearn;
+    int price;
+    if (!master) {
+        // Expert: rank 4 everywhere; the price is per skill group (jump table @0x497214).
+        canLearn = level >= 4;
+        switch (skill) {
+          case SKILL_LEATHER: case SKILL_CHAIN: case SKILL_PLATE:
+          case SKILL_FIRE: case SKILL_AIR: case SKILL_WATER: case SKILL_EARTH:
+          case SKILL_SPIRIT: case SKILL_MIND: case SKILL_BODY:
+            price = 1000;
+            break;
+          case SKILL_ITEM_ID: case SKILL_REPAIR: case SKILL_BODYBUILDING:
+          case SKILL_MEDITATION: case SKILL_PERCEPTION: case SKILL_DIPLOMACY:
+          case SKILL_TRAP_DISARM:
+            price = 500;
+            break;
+          default: // Weapons, Shield, Light, Dark, Merchant, Learning.
+            price = 2000;
+            break;
+        }
+    } else {
+        // Master: a per-skill price and prerequisite (switch @0x497198). The MM6 class bytes in
+        // the promotion gates: 1/2 Cavalier/Champion, 5 High Priest, 8 Arch Mage, 10/11
+        // Crusader/Hero, 13/14 Battle Mage/Warrior Mage; the award bits are those promotions'
+        // awards.txt rows.
+        canLearn = true;
+        price = 5000;
+        switch (skill) {
+          case SKILL_STAFF:
+            canLearn = level >= 8;
+            break;
+          case SKILL_SWORD:
+            price = 0;
+            canLearn = level >= 8 && (isMm6Class(1) || isMm6Class(2) || hasAward(17) || hasAward(19));
+            break;
+          case SKILL_DAGGER:
+            canLearn = student->GetActualSpeed() >= 40 && level >= 8;
+            break;
+          case SKILL_AXE:
+            price = 0; // Unconditional (0x496e0b).
+            break;
+          case SKILL_SPEAR:
+            canLearn = level >= 8 && (isMm6Class(1) || isMm6Class(2) || hasAward(17) || hasAward(19));
+            break;
+          case SKILL_BOW:
+            price = 0;
+            canLearn = level >= 8 && (isMm6Class(13) || isMm6Class(14) || hasAward(29) || hasAward(31));
+            break;
+          case SKILL_MACE:
+            canLearn = level >= 8 && student->GetActualMight() >= 40;
+            break;
+          case SKILL_BLASTER:
+            canLearn = carriesBlaster();
+            break;
+          case SKILL_SHIELD:
+            canLearn = level >= 10;
+            break;
+          case SKILL_LEATHER:
+            price = 3000;
+            canLearn = level >= 10;
+            break;
+          case SKILL_CHAIN:
+            price = 0;
+            canLearn = level >= 10 && (isMm6Class(10) || isMm6Class(11) || hasAward(9) || hasAward(11));
+            break;
+          case SKILL_PLATE:
+            price = 0;
+            canLearn = isMm6Class(11) || hasAward(11);
+            break;
+          case SKILL_FIRE: case SKILL_WATER: case SKILL_EARTH: case SKILL_MIND: case SKILL_BODY:
+            price = 4000;
+            canLearn = level >= 12;
+            break;
+          case SKILL_AIR:
+            price = 4000;
+            canLearn = isMm6Class(8) || hasAward(15);
+            break;
+          case SKILL_SPIRIT:
+            price = 0;
+            canLearn = isMm6Class(5) || hasAward(23);
+            break;
+          case SKILL_LIGHT:
+            price = 0; // MM6 reputation is positive = good: Saintly at +1000 (titles @0x489c60).
+            canLearn = currentLocationInfo().reputation >= 1000;
+            break;
+          case SKILL_DARK:
+            price = 0;
+            canLearn = currentLocationInfo().reputation <= -1000;
+            break;
+          case SKILL_ITEM_ID:
+            price = 2500;
+            canLearn = level >= 7 && student->GetActualIntelligence() >= 30;
+            break;
+          case SKILL_MERCHANT:
+            price = 4000;
+            canLearn = level >= 7 && student->GetActualPersonality() >= 30;
+            break;
+          case SKILL_REPAIR:
+          case SKILL_TRAP_DISARM:
+            price = 2500;
+            canLearn = level >= 7 && student->GetActualAccuracy() >= 30;
+            break;
+          case SKILL_BODYBUILDING:
+            price = 2500;
+            canLearn = level >= 7 && student->GetActualEndurance() >= 30;
+            break;
+          case SKILL_MEDITATION:
+            price = 2500;
+            canLearn = level >= 7 && student->GetActualPersonality() >= 30;
+            break;
+          case SKILL_PERCEPTION:
+            price = 2500;
+            canLearn = level >= 7 && student->GetActualLuck() >= 30;
+            break;
+          case SKILL_DIPLOMACY:
+            price = 2500;
+            canLearn = pParty->getPartyFame() >= 200;
+            break;
+          case SKILL_LEARNING:
+            canLearn = student->GetActualIntelligence() >= 30 && level >= 7;
+            break;
+          default:
+            canLearn = false; // Thievery has no master (0x4970f9).
+            break;
+        }
+    }
+    gold_transaction_amount = price;
+
+    // You don't meet the requirements, and cannot be taught until you do.
+    if (!canLearn)
+        return pNPCTopics[260].pText; // npctext row 261.
+
+    // You don't have enough gold!
+    if (gold_transaction_amount > pParty->GetGold())
+        return pNPCTopics[259].pText; // npctext row 260.
+
+    membershipOrTrainingApproved = true;
+    return localization->str(LSTR_LEARN); // The offer prose already names the price.
+}
+
 /**
  * @offset 0x4B254D
  */
 std::string masteryTeacherOptionString() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return mm6MasteryTeacherOptionString();
+
     int teacherLevel = (topicEventId - 200) % 3;
     Skill skillBeingTaught = static_cast<Skill>((topicEventId - 200) / 3);
     Character *activePlayer = &pParty->activeCharacter();
@@ -649,11 +855,14 @@ std::string npcDialogueOptionString(DialogueId topic, NPCData *npcData) {
     }
 }
 
-// MM6's guild-membership topics (381-397) have no global.evt script behind them - they are
-// intercepted in handleScriptedNPCTopicSelection - so they are always listed instead of being
-// dry-run through the event interpreter.
-static bool isMm6JoinGuildTopic(unsigned int eventId) {
-    return engine->gameVersion() == GAME_VERSION_MM6 && eventId >= 381 && eventId <= 397;
+// MM6's guild-membership topics (381-397) and skill-teacher topics (200-259) have no global.evt
+// script behind them - they are intercepted in handleScriptedNPCTopicSelection - so they are
+// always listed instead of being dry-run through the event interpreter. (Some ORDINARY global
+// events share ids with the teacher range; the MM6.EXE topic dispatch @0x496b42 shadows them
+// unconditionally for NPC topics, so listing and intercepting these ids is faithful.)
+static bool isMm6ReservedNPCTopic(unsigned int eventId) {
+    return engine->gameVersion() == GAME_VERSION_MM6 &&
+           ((eventId >= 381 && eventId <= 397) || (eventId >= 200 && eventId <= 259));
 }
 
 std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
@@ -667,7 +876,7 @@ std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
 #define ADD_NPC_SCRIPTED_DIALOGUE(EVENT_ID, MSG_PARAM) \
     if (EVENT_ID) { \
         if (optionList.size() < 4) { \
-            if (isMm6JoinGuildTopic(EVENT_ID)) { \
+            if (isMm6ReservedNPCTopic(EVENT_ID)) { \
                 optionList.push_back(MSG_PARAM); \
             } else { \
                 int res = npcDialogueEventProcessor(EVENT_ID); \
@@ -724,8 +933,13 @@ DialogueId handleScriptedNPCTopicSelection(DialogueId topic, NPCData *npcData) {
             topicEventId = eventId;
             return DIALOGUE_MAGIC_GUILD_OFFER;
         }
-        // MM6 NPC teachers (topics 200-259) are still routed to the generic path and no-op;
-        // tracked in docs/pending/mm6-npc-teachers.md.
+        if (eventId >= 200 && eventId <= 259) {
+            // An expert/master skill teacher: the offer prose is npctext row [topic id]
+            // (the Merchant teachers' rows 244/245 even name the decoded prices and ranks).
+            current_npc_text = pNPCTopics[eventId - 1].pText;
+            topicEventId = eventId;
+            return DIALOGUE_MASTERY_TEACHER_OFFER;
+        }
     }
     if (engine->gameVersion() == GAME_VERSION_MM7) {
         if (eventId == 311) {
@@ -781,9 +995,17 @@ void selectSpecialNPCTopicSelection(DialogueId topic, NPCData* npcData) {
     if (topic == DIALOGUE_MASTERY_TEACHER_LEARN) {
         if (membershipOrTrainingApproved) {
             if (pParty->hasActiveCharacter()) {
-                uint8_t teacherLevel = (topicEventId - 200) % 3;
-                Skill skillBeingTaught = static_cast<Skill>((topicEventId - 200) / 3);
-                Mastery newMastery = static_cast<Mastery>(teacherLevel + 2);
+                Skill skillBeingTaught;
+                Mastery newMastery;
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6 teacher topics are 200 + 2 x skill slot (+1 for master); MM7's are
+                    // 200 + 3 x skill (+0/1/2 for expert/master/grandmaster).
+                    skillBeingTaught = mm6TeacherSkill(topicEventId);
+                    newMastery = mm6IsMasterTeacherTopic(topicEventId) ? MASTERY_MASTER : MASTERY_EXPERT;
+                } else {
+                    skillBeingTaught = static_cast<Skill>((topicEventId - 200) / 3);
+                    newMastery = static_cast<Mastery>((topicEventId - 200) % 3 + 2);
+                }
                 CombinedSkillValue skillValue = CombinedSkillValue::increaseMastery(pParty->activeCharacter().getSkillValue(skillBeingTaught), newMastery);
                 pParty->activeCharacter().setSkillValue(skillBeingTaught, skillValue);
                 pParty->activeCharacter().playReaction(SPEECH_SKILL_MASTERY_INC);
