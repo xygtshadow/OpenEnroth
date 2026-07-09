@@ -57,6 +57,7 @@
 #include "GUI/GUIButton.h"
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/GUIWindow.h"
+#include "GUI/UI/UICharacter.h"
 #include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIHouses.h"
@@ -3964,4 +3965,87 @@ GAME_TEST(Mm6, GameHudSkin) {
     game.tick(3);
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
     game.tick(1);
+}
+
+// Milestone 42: the character screen draws from MM6's own skin - leather + fr_* parchments,
+// BUTT* tab buttons at MM6's rects, and the MM6 paper doll (per-face body/arms, armor doll
+// variants, items at their items.txt anchors) with the BACKHAND rings view.
+GAME_TEST(Mm6, CharacterScreenSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Dress the active character to exercise every doll branch: bow behind the body, cape back
+    // side, chain-mail doll variant (CHN2), closed helm, belt, boots at their anchors - plus the
+    // starting equipped weapon.
+    Character &active = pParty->activeCharacter();
+    auto equipInto = [&](ItemSlot slot, int itemId) {
+        if (InventoryEntry existing = active.inventory.entry(slot))
+            active.inventory.take(existing);
+        ASSERT_TRUE(active.inventory.equip(slot, Item(ItemId(itemId))));
+    };
+    equipInto(ITEM_SLOT_BOW, 43);      // bow2.
+    equipInto(ITEM_SLOT_CLOAK, 106);   // cape2a -> CAPE2B back side.
+    equipInto(ITEM_SLOT_ARMOUR, 72);   // chn2icon -> CHN2 BOD/ARM1/ARM2 doll art.
+    equipInto(ITEM_SLOT_HELMET, 90);   // hlm2icon -> HELM2 doll art.
+    equipInto(ITEM_SLOT_BELT, 101);    // belt2a -> BELT2B doll art.
+    equipInto(ITEM_SLOT_BOOTS, 116);   // boots2, drawn at its items.txt anchor.
+
+    game.pressAndReleaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+
+    // The backgrounds are MM6's own: fr_* share MM7's names but have MM6's dimensions, and the
+    // doll panel assets are BACKDOLL/BACKHAND/MAGNIF-B from MM6 icons.lod.
+    EXPECT_EQ(ui_character_stats_background->size(), Sizei(443, 295));
+    EXPECT_EQ(ui_character_skills_background->size(), Sizei(443, 299));
+    EXPECT_EQ(ui_character_awards_background->size(), Sizei(443, 299));
+    EXPECT_EQ(ui_character_inventory_background->size(), Sizei(449, 289));
+    EXPECT_EQ(ui_character_inventory_paperdoll_background->size(), Sizei(173, 353));
+    EXPECT_EQ(assets->getImage_Alpha("backhand")->size(), Sizei(153, 353));
+    EXPECT_EQ(assets->getImage_Alpha("magnif-b")->size(), Sizei(33, 51));
+    EXPECT_EQ(ui_leather_mm7->size(), Sizei(460, 344));  // LEATHER fills the viewport.
+
+    // Doll art for the default party resolves per face (Roderick face 0 = mla*), and the
+    // hand overlays are MM6's.
+    EXPECT_EQ(assets->getImage_Alpha("mlabod")->size(), Sizei(114, 298));
+    EXPECT_EQ(assets->getImage_Alpha("rthand")->size(), Sizei(18, 19));
+    EXPECT_EQ(assets->getImage_Alpha("lefthand")->size(), Sizei(20, 19));
+
+    // MM6 tab buttons: 75x33 at y=318, x=22/115/208/301/394 (MM6.EXE 0x41fa60), BUTT*1 up /
+    // BUTT*2 pressed. CreateButton stores w+1/h+1 (closed-interval heritage).
+    EXPECT_EQ(pCharacterScreen_StatsBtn->rect, Recti(22, 318, 76, 34));
+    EXPECT_EQ(pCharacterScreen_SkillsBtn->rect, Recti(115, 318, 76, 34));
+    EXPECT_EQ(pCharacterScreen_InventoryBtn->rect, Recti(208, 318, 76, 34));
+    EXPECT_EQ(pCharacterScreen_AwardsBtn->rect, Recti(301, 318, 76, 34));
+    EXPECT_EQ(pCharacterScreen_ExitBtn->rect, Recti(394, 318, 76, 34));
+    EXPECT_EQ(pCharacterScreen_StatsBtn->vTextures[0], assets->getImage_Solid("buttsta1"));
+    EXPECT_EQ(pCharacterScreen_StatsBtn->vTextures[1], assets->getImage_Solid("buttsta2"));
+    EXPECT_EQ(pCharacterScreen_ExitBtn->vTextures[0], assets->getImage_Solid("buttexi1"));
+
+    // Every tab draws with the doll beside it (the doll composes on all tabs in MM6).
+    for (UIMessageType message : {UIMSG_ClickStatsBtn, UIMSG_ClickSkillsBtn, UIMSG_ClickAwardsBtn, UIMSG_ClickInventoryBtn}) {
+        engine->_messageQueue->addMessageCurrentFrame(message, 0, 0);
+        game.tick(2);
+    }
+
+    // The magnifier at (600,300) toggles the rings view (BACKHAND + guy_up + accessories) and back.
+    game.pressAndReleaseButton(BUTTON_LEFT, 615, 315);
+    game.tick(2);
+    EXPECT_TRUE(ringscreenactive());
+    game.pressAndReleaseButton(BUTTON_LEFT, 615, 315);
+    game.tick(2);
+    EXPECT_FALSE(ringscreenactive());
+
+    // A two-handed main-hand weapon switches the doll to the grip pose (arm2 + ARM2 sleeve).
+    if (InventoryEntry offhand = active.inventory.entry(ITEM_SLOT_OFF_HAND))
+        active.inventory.take(offhand);
+    equipInto(ITEM_SLOT_MAIN_HAND, 6);  // A two-handed weapon (Weapon2 row).
+    game.tick(2);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
 }

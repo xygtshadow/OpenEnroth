@@ -651,7 +651,12 @@ void SetUserInterface(PartyAlignment align) {
         messagebox_border_top = assets->getImage_Alpha("edge_top");
         _591428_endcap = assets->getImage_ColorKey("endcap");
 
-        // No MM6 equivalents (character-screen & dialogue skins are tracked separately) - keep placeholders.
+        // The MM6 inventory parchment; draws at (14,17), aligned with the grid origin
+        // (MM6.EXE 0x416616). Drawn with the palette-0-transparent blit like the other fr_*.
+        ui_character_inventory_background = assets->getImage_Alpha("fr_inven");
+
+        // No MM6 equivalents (the dialogue skin is tracked separately; MM6 shows buffs via the
+        // overlay rows and has no selection-frame analog) - keep placeholders.
         GraphicsImage *placeholder = GraphicsImage::Create(1, 1);
         game_ui_player_selection_frame = placeholder;
         game_ui_playerbuff_bless = placeholder;
@@ -659,7 +664,6 @@ void SetUserInterface(PartyAlignment align) {
         game_ui_playerbuff_hammerhands = placeholder;
         game_ui_playerbuff_pain_reflection = placeholder;
         game_ui_evtnpc = placeholder;
-        ui_character_inventory_background = placeholder;
 
         game_ui_wizardEye = pIconsFrameTable->animationId("wizeye"); // -1, MM6 has no such animation.
         game_ui_torchLight = pIconsFrameTable->animationId("torch"); // Same.

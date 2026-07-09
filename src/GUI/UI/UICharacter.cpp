@@ -30,6 +30,7 @@
 #include "GUI/GUIButton.h"
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/UI/ItemGrid.h"
+#include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIInventory.h"
 
 #include "Io/Mouse.h"
@@ -550,6 +551,273 @@ std::array<GraphicsImage *, 16> paperdoll_dbrds;
 
 Recti savedInventoryLeftClickButtonRect;
 
+// --- MM6 character screen & paper doll, reversed from MM6.EXE ---------------------------------
+// Asset loaders 0x411e80..0x412361, doll draw 0x412370, rings view 0x412db0, per-tab background
+// draws 0x413900 (stats) / ~0x4158d0 (skills) / ~0x416275 (awards) / 0x4165e0 (inventory),
+// main draw + button setup 0x4173d0 / 0x41fa60. Framebuffer destinations decode as
+// byteoffset/2 = y*640 + x, coordinate word tables live at 0x4bcdf8..0x4bd004.
+//
+// MM6's doll model: the doll body/forearms are per-FACE sprites ({ml|grl}{a-h|a-d}{bod,arm1,arm2});
+// most equipped items draw their own inventory bitmap at the ABSOLUTE screen anchor from items.txt
+// "Equip X/Y" (already parsed into ItemData::paperdollAnchorOffset); body armor / cloaks / helms /
+// belts substitute dedicated doll art (LR/CHN/PL variants, CAPE%dB, HELM%d / HAT%dB / CROWN%dB,
+// BELT%dB) - armor at per-variant coords, the rest still at the item's anchor.
+
+static std::array<GraphicsImage *, 4> paperdollMm6Bods = {{}};   // Per party slot: doll body by face.
+static std::array<GraphicsImage *, 4> paperdollMm6Arm1s = {{}};  // Hanging forearm.
+static std::array<GraphicsImage *, 4> paperdollMm6Arm2s = {{}};  // Two-hand-grip forearm.
+static std::array<GraphicsImage *, 13> paperdollMm6ArmorBods = {{}};  // LR1-5, CHN1-5, PL1-3.
+static std::array<GraphicsImage *, 13> paperdollMm6ArmorArm1s = {{}};
+static std::array<GraphicsImage *, 13> paperdollMm6ArmorArm2s = {{}};
+static std::array<GraphicsImage *, 5> paperdollMm6Belts = {{}};  // BELT1B..5B, item ids 100-104.
+static std::array<GraphicsImage *, 5> paperdollMm6Capes = {{}};  // CAPE1B..5B, item ids 105-109.
+static GraphicsImage *paperdollMm6CapeNwc = nullptr;             // nwcapeb, any other cloak.
+static std::array<GraphicsImage *, 11> paperdollMm6Helms = {{}};  // Ids 89-99: HELM1-5, HAT1-3B, CROWN1-3B.
+static GraphicsImage *paperdollMm6RtHand = nullptr;    // Off-hand fist gripping a dual-wielded weapon.
+static GraphicsImage *paperdollMm6LeftHand = nullptr;  // Hand gripping the main-hand weapon.
+static GraphicsImage *paperdollMm6GuyUp = nullptr;     // "Back to doll" image over the magnifier in rings view.
+static std::array<std::array<GraphicsImage *, 2>, 5> paperdollMm6TabButtons = {{}};  // {up, pressed} x stats/skills/inv/awards/exit.
+static std::array<GraphicsImage *, 4> paperdollMm6TabHots = {{}};  // Highlight over the active tab's button.
+
+// Doll body / forearm anchors per face (0-7 male, 8-11 female); EXE tables 0x4bcea0/0x4bceb8,
+// 0x4bced0/0x4bcee8, 0x4bcf18 (arm2 x is a constant 513).
+static constexpr std::array<Pointi, 12> kMm6DollBodyPos = {{
+    {495, 52}, {495, 53}, {495, 52}, {495, 52}, {495, 52}, {495, 52}, {494, 53}, {495, 51},
+    {497, 52}, {493, 52}, {495, 52}, {495, 51},
+}};
+static constexpr std::array<Pointi, 12> kMm6DollArm1Pos = {{
+    {587, 106}, {579, 100}, {574, 107}, {588, 102}, {592, 102}, {584, 105}, {582, 100}, {585, 104},
+    {585, 104}, {583, 103}, {586, 102}, {584, 101},
+}};
+static constexpr std::array<int, 12> kMm6DollArm2Y = {104, 99, 103, 102, 100, 104, 107, 106, 105, 104, 107, 101};
+
+// Armor doll-art anchors per variant (LR1-5, CHN1-5, PL1-3); EXE tables 0x4bcdf8/0x4bce14 (BOD),
+// 0x4bce30/0x4bce4c (ARM1 sleeve), 0x4bce68/0x4bce84 (ARM2 sleeve).
+static constexpr std::array<Pointi, 13> kMm6ArmorBodPos = {{
+    {534, 98}, {516, 94}, {514, 93}, {510, 92}, {525, 93}, {523, 92}, {521, 91}, {506, 94},
+    {508, 94}, {497, 94}, {494, 102}, {494, 101}, {495, 97},
+}};
+static constexpr std::array<Pointi, 13> kMm6ArmorArm1Pos = {{
+    {569, 98}, {568, 96}, {569, 97}, {569, 96}, {577, 96}, {577, 96}, {576, 95}, {568, 95},
+    {569, 97}, {572, 96}, {580, 103}, {583, 103}, {582, 104},
+}};
+static constexpr std::array<Pointi, 13> kMm6ArmorArm2Pos = {{
+    {563, 98}, {568, 96}, {569, 99}, {572, 95}, {566, 97}, {565, 95}, {564, 94}, {568, 94},
+    {568, 97}, {568, 97}, {513, 103}, {513, 104}, {513, 103},
+}};
+
+// A sword/dagger wielded in the OFF hand draws at these per-item-id coords instead of its
+// right-hand items.txt anchor; EXE tables 0x4bcf30/0x4bcf8c (ids 0-22, zeros = never off-hand).
+static constexpr std::array<Pointi, 23> kMm6OffhandWeaponPos = {{
+    {0, 0}, {591, 32}, {594, 34}, {598, 35}, {597, 29}, {595, 33}, {0, 0}, {0, 0},
+    {0, 0}, {597, 43}, {594, 41}, {596, 28}, {595, 29}, {598, 39}, {594, 39}, {595, 107},
+    {600, 101}, {598, 94}, {602, 109}, {596, 106}, {596, 69}, {598, 74}, {596, 86},
+}};
+
+// MM6 tab buttons: 75x33 at y=318 (EXE 0x41fa60), images BUTT{STA,SKI,INV,AWA,EXI}{1,2}.
+static constexpr std::array<int, 5> kMm6CharTabButtonX = {22, 115, 208, 301, 394};
+static constexpr int kMm6CharTabButtonY = 318;
+
+// Doll sprite prefix by face id: 0-7 = mla..mlh, 8-11 = grla..grld (same split as the HUD faces).
+static std::string mm6DollPrefix(int face) {
+    if (face < 8)
+        return fmt::format("ml{}", static_cast<char>('a' + face));
+    return fmt::format("grl{}", static_cast<char>('a' + face - 8));
+}
+
+static void CharacterUI_LoadPaperdollTexturesMm6() {
+    ui_character_inventory_magnification_glass = assets->getImage_Alpha("magnif-b");
+    ui_character_inventory_paperdoll_background = assets->getImage_Solid("backdoll");
+    ui_character_inventory_paperdoll_rings_background = assets->getImage_Alpha("backhand");
+
+    ui_ar_up_up = assets->getImage_Solid("ar_up_up");
+    ui_ar_up_dn = assets->getImage_Solid("ar_up_dn");
+    ui_ar_dn_up = assets->getImage_Solid("ar_dn_up");
+    ui_ar_dn_dn = assets->getImage_Solid("ar_dn_dn");
+
+    for (int i = 0; i < pParty->pCharacters.size(); ++i) {
+        std::string prefix = mm6DollPrefix(pParty->pCharacters[i].uCurrentFace);
+        paperdollMm6Bods[i] = assets->getImage_Alpha(prefix + "bod");
+        paperdollMm6Arm1s[i] = assets->getImage_Alpha(prefix + "arm1");
+        paperdollMm6Arm2s[i] = assets->getImage_Alpha(prefix + "arm2");
+    }
+
+    for (int v = 0; v < 13; ++v) {
+        std::string prefix = v < 5 ? fmt::format("lr{}", v + 1)
+                           : v < 10 ? fmt::format("chn{}", v - 4)
+                                    : fmt::format("pl{}", v - 9);
+        paperdollMm6ArmorBods[v] = assets->getImage_Alpha(prefix + "bod");
+        paperdollMm6ArmorArm1s[v] = assets->getImage_Alpha(prefix + "arm1");
+        paperdollMm6ArmorArm2s[v] = assets->getImage_Alpha(prefix + "arm2");
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        paperdollMm6Belts[i] = assets->getImage_Alpha(fmt::format("belt{}b", i + 1));
+        paperdollMm6Capes[i] = assets->getImage_Alpha(fmt::format("cape{}b", i + 1));
+        paperdollMm6Helms[i] = assets->getImage_Alpha(fmt::format("helm{}", i + 1));
+    }
+    for (int i = 0; i < 3; ++i) {
+        paperdollMm6Helms[5 + i] = assets->getImage_Alpha(fmt::format("hat{}b", i + 1));
+        paperdollMm6Helms[8 + i] = assets->getImage_Alpha(fmt::format("crown{}b", i + 1));
+    }
+    paperdollMm6CapeNwc = assets->getImage_Alpha("nwcapeb");
+    paperdollMm6RtHand = assets->getImage_Alpha("rthand");
+    paperdollMm6LeftHand = assets->getImage_Alpha("lefthand");
+    paperdollMm6GuyUp = assets->getImage_Alpha("guy_up");  // Drawn with the transparent blit (EXE 0x412e08).
+
+    static constexpr std::array<const char *, 5> kTabNames = {"sta", "ski", "inv", "awa", "exi"};
+    for (int i = 0; i < 5; ++i) {
+        paperdollMm6TabButtons[i][0] = assets->getImage_Solid(fmt::format("butt{}1", kTabNames[i]));
+        paperdollMm6TabButtons[i][1] = assets->getImage_Solid(fmt::format("butt{}2", kTabNames[i]));
+    }
+    paperdollMm6TabHots[0] = assets->getImage_Solid("stat_hot");
+    paperdollMm6TabHots[1] = assets->getImage_Solid("skil_hot");
+    paperdollMm6TabHots[2] = assets->getImage_Solid("equi_hot");
+    paperdollMm6TabHots[3] = assets->getImage_Solid("awar_hot");
+}
+
+// The MM6 armor doll-art variant for an item id: ids 66-78 map onto LR1..PL3 directly, the two
+// artifact armors reuse CHN5/PL3 (EXE jump table 0x412d48). -1 = no doll art.
+static int mm6ArmorVariant(int itemId) {
+    if (itemId == 406 || itemId == 421)
+        return 9;   // CHN5.
+    if (itemId == 407 || itemId == 422)
+        return 12;  // PL3.
+    int v = itemId - 66;
+    return v >= 0 && v <= 12 ? v : -1;
+}
+
+// MM6.EXE 0x412370: composes the paper doll into the right screen column, BACKDOLL at (467,0).
+static void CharacterUI_DrawPaperdollMm6(Character *player) {
+    int uPlayerID = pParty->getCharacterIdInParty(player);
+
+    equipmentHitMap.clear();
+    render->ResetUIClipRect();
+    render->DrawQuad2D(ui_character_inventory_paperdoll_background, {467, 0});
+
+    InventoryEntry itemMainHand = player->inventory.entry(ITEM_SLOT_MAIN_HAND);
+    InventoryEntry itemOffHand = player->inventory.entry(ITEM_SLOT_OFF_HAND);
+    bool twoHandedGrip = itemMainHand && (itemMainHand->type() == ITEM_TYPE_TWO_HANDED ||
+                                          itemMainHand->skill() == SKILL_SPEAR && !itemOffHand);
+    int face = player->uCurrentFace;
+    bool doZDraw = !bRingsShownInCharScreen;
+
+    // Most items draw their own bitmap at the absolute items.txt anchor; doll-art substitutes
+    // (capes, helms, belts) still use the item's anchor.
+    auto drawItemAtAnchor = [&](InventoryEntry entry, GraphicsImage *texture = nullptr) {
+        Pointi anchor = pItemTable->items[entry->itemId].paperdollAnchorOffset;
+        CharacterUI_DrawItem(anchor.x, anchor.y, entry.get(), entry.index(), texture, doZDraw);
+    };
+
+    // Bow, then the cape's back side - both behind the body.
+    if (InventoryEntry bow = player->inventory.entry(ITEM_SLOT_BOW))
+        drawItemAtAnchor(bow);
+    if (InventoryEntry cloak = player->inventory.entry(ITEM_SLOT_CLOAK)) {
+        int id = std::to_underlying(cloak->itemId);
+        drawItemAtAnchor(cloak, id >= 105 && id <= 109 ? paperdollMm6Capes[id - 105] : paperdollMm6CapeNwc);
+    }
+
+    render->DrawQuad2D(paperdollMm6Bods[uPlayerID], kMm6DollBodyPos[face]);
+
+    InventoryEntry armor = player->inventory.entry(ITEM_SLOT_ARMOUR);
+    int armorVariant = armor ? mm6ArmorVariant(std::to_underlying(armor->itemId)) : -1;
+    if (armorVariant >= 0)
+        CharacterUI_DrawItem(kMm6ArmorBodPos[armorVariant].x, kMm6ArmorBodPos[armorVariant].y,
+                             armor.get(), armor.index(), paperdollMm6ArmorBods[armorVariant], doZDraw);
+
+    if (InventoryEntry helm = player->inventory.entry(ITEM_SLOT_HELMET)) {
+        int id = std::to_underlying(helm->itemId);
+        GraphicsImage *texture = nullptr;
+        if (id >= 89 && id <= 99)
+            texture = paperdollMm6Helms[id - 89];
+        else if (id == 409 || id == 424)  // Artifact crowns reuse CROWN3B (EXE 0x412669).
+            texture = paperdollMm6Helms[10];
+        drawItemAtAnchor(helm, texture);
+    }
+
+    if (InventoryEntry boots = player->inventory.entry(ITEM_SLOT_BOOTS))
+        drawItemAtAnchor(boots);
+
+    // The EXE composes the armor over the boots by drawing its BOD part a second time.
+    if (armorVariant >= 0)
+        CharacterUI_DrawItem(kMm6ArmorBodPos[armorVariant].x, kMm6ArmorBodPos[armorVariant].y,
+                             armor.get(), armor.index(), paperdollMm6ArmorBods[armorVariant], doZDraw);
+
+    // The forearm hangs at the side unless posed in a two-handed grip.
+    if (!twoHandedGrip)
+        render->DrawQuad2D(paperdollMm6Arm1s[uPlayerID], kMm6DollArm1Pos[face]);
+
+    if (InventoryEntry belt = player->inventory.entry(ITEM_SLOT_BELT)) {
+        int id = std::to_underlying(belt->itemId);
+        drawItemAtAnchor(belt, id >= 100 && id <= 104 ? paperdollMm6Belts[id - 100] : nullptr);
+    }
+
+    if (itemMainHand) {
+        drawItemAtAnchor(itemMainHand);
+        if (twoHandedGrip)
+            render->DrawQuad2D(paperdollMm6Arm2s[uPlayerID], {513, kMm6DollArm2Y[face]});
+    }
+
+    // The armor's sleeve goes over whichever forearm pose is showing.
+    if (armorVariant >= 0) {
+        const Pointi &pos = twoHandedGrip ? kMm6ArmorArm2Pos[armorVariant] : kMm6ArmorArm1Pos[armorVariant];
+        GraphicsImage *sleeve = twoHandedGrip ? paperdollMm6ArmorArm2s[armorVariant] : paperdollMm6ArmorArm1s[armorVariant];
+        CharacterUI_DrawItem(pos.x, pos.y, armor.get(), armor.index(), sleeve, doZDraw);
+    }
+
+    if (itemOffHand) {
+        int id = std::to_underlying(itemOffHand->itemId);
+        if (itemOffHand->skill() == SKILL_SWORD || itemOffHand->skill() == SKILL_DAGGER) {
+            // A dual-wielded blade hangs from the other hand - per-id coords, not the anchor.
+            Pointi pos;
+            if (id == 400) {          // Mordred.
+                pos = {596, 86};
+            } else if (id == 403) {   // Excalibur.
+                pos = {596, 28};
+            } else if (id == 415) {   // Hades.
+                pos = {595, 33};
+            } else if (id < static_cast<int>(kMm6OffhandWeaponPos.size()) && kMm6OffhandWeaponPos[id].x) {
+                pos = kMm6OffhandWeaponPos[id];
+            } else {
+                pos = pItemTable->items[itemOffHand->itemId].paperdollAnchorOffset;
+            }
+            CharacterUI_DrawItem(pos.x, pos.y, itemOffHand.get(), itemOffHand.index(), nullptr, doZDraw);
+            render->DrawQuad2D(paperdollMm6RtHand, {606, 186});
+        } else {
+            drawItemAtAnchor(itemOffHand);
+        }
+    }
+
+    // The hand gripping the main-hand weapon is always drawn.
+    render->DrawQuad2D(paperdollMm6LeftHand, {513, 160});
+
+    if (!bRingsShownInCharScreen)
+        render->DrawQuad2D(ui_character_inventory_magnification_glass, {603, 299});
+}
+
+// MM6.EXE 0x412db0: the rings view - doll, then BACKHAND at (481,0) with the accessories over it,
+// guy_up replacing the magnifier. Ring/amulet/gauntlet positions are the same values MM7 kept.
+static void CharacterUI_DrawPaperdollWithRingOverlayMm6(Character *player) {
+    CharacterUI_DrawPaperdollMm6(player);
+
+    render->DrawQuad2D(ui_character_inventory_paperdoll_rings_background, {481, 0});
+    render->DrawQuad2D(paperdollMm6GuyUp, {600, 300});
+
+    for (unsigned i = 0; i < 6; ++i) {
+        InventoryEntry entry = player->inventory.entry(ringSlot(i));
+        if (!entry)
+            continue;
+
+        static constexpr int kRingsX[6] = {490, 538, 584, 490, 538, 584};
+        static constexpr int kRingsY[6] = {202, 202, 202, 250, 250, 250};
+        CharacterUI_DrawItem(kRingsX[i], kRingsY[i], entry.get(), entry.index());
+    }
+    if (InventoryEntry entry = player->inventory.entry(ITEM_SLOT_AMULET))
+        CharacterUI_DrawItem(493, 91, entry.get(), entry.index());
+    if (InventoryEntry entry = player->inventory.entry(ITEM_SLOT_GAUNTLETS))
+        CharacterUI_DrawItem(586, 88, entry.get(), entry.index());
+}
+
 GUIWindow_CharacterRecord::GUIWindow_CharacterRecord(int uActiveCharacter, ScreenType screen)
     : GUIWindow(WINDOW_CharacterRecord, {0, 0}, render->GetRenderDimensions()) {
     pEventTimer->setPaused(true);
@@ -557,28 +825,56 @@ GUIWindow_CharacterRecord::GUIWindow_CharacterRecord(int uActiveCharacter, Scree
     CharacterUI_LoadPaperdollTextures();
     current_screen_type = screen;
 
-    pCharacterScreen_StatsBtn = CreateButton(pViewport.topLeft() + Pointi(12, 308),
-                                             paperdoll_dbrds[9]->size(), BUTTON_TYPE_NORMAL, 0,
-                                             UIMSG_ClickStatsBtn, 0, INPUT_ACTION_OPEN_STATS, localization->str(LSTR_STATS),
-                                             {{paperdoll_dbrds[10], paperdoll_dbrds[9]}});
-    pCharacterScreen_SkillsBtn = CreateButton(pViewport.topLeft() + Pointi(102, 308),
-                                              paperdoll_dbrds[7]->size(), BUTTON_TYPE_NORMAL, 0,
-                                              UIMSG_ClickSkillsBtn, 0, INPUT_ACTION_OPEN_SKILLS, localization->str(LSTR_SKILLS),
-                                              {{paperdoll_dbrds[8], paperdoll_dbrds[7]}});
-    pCharacterScreen_InventoryBtn = CreateButton(pViewport.topLeft() + Pointi(192, 308),
-                                                 paperdoll_dbrds[5]->size(), BUTTON_TYPE_NORMAL, 0,
-                                                 UIMSG_ClickInventoryBtn, 0, INPUT_ACTION_OPEN_INVENTORY,
-                                                 localization->str(LSTR_INVENTORY),
-                                                 {{paperdoll_dbrds[6], paperdoll_dbrds[5]}});
-    pCharacterScreen_AwardsBtn = CreateButton(pViewport.topLeft() + Pointi(282, 308),
-                                              paperdoll_dbrds[3]->size(), BUTTON_TYPE_NORMAL, 0,
-                                              UIMSG_ClickAwardsBtn, 0, INPUT_ACTION_OPEN_AWARDS, localization->str(LSTR_AWARDS),
-                                              {{paperdoll_dbrds[4], paperdoll_dbrds[3]}});
-    pCharacterScreen_ExitBtn = CreateButton(pViewport.topLeft() + Pointi(371, 308),
-                                            paperdoll_dbrds[1]->size(), BUTTON_TYPE_NORMAL, 0,
-                                            UIMSG_ClickExitCharacterWindowBtn, 0, INPUT_ACTION_INVALID,
-                                            localization->str(LSTR_EXIT_DIALOGUE),
-                                            {{paperdoll_dbrds[2], paperdoll_dbrds[1]}});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 tab buttons: 75x33 at y=318 (MM6.EXE 0x41fa60); OnButtonClick3 draws vTextures[1],
+        // so the order is {up, pressed}.
+        static constexpr Sizei kTabSize = {75, 33};
+        pCharacterScreen_StatsBtn = CreateButton({kMm6CharTabButtonX[0], kMm6CharTabButtonY}, kTabSize,
+                                                 BUTTON_TYPE_NORMAL, 0,
+                                                 UIMSG_ClickStatsBtn, 0, INPUT_ACTION_OPEN_STATS, localization->str(LSTR_STATS),
+                                                 {{paperdollMm6TabButtons[0][0], paperdollMm6TabButtons[0][1]}});
+        pCharacterScreen_SkillsBtn = CreateButton({kMm6CharTabButtonX[1], kMm6CharTabButtonY}, kTabSize,
+                                                  BUTTON_TYPE_NORMAL, 0,
+                                                  UIMSG_ClickSkillsBtn, 0, INPUT_ACTION_OPEN_SKILLS, localization->str(LSTR_SKILLS),
+                                                  {{paperdollMm6TabButtons[1][0], paperdollMm6TabButtons[1][1]}});
+        pCharacterScreen_InventoryBtn = CreateButton({kMm6CharTabButtonX[2], kMm6CharTabButtonY}, kTabSize,
+                                                     BUTTON_TYPE_NORMAL, 0,
+                                                     UIMSG_ClickInventoryBtn, 0, INPUT_ACTION_OPEN_INVENTORY,
+                                                     localization->str(LSTR_INVENTORY),
+                                                     {{paperdollMm6TabButtons[2][0], paperdollMm6TabButtons[2][1]}});
+        pCharacterScreen_AwardsBtn = CreateButton({kMm6CharTabButtonX[3], kMm6CharTabButtonY}, kTabSize,
+                                                  BUTTON_TYPE_NORMAL, 0,
+                                                  UIMSG_ClickAwardsBtn, 0, INPUT_ACTION_OPEN_AWARDS, localization->str(LSTR_AWARDS),
+                                                  {{paperdollMm6TabButtons[3][0], paperdollMm6TabButtons[3][1]}});
+        pCharacterScreen_ExitBtn = CreateButton({kMm6CharTabButtonX[4], kMm6CharTabButtonY}, kTabSize,
+                                                BUTTON_TYPE_NORMAL, 0,
+                                                UIMSG_ClickExitCharacterWindowBtn, 0, INPUT_ACTION_INVALID,
+                                                localization->str(LSTR_EXIT_DIALOGUE),
+                                                {{paperdollMm6TabButtons[4][0], paperdollMm6TabButtons[4][1]}});
+    } else {
+        pCharacterScreen_StatsBtn = CreateButton(pViewport.topLeft() + Pointi(12, 308),
+                                                 paperdoll_dbrds[9]->size(), BUTTON_TYPE_NORMAL, 0,
+                                                 UIMSG_ClickStatsBtn, 0, INPUT_ACTION_OPEN_STATS, localization->str(LSTR_STATS),
+                                                 {{paperdoll_dbrds[10], paperdoll_dbrds[9]}});
+        pCharacterScreen_SkillsBtn = CreateButton(pViewport.topLeft() + Pointi(102, 308),
+                                                  paperdoll_dbrds[7]->size(), BUTTON_TYPE_NORMAL, 0,
+                                                  UIMSG_ClickSkillsBtn, 0, INPUT_ACTION_OPEN_SKILLS, localization->str(LSTR_SKILLS),
+                                                  {{paperdoll_dbrds[8], paperdoll_dbrds[7]}});
+        pCharacterScreen_InventoryBtn = CreateButton(pViewport.topLeft() + Pointi(192, 308),
+                                                     paperdoll_dbrds[5]->size(), BUTTON_TYPE_NORMAL, 0,
+                                                     UIMSG_ClickInventoryBtn, 0, INPUT_ACTION_OPEN_INVENTORY,
+                                                     localization->str(LSTR_INVENTORY),
+                                                     {{paperdoll_dbrds[6], paperdoll_dbrds[5]}});
+        pCharacterScreen_AwardsBtn = CreateButton(pViewport.topLeft() + Pointi(282, 308),
+                                                  paperdoll_dbrds[3]->size(), BUTTON_TYPE_NORMAL, 0,
+                                                  UIMSG_ClickAwardsBtn, 0, INPUT_ACTION_OPEN_AWARDS, localization->str(LSTR_AWARDS),
+                                                  {{paperdoll_dbrds[4], paperdoll_dbrds[3]}});
+        pCharacterScreen_ExitBtn = CreateButton(pViewport.topLeft() + Pointi(371, 308),
+                                                paperdoll_dbrds[1]->size(), BUTTON_TYPE_NORMAL, 0,
+                                                UIMSG_ClickExitCharacterWindowBtn, 0, INPUT_ACTION_INVALID,
+                                                localization->str(LSTR_EXIT_DIALOGUE),
+                                                {{paperdoll_dbrds[2], paperdoll_dbrds[1]}});
+    }
     CreateButton({0, 0}, {476, 345}, BUTTON_TYPE_NORMAL, 122, UIMSG_InventoryLeftClick, 0);
     pCharacterScreen_DetalizBtn = CreateButton({600, 300}, {30, 30}, BUTTON_TYPE_NORMAL, 0,
         UIMSG_ChangeDetaliz, 0, INPUT_ACTION_INVALID, localization->str(LSTR_DETAIL_TOGGLE));
@@ -588,10 +884,19 @@ GUIWindow_CharacterRecord::GUIWindow_CharacterRecord(int uActiveCharacter, Scree
 
     fillAwardsData();
 
-    ui_character_skills_background = assets->getImage_ColorKey("fr_skill");
-    ui_character_awards_background = assets->getImage_ColorKey("fr_award");
-    ui_character_stats_background = assets->getImage_ColorKey("fr_stats");
-    ui_character_inventory_background_strip = assets->getImage_ColorKey("fr_strip");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // Same names as MM7, but MM6.EXE draws these with the palette-0-transparent blit
+        // (0x40a680); TealMask color-keying never matches MM6 palettes.
+        ui_character_skills_background = assets->getImage_Alpha("fr_skill");
+        ui_character_awards_background = assets->getImage_Alpha("fr_award");
+        ui_character_stats_background = assets->getImage_Alpha("fr_stats");
+        // No fr_strip in MM6 - the inventory tab has no bottom strip.
+    } else {
+        ui_character_skills_background = assets->getImage_ColorKey("fr_skill");
+        ui_character_awards_background = assets->getImage_ColorKey("fr_award");
+        ui_character_stats_background = assets->getImage_ColorKey("fr_stats");
+        ui_character_inventory_background_strip = assets->getImage_ColorKey("fr_strip");
+    }
 
     scrollstop = assets->getImage_ColorKey("con_x");
 }
@@ -629,17 +934,42 @@ void GUIWindow_CharacterRecord::createAwardsScrollBar() {
     }
 }
 
+// The MM6 tab-button row: all five buttons draw their "up" image every frame, with the
+// highlight image over the active tab (MM6.EXE 0x4173d0 + the *_hot draw in the tab handlers).
+static void CharacterUI_DrawTabButtonsMm6(int activeTab) {
+    static const std::array<GUIButton **, 5> kButtons = {
+        &pCharacterScreen_StatsBtn, &pCharacterScreen_SkillsBtn, &pCharacterScreen_InventoryBtn,
+        &pCharacterScreen_AwardsBtn, &pCharacterScreen_ExitBtn,
+    };
+    for (int i = 0; i < 5; ++i)
+        render->DrawQuad2D(paperdollMm6TabButtons[i][0], (*kButtons[i])->rect.topLeft());
+    if (activeTab >= 0 && activeTab < 4)
+        render->DrawQuad2D(paperdollMm6TabHots[activeTab], (*kButtons[activeTab])->rect.topLeft());
+}
+
 void GUIWindow_CharacterRecord::Update() {
     if (!pParty->hasActiveCharacter())
         return;
     auto player = &pParty->activeCharacter();
+
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    if (isMm6) {
+        // MM6's screen base: the leather texture fills the viewport with the corner patches
+        // over it, and the tab parchment goes on top (MM6.EXE 0x4173d0).
+        render->DrawQuad2D(ui_leather_mm7, {8, 8});
+        render->DrawQuad2D(game_ui_mm6_border5, {7, 8});
+        render->DrawQuad2D(game_ui_mm6_border6, {461, 8});
+    }
 
     switch (current_character_screen_window) {
         case WINDOW_CharacterWindow_Stats: {
             CharacterUI_ReleaseButtons();
             releaseAwardsScrollBar();
             CharacterUI_StatsTab_Draw(player);
-            render->DrawQuad2D(assets->getImage_ColorKey("ib-cd1-d"), pCharacterScreen_StatsBtn->rect.topLeft());
+            if (isMm6)
+                CharacterUI_DrawTabButtonsMm6(0);
+            else
+                render->DrawQuad2D(assets->getImage_ColorKey("ib-cd1-d"), pCharacterScreen_StatsBtn->rect.topLeft());
             break;
         }
         case WINDOW_CharacterWindow_Skills: {
@@ -649,21 +979,30 @@ void GUIWindow_CharacterRecord::Update() {
             }
             releaseAwardsScrollBar();
             CharacterUI_SkillsTab_Draw(player);
-            render->DrawQuad2D(assets->getImage_ColorKey("ib-cd2-d"), pCharacterScreen_SkillsBtn->rect.topLeft());
+            if (isMm6)
+                CharacterUI_DrawTabButtonsMm6(1);
+            else
+                render->DrawQuad2D(assets->getImage_ColorKey("ib-cd2-d"), pCharacterScreen_SkillsBtn->rect.topLeft());
             break;
         }
         case WINDOW_CharacterWindow_Awards: {
             CharacterUI_ReleaseButtons();
             createAwardsScrollBar();
             CharacterUI_AwardsTab_Draw(player);
-            render->DrawQuad2D(assets->getImage_ColorKey("ib-cd4-d"), pCharacterScreen_AwardsBtn->rect.topLeft());
+            if (isMm6)
+                CharacterUI_DrawTabButtonsMm6(3);
+            else
+                render->DrawQuad2D(assets->getImage_ColorKey("ib-cd4-d"), pCharacterScreen_AwardsBtn->rect.topLeft());
             break;
         }
         case WINDOW_CharacterWindow_Inventory: {
             CharacterUI_ReleaseButtons();
             releaseAwardsScrollBar();
             CharacterUI_InventoryTab_Draw(player, false);
-            render->DrawQuad2D(assets->getImage_ColorKey("ib-cd3-d"), pCharacterScreen_InventoryBtn->rect.topLeft());
+            if (isMm6)
+                CharacterUI_DrawTabButtonsMm6(2);
+            else
+                render->DrawQuad2D(assets->getImage_ColorKey("ib-cd3-d"), pCharacterScreen_InventoryBtn->rect.topLeft());
             break;
         }
         default:
@@ -718,7 +1057,14 @@ void GUIWindow_CharacterRecord::ToggleRingsOverlay() {
     bRingsShownInCharScreen ^= 1;
     pCharacterScreen_DetalizBtn->Release();
     pCharacterScreen_DollBtn->Release();
-    if (bRingsShownInCharScreen) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 keeps the toggle at the magnifier's spot in both views - the rings view just
+        // draws guy_up over it (MM6.EXE 0x412df0).
+        h = 30;
+        w = 30;
+        y = 300;
+        x = 600;
+    } else if (bRingsShownInCharScreen) {
         h = ui_exit_cancel_button_background->height();
         w = ui_exit_cancel_button_background->width();
         y = 445;
@@ -824,7 +1170,8 @@ static int drawSkillTable(Character *player, int x, int y, const std::initialize
 
 //----- (00419719) --------------------------------------------------------
 void GUIWindow_CharacterRecord::CharacterUI_SkillsTab_Draw(Character *player) {
-    render->DrawQuad2D(ui_character_skills_background, {8, 8});
+    render->DrawQuad2D(ui_character_skills_background,
+                       engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(17, 14) : Pointi(8, 8));
 
     auto str = fmt::format(
         "{} {::}{}\f00000\r177{}: {::}{}\f00000",  // ^Pv[]
@@ -931,7 +1278,8 @@ void GUIWindow_CharacterRecord::CharacterUI_AwardsTab_Draw(Character *player) {
     Recti window(12, 48, 424, 290);
     int stopPos = 0;
 
-    render->DrawQuad2D(ui_character_awards_background, {8, 8});
+    render->DrawQuad2D(ui_character_awards_background,
+                       engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(17, 14) : Pointi(8, 8));
 
     std::string str = fmt::format("{} {::}{}\f00000", localization->str(LSTR_AWARDS_FOR),
                                   ui_character_header_text_color.tag(), NameAndTitle(player->name, player->classType));
@@ -982,6 +1330,11 @@ void draw_leather() {
 
 //----- (0043CC7C) --------------------------------------------------------
 void CharacterUI_DrawPaperdoll(Character *player) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        CharacterUI_DrawPaperdollMm6(player);
+        return;
+    }
+
     int index;
     int item_X;
     int item_Y;
@@ -1253,11 +1606,17 @@ void CharacterUI_DrawPaperdoll(Character *player) {
 
 //----- (0041A2D1) --------------------------------------------------------
 void CharacterUI_InventoryTab_Draw(Character *player, bool Cover_Strip) {
-    render->DrawQuad2D(ui_character_inventory_background, {8, 8});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's inventory parchment aligns with the grid origin (MM6.EXE 0x416616);
+        // there is no fr_strip in MM6 data.
+        render->DrawQuad2D(ui_character_inventory_background, {14, 17});
+    } else {
+        render->DrawQuad2D(ui_character_inventory_background, {8, 8});
 
-    if (Cover_Strip) {
-        ui_character_inventory_background_strip = assets->getImage_ColorKey("fr_strip");
-        render->DrawQuad2D(ui_character_inventory_background_strip, {8, 305});
+        if (Cover_Strip) {
+            ui_character_inventory_background_strip = assets->getImage_ColorKey("fr_strip");
+            render->DrawQuad2D(ui_character_inventory_background_strip, {8, 305});
+        }
     }
 
     render->SetUIClipRect({ 14, 17, 32 * 14, 32 * 9 });
@@ -1335,6 +1694,11 @@ static void CharacterUI_DrawItem(int x, int y, Item *item, int id, GraphicsImage
 
 //----- (0043E825) --------------------------------------------------------
 void CharacterUI_DrawPaperdollWithRingOverlay(Character *player) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        CharacterUI_DrawPaperdollWithRingOverlayMm6(player);
+        return;
+    }
+
     CharacterUI_DrawPaperdoll(player);
 
     render->DrawQuad2D(ui_character_inventory_paperdoll_rings_background, {473, 0});
@@ -1362,6 +1726,11 @@ void CharacterUI_DrawPaperdollWithRingOverlay(Character *player) {
 
 //----- (0043BCA7) --------------------------------------------------------
 void CharacterUI_LoadPaperdollTextures() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        CharacterUI_LoadPaperdollTexturesMm6();
+        return;
+    }
+
     ui_character_inventory_magnification_glass = assets->getImage_Alpha("MAGNIF-B");
     ui_character_inventory_paperdoll_background = assets->getImage_ColorKey("BACKDOLL");
     ui_character_inventory_paperdoll_rings_background = assets->getImage_Alpha("BACKHAND");
@@ -1485,7 +1854,9 @@ void GUIWindow_CharacterRecord::CharacterUI_SkillsTab_CreateButtons() {
 }
 
 void GUIWindow_CharacterRecord::CharacterUI_StatsTab_Draw(Character *player) {
-    render->DrawQuad2D(ui_character_stats_background, {8, 8});
+    // MM6's parchment is smaller and sits at (17,14) over the leather (MM6.EXE 0x413938).
+    render->DrawQuad2D(ui_character_stats_background,
+                       engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(17, 14) : Pointi(8, 8));
 
     auto str1 =
         fmt::format("{::}{}\f00000\r180{}: {::}{}\f00000\n\n\n",
