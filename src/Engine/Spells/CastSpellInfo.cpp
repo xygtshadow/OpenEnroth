@@ -2022,7 +2022,13 @@ void CastSpellInfoHelpers::castSpell() {
                 case SPELL_SPIRIT_SHARED_LIFE:
                 {
                     int shared_life_count;
-                    if (spell_mastery == MASTERY_GRANDMASTER) {
+                    if (engine->gameVersion() == GAME_VERSION_MM6) {
+                        // MM6 Shared Life (native id 54, the same slot) adds 1/2/3 points per point of skill
+                        // to the pool at Novice/Expert/Master (spells.txt; MM6 clamps Grandmaster to Master).
+                        int pointsPerSkill = spell_mastery >= MASTERY_MASTER ? 3
+                                           : spell_mastery == MASTERY_EXPERT ? 2 : 1;
+                        shared_life_count = pointsPerSkill * spell_level;
+                    } else if (spell_mastery == MASTERY_GRANDMASTER) {
                         shared_life_count = 4 * spell_level;
                     } else {
                         shared_life_count = 3 * spell_level;
@@ -2459,21 +2465,43 @@ void CastSpellInfoHelpers::castSpell() {
                 case SPELL_BODY_FIRST_AID:
                 {
                     int heal_amount;
-                    switch (spell_mastery) {
-                        case MASTERY_NOVICE:
-                            heal_amount = 2 * spell_level + 5;
-                            break;
-                        case MASTERY_EXPERT:
-                            heal_amount = 3 * spell_level + 5;
-                            break;
-                        case MASTERY_MASTER:
-                            heal_amount = 4 * spell_level + 5;
-                            break;
-                        case MASTERY_GRANDMASTER:
-                            heal_amount = 5 * spell_level + 5;
-                            break;
-                        default:
-                            assert(false);
+                    if (engine->gameVersion() == GAME_VERSION_MM6) {
+                        // Three MM6 spells share this heal effect, each with its own spells.txt amount and
+                        // none with the MM7 formula (MM6 clamps Grandmaster to Master).
+                        switch (pCastSpell->uSpellID) {
+                            case SPELL_SPIRIT_FATE:  // MM6 id 47 = Healing Touch: 3-7/5-9/7-11 by mastery.
+                                heal_amount = (spell_mastery >= MASTERY_MASTER ? 7
+                                             : spell_mastery == MASTERY_EXPERT ? 5 : 3) + grng->random(5);
+                                break;
+                            case SPELL_BODY_FIRST_AID:  // MM6 id 68 = First Aid: a flat 5/7/10 by mastery.
+                                heal_amount = spell_mastery >= MASTERY_MASTER ? 10
+                                            : spell_mastery == MASTERY_EXPERT ? 7 : 5;
+                                break;
+                            case SPELL_BODY_REGENERATION:  // MM6 id 71 = Cure Wounds: 5 + 2 per point of skill.
+                                heal_amount = 2 * spell_level + 5;
+                                break;
+                            default:
+                                assert(false);
+                                heal_amount = 0;
+                                break;
+                        }
+                    } else {
+                        switch (spell_mastery) {
+                            case MASTERY_NOVICE:
+                                heal_amount = 2 * spell_level + 5;
+                                break;
+                            case MASTERY_EXPERT:
+                                heal_amount = 3 * spell_level + 5;
+                                break;
+                            case MASTERY_MASTER:
+                                heal_amount = 4 * spell_level + 5;
+                                break;
+                            case MASTERY_GRANDMASTER:
+                                heal_amount = 5 * spell_level + 5;
+                                break;
+                            default:
+                                assert(false);
+                        }
                     }
                     if (!pCastSpell->targetPid) {
                         pParty->pCharacters[pCastSpell->targetCharacterIndex].Heal(heal_amount);
@@ -2598,8 +2626,12 @@ void CastSpellInfoHelpers::castSpell() {
 
                 case SPELL_BODY_POWER_CURE:
                 {
+                    // MM6 Power Cure (native id 77, the same slot) cures 10 + 2 per point of skill on every
+                    // character (spells.txt), regardless of mastery; MM7's own formula is 5 per level + 10.
+                    int heal_amount = engine->gameVersion() == GAME_VERSION_MM6 ? 2 * spell_level + 10
+                                                                                : 5 * spell_level + 10;
                     for (Character &character : pParty->pCharacters) {
-                        character.Heal(5 * spell_level + 10);
+                        character.Heal(heal_amount);
                     }
                     spell_fx_renderer->SetPartyBuffAnim(pCastSpell->uSpellID);
                     break;

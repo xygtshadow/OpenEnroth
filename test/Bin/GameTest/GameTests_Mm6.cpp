@@ -3427,6 +3427,83 @@ GAME_TEST(Mm6, SpellDamageNumbers) {
     EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(5), 10, MASTERY_MASTER, 0), 0);
 }
 
+// MM6 heal spells cure their native spells.txt amounts, not their MM7 effect analogs': Healing Touch (47)
+// heals a random 3-7/5-9/7-11 at Novice/Expert/Master, First Aid (68) a flat 5/7/10, Cure Wounds (71)
+// 5 plus 2 per point of skill, Power Cure (77) 10 plus 2 per point of skill on every character, and
+// Shared Life (54) adds 1/2/3 points per point of skill to the pooled party health. The mechanics
+// (targeting, fx, the Shared Life redistribution) stay the shared engine paths - only the amounts differ.
+GAME_TEST(Mm6, SpellHealNumbers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    Character &c2 = pParty->pCharacters[2];
+
+    // Healing Touch (47): a random 3-7/5-9/7-11 by mastery, independent of skill. Pin the exact dice by
+    // sampling - 48 casts miss a face of a 5-face die with P ~ 1e-4, and the game RNG is deterministic
+    // anyway. The MM7 analog (First Aid) would heal 2*10 + 5 = 25 at Novice.
+    struct HealRange { Mastery mastery; int lo; int hi; };
+    for (const HealRange &tier : {HealRange{MASTERY_NOVICE, 3, 7}, HealRange{MASTERY_EXPERT, 5, 9},
+                                  HealRange{MASTERY_MASTER, 7, 11}}) {
+        int healMin = 1000, healMax = 0;
+        for (int i = 0; i < 48; i++) {
+            c2.health = 1;
+            pushSpellOrRangedAttack(static_cast<SpellId>(47), 0, CombinedSkillValue(10, tier.mastery), 0, 0);
+            spellTargetPicked(Pid(), 2);
+            game.tick(1);
+            healMin = std::min(healMin, c2.health - 1);
+            healMax = std::max(healMax, c2.health - 1);
+        }
+        EXPECT_EQ(healMin, tier.lo) << "mastery " << std::to_underlying(tier.mastery);
+        EXPECT_EQ(healMax, tier.hi) << "mastery " << std::to_underlying(tier.mastery);
+    }
+
+    // First Aid (68): a flat 5/7/10 by mastery, independent of skill (MM7's own First Aid at this id
+    // scales with skill - 2/3/4 * L + 5).
+    struct FlatHeal { Mastery mastery; int amount; };
+    for (const FlatHeal &tier : {FlatHeal{MASTERY_NOVICE, 5}, FlatHeal{MASTERY_EXPERT, 7},
+                                 FlatHeal{MASTERY_MASTER, 10}}) {
+        c2.health = 1;
+        pushSpellOrRangedAttack(static_cast<SpellId>(68), 0, CombinedSkillValue(10, tier.mastery), 0, 0);
+        spellTargetPicked(Pid(), 2);
+        game.tick(1);
+        EXPECT_EQ(c2.health, 1 + tier.amount) << "mastery " << std::to_underlying(tier.mastery);
+    }
+
+    // Cure Wounds (71): 5 + 2 per point of skill at every mastery. (At Novice this coincides with the
+    // MM7 analog's 2L+5 - Expert and Master are what the analog would get wrong: 26/33 at skill 7.)
+    for (Mastery mastery : {MASTERY_NOVICE, MASTERY_EXPERT, MASTERY_MASTER}) {
+        c2.health = 1;
+        pushSpellOrRangedAttack(static_cast<SpellId>(71), 0, CombinedSkillValue(7, mastery), 0, 0);
+        spellTargetPicked(Pid(), 2);
+        game.tick(1);
+        EXPECT_EQ(c2.health, 1 + 5 + 2 * 7) << "mastery " << std::to_underlying(mastery);
+    }
+
+    // Power Cure (77): 10 + 2 per point of skill to every character, at every mastery (the MM7 spell
+    // heals 5L + 10 = 35 at skill 5, capping several starting characters at max health).
+    for (Mastery mastery : {MASTERY_NOVICE, MASTERY_EXPERT, MASTERY_MASTER}) {
+        for (Character &character : pParty->pCharacters)
+            character.health = 1;
+        pushSpellOrRangedAttack(static_cast<SpellId>(77), 0, CombinedSkillValue(5, mastery), 0, 1);
+        game.tick(1);
+        for (Character &character : pParty->pCharacters)
+            EXPECT_EQ(character.health, 1 + 10 + 2 * 5) << "mastery " << std::to_underlying(mastery);
+    }
+
+    // Shared Life (54): pools current party health plus 1/2/3 points per point of skill at N/E/M and
+    // redistributes it evenly (MM7 adds a flat 3L below Grandmaster, so Novice and Expert differ).
+    struct PoolAdd { Mastery mastery; int add; };
+    for (const PoolAdd &tier : {PoolAdd{MASTERY_NOVICE, 10}, PoolAdd{MASTERY_EXPERT, 20}}) {
+        for (Character &character : pParty->pCharacters)
+            character.health = 10;
+        pushSpellOrRangedAttack(static_cast<SpellId>(54), 0, CombinedSkillValue(10, tier.mastery), 0, 1);
+        game.tick(1);
+        for (Character &character : pParty->pCharacters)
+            EXPECT_EQ(character.health, (4 * 10 + tier.add) / 4) << "mastery " << std::to_underlying(tier.mastery);
+    }
+}
+
 // MM6 Mass Curse (native id 91, the third Dark spell) has no MM7 counterpart, so translateForCast runs it as
 // Toxic Cloud - a poison AoE. Its real effect (spells.txt: "Inflicts the cursed condition on all monsters in
 // the sight of the caster"; MM6.EXE 0x42928b) is to curse every monster in the caster's line of sight for
