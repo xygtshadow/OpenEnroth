@@ -450,9 +450,9 @@ class Movie : public IMovie {
               // Decode video frame
               // video packet - decode & maybe show
               video.decode_frame(avpacket);
-            } else {
-                assert(false);  // unknown stream
             }
+            // Packets from any other stream are dropped - a smacker clip can carry several audio
+            // tracks (MM6's mm6intro/end_seq1 have two) and only the one picked at open time plays.
         } while (avpacket->stream_index != video.stream_idx ||
                  avpacket->pts <= desired_frame_number);
 
@@ -908,12 +908,17 @@ Blob MPlayer::LoadMovie(std::string_view video_name) {
     std::string pVideoNameBik = fmt::format("{}.bik", video_name);
     std::string pVideoNameSmk = fmt::format("{}.smk", video_name);
 
+    // MM6's anims1/anims2.vid store their entries under extension-less names (the payloads are all
+    // smacker clips), so the raw name is probed after the MM7-style .bik/.smk ones.
     if (might_list.isOpen()) {
         if (might_list.exists(pVideoNameBik)) {
             return might_list.read(pVideoNameBik);
         }
         if (might_list.exists(pVideoNameSmk)) {
             return might_list.read(pVideoNameSmk);
+        }
+        if (might_list.exists(video_name)) {
+            return might_list.read(video_name);
         }
     }
 
@@ -923,6 +928,9 @@ Blob MPlayer::LoadMovie(std::string_view video_name) {
         }
         if (magic_list.exists(pVideoNameSmk)) {
             return magic_list.read(pVideoNameSmk);
+        }
+        if (magic_list.exists(video_name)) {
+            return magic_list.read(video_name);
         }
     }
 

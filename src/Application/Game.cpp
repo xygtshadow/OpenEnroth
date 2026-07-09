@@ -179,7 +179,7 @@ bool Game::loop() {
             assert(engine->_transitionMapId != MAP_INVALID);
 
             bFlashQuestBook = true;
-            if (engine->gameVersion() != GAME_VERSION_MM6) // "Intro Post" is an MM7 video; MM6's post-creation video is tracked in docs/pending.
+            if (engine->gameVersion() != GAME_VERSION_MM6) // "Intro Post" is an MM7 video; MM6 has no post-creation movie (its mm6intro plays before the main menu).
                 pMediaPlayer->PlayFullscreenMovie("Intro Post");
             saveNewGame();
             if (engine->gameVersion() != GAME_VERSION_MM6 && engine->config->debug.NoMargaret.value()) {
@@ -902,6 +902,14 @@ void Game::processQueuedMessages() {
                 continue;
 
             case UIMSG_ShowGameOverWindow: {
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6.EXE 0x4A6CB0: the Hive ending plays comped, then end_dome (win) or
+                    // planetxp (lose), then end_seq1 on a win only, before the certificate.
+                    pMediaPlayer->PlayFullscreenMovie("comped");
+                    pMediaPlayer->PlayFullscreenMovie(uMessageParam ? "planetxp" : "end_dome");
+                    if (!uMessageParam)
+                        pMediaPlayer->PlayFullscreenMovie("end_seq1");
+                }
                 pGameOverWindow = std::make_unique<GUIWindow_GameOver>(UIMSG_OnGameOverWindowClose, uMessageParam != 0);
                 uGameState = GAME_STATE_FINAL_WINDOW;
                 continue;

@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -70,6 +71,8 @@
 #include "GUI/UI/Houses/Transport.h"
 
 #include "Io/Mouse.h"
+
+#include "Media/MediaPlayer.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -788,6 +791,37 @@ GAME_TEST(Mm6, EnterWeaponShop) {
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// MM6 ships every movie as a Smacker clip with an extension-less entry name inside anims1/anims2.vid -
+// including the house room animations (the FLC-era names in pAnimatedRoomsMm6 notwithstanding, every
+// shipped payload starts with the SMK2 magic, so the existing ffmpeg smacker path decodes them all).
+// MM6.EXE plays 3dologo -> jvc -> mm6intro at startup (0x4A6AE0), losegame on a party death (0x4A6C70),
+// credits as a movie from the main menu (0x4A6C90), and comped + end_dome/planetxp + end_seq1 (win only)
+// around the endgame certificate (0x4A6CB0). LoadMovie resolves the extension-less names, so all of
+// these open; house/transition screens then pick their movies up through the milestone-44 anim table.
+GAME_TEST(Mm6, MoviesPlay) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Every clip of MM6's fullscreen sequences resolves and opens through ffmpeg.
+    for (const char *clip : {"3dologo", "jvc", "mm6intro", "losegame", "credits",
+                             "comped", "end_dome", "planetxp", "end_seq1"}) {
+        std::unique_ptr<IMovie> movie = pMediaPlayer->loadFullScreenMovie(clip);
+        EXPECT_NE(movie, nullptr) << "clip: " << clip;
+    }
+
+    // Entering a house loads its room animation ("Blcksmid" for The Knife Shoppe); leaving unloads it.
+    ASSERT_TRUE(enterHouse(HouseId(1)));
+    createHouseUI(HouseId(1));
+    EXPECT_NE(pMovie_Track, nullptr);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(pMovie_Track, nullptr);
     game.tick(5);
 }
 
