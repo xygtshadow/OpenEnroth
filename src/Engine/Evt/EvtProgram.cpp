@@ -1,5 +1,7 @@
 #include "EvtProgram.h"
 
+#include <limits>
+#include <optional>
 #include <ranges>
 #include <tuple>
 #include <vector>
@@ -116,6 +118,26 @@ std::string EvtProgram::hint(int eventId) const {
         }
     }
 
+    return result;
+}
+
+std::optional<std::string> EvtProgram::locationName() const {
+    // MM6.EXE 0x439F10 returns the first EVENT_LocationName record in file order. Real maps carry exactly one
+    // (oute2 has two, both pointing at the same string), so scanning in eventId order is equivalent - and
+    // deterministic, unlike hash-map order.
+    std::optional<std::string> result;
+    int resultEventId = std::numeric_limits<int>::max();
+    for (const auto &[eventId, events] : _eventsById) {
+        if (eventId >= resultEventId)
+            continue;
+        for (const EvtInstruction &ir : events) {
+            if (ir.opcode == EVENT_LocationName) {
+                resultEventId = eventId;
+                result = ir.data.text_id < engine->_levelStrings.size() ? engine->_levelStrings[ir.data.text_id] : "";
+                break;
+            }
+        }
+    }
     return result;
 }
 

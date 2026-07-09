@@ -4374,3 +4374,28 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     EXPECT_EQ(pParty->pCharacters[3].classType, CLASS_CLERIC);
     EXPECT_TRUE(pParty->pCharacters[3].pActiveSkills[SKILL_MIND]);
 }
+
+
+GAME_TEST(Mm6, MazeInfoPopup) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Right-clicking the minimap area shows the map's "maze info" - the level string referenced by the map's
+    // LocationName event record, NOT the mapstats name (MM6.EXE 0x439F10, right-click dispatcher 0x41152D).
+    EXPECT_EQ(GameUI_GetMinimapHintText(), "New Sorpigal");
+
+    // Exercise the real popup path: popups draw while the right button is held (press/tick/release).
+    game.pressButton(BUTTON_RIGHT, 550, 80); // Minimap zone: x past the viewport, y < 140.
+    game.tick(2);
+    game.releaseButton(BUTTON_RIGHT, 550, 80);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Indoors the string still comes from the map's own .evt/.str pair.
+    MapId caverns = pMapStats->GetMapInfo("cd1.blv");
+    ASSERT_NE(caverns, MAP_INVALID);
+    game.teleportTo(caverns, Vec3f(-3136, 2240, 224), 0); // A known-valid cd1 position.
+    EXPECT_EQ(GameUI_GetMinimapHintText(), "Castle Alamos");
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <string>
@@ -59,6 +60,14 @@ class EvtProgram {
      *                                  an empty string for non-existent events.
      */
     std::string hint(int eventId) const;
+
+    /**
+     * @return                          MM6's per-map "maze info" location name - the level string referenced by
+     *                                  the map's `EVENT_LocationName` record (every MM6 map carries exactly one,
+     *                                  at step 0), or `std::nullopt` if there is no such record. Shown by the
+     *                                  right-click minimap popup (MM6.EXE 0x439F10).
+     */
+    std::optional<std::string> locationName() const;
 
     void dumpAll() const;
     void dump(int eventId) const;

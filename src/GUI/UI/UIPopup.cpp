@@ -1786,7 +1786,8 @@ void UI_OnMouseRightClick(Pointi mousePos) {
                     GameUI_CharacterQuickRecord_Draw(Recti(38, 60, 400, 200), characterIndex);
                 }
             } else if ((int)pX > pViewport.x + pViewport.w - 1) {
-                if (pY >= 130) {
+                // MM6's right-click dispatcher gives the minimap popup zone y < 140 (MM6.EXE 0x41152D), MM7 y < 130.
+                if (pY >= (engine->gameVersion() == GAME_VERSION_MM6 ? 140 : 130)) {
                     if (pX >= 476 && pX <= 636 && pY >= 240 && pY <= 300) {  // buff_tooltip zone
                         drawBuffPopupWindow();
                     } else if ((int)pX < 485 || (int)pX > 548 ||

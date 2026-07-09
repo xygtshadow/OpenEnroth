@@ -723,6 +723,13 @@ void GameUI_OnPlayerPortraitLeftClick(int uPlayerID) {
 }
 
 std::string GameUI_GetMinimapHintText() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 shows the map's "maze info" - the level string referenced by the map's LocationName event
+        // record - with no per-face hint scan and no mapstats fallback (MM6.EXE 0x439F10, called only from
+        // the right-click dispatcher 0x41152D). The fallback text is EXE-verbatim (0x4BF574).
+        return engine->_localEventMap.locationName().value_or("No Maze Info for this maze on file!");
+    }
+
     double v3;            // st7@1
     int v7;               // eax@4
     int global_coord_X;   // [sp+10h] [bp-1Ch]@1
