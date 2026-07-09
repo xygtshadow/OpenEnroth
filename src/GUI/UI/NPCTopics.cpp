@@ -1,5 +1,6 @@
 #include "NPCTopics.h"
 
+#include <array>
 #include <utility>
 #include <string>
 #include <vector>
@@ -428,7 +429,37 @@ void oracleDialogue() {
 /**
  * @offset 0x4B29F2
  */
+// MM6 guild memberships, indexed by join topic id - 381 (MM6.EXE join prices @0x4C3E10, award
+// bit = 64 + index, set for the whole party @0x496a96). The 17 organizations: Elemental & Self
+// guilds (the tier-2 magic guilds), the three thief and three fighter guilds, the nine
+// school-of-magic guilds, and the Light & Dark guilds.
+static constexpr std::array<int, 17> mm6GuildJoinPrices = {
+    100, 100, 25, 50, 50, 25, 50, 50, 50, 50, 50, 50, 50, 50, 50, 1000, 1000};
+
 const std::string &joinGuildOptionString() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        int guildIndex = topicEventId - 381;
+        AwardId guildMembershipAwardBit = static_cast<AwardId>(64 + guildIndex);
+
+        membershipOrTrainingApproved = false;
+        gold_transaction_amount = mm6GuildJoinPrices[guildIndex];
+
+        if (!pParty->hasActiveCharacter())
+            pParty->setActiveToFirstCanAct();  // avoid nzi
+
+        if (pParty->activeCharacter().CanAct()) {
+            if (pParty->activeCharacter()._achievedAwardsBits[guildMembershipAwardBit]) {
+                return pNPCTopics[119].pText; // The already-a-member brush-off (npctext row 120).
+            } else if (gold_transaction_amount <= pParty->GetGold()) {
+                membershipOrTrainingApproved = true;
+                return pNPCTopics[154 + guildIndex].pText; // "Join <guild> for <N> gold" (npctext rows 155-171).
+            } else {
+                return localization->str(LSTR_YOU_DONT_HAVE_ENOUGH_GOLD);
+            }
+        }
+        return pNPCTopics[119].pText;
+    }
+
     GuildId guild_id = static_cast<GuildId>(topicEventId - 400);
     static const int dialogue_base = 110;
     AwardId guildMembershipAwardBit = membershipAwardForGuild(guild_id);
@@ -618,6 +649,13 @@ std::string npcDialogueOptionString(DialogueId topic, NPCData *npcData) {
     }
 }
 
+// MM6's guild-membership topics (381-397) have no global.evt script behind them - they are
+// intercepted in handleScriptedNPCTopicSelection - so they are always listed instead of being
+// dry-run through the event interpreter.
+static bool isMm6JoinGuildTopic(unsigned int eventId) {
+    return engine->gameVersion() == GAME_VERSION_MM6 && eventId >= 381 && eventId <= 397;
+}
+
 std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
     std::vector<DialogueId> optionList;
 
@@ -629,9 +667,13 @@ std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
 #define ADD_NPC_SCRIPTED_DIALOGUE(EVENT_ID, MSG_PARAM) \
     if (EVENT_ID) { \
         if (optionList.size() < 4) { \
-            int res = npcDialogueEventProcessor(EVENT_ID); \
-            if (res == 1 || res == 2) { \
+            if (isMm6JoinGuildTopic(EVENT_ID)) { \
                 optionList.push_back(MSG_PARAM); \
+            } else { \
+                int res = npcDialogueEventProcessor(EVENT_ID); \
+                if (res == 1 || res == 2) { \
+                    optionList.push_back(MSG_PARAM); \
+                } \
             } \
         } \
     }
@@ -668,9 +710,23 @@ DialogueId handleScriptedNPCTopicSelection(DialogueId topic, NPCData *npcData) {
 
 
     // The special event ids below (Oracle 139, Arena 399, guild membership 400-410, mastery
-    // teachers 200-310) are MM7 global.evt conventions. MM6 has no such reserved ranges - its
-    // NPC topics are ordinary global.evt scripts (e.g. New Sorpigal's candelabra quest is
-    // event 296), so in an MM6 session every topic takes the generic interpreter path.
+    // teachers 200-310) are MM7 global.evt conventions. MM6's own reserved topic ranges differ
+    // (MM6.EXE topic dispatch @0x496b42): 381-397 are guild-membership offers and 200-259 are
+    // expert/master skill teachers; everything else - e.g. New Sorpigal's candelabra quest,
+    // event 296 - is an ordinary global.evt script on the generic interpreter path.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (eventId >= 381 && eventId <= 397) {
+            // A guild-membership offer: the same offer/join flow as MM7's 400-410 (which descend
+            // from these), with MM6's own texts. The long offer texts are npctext rows 138-154,
+            // in join-topic order (row 140 = Buccaneers' Lair, topic 383).
+            guildMembershipNPCTopicId = topic;
+            current_npc_text = pNPCTopics[137 + eventId - 381].pText;
+            topicEventId = eventId;
+            return DIALOGUE_MAGIC_GUILD_OFFER;
+        }
+        // MM6 NPC teachers (topics 200-259) are still routed to the generic path and no-op;
+        // tracked in docs/pending/mm6-npc-teachers.md.
+    }
     if (engine->gameVersion() == GAME_VERSION_MM7) {
         if (eventId == 311) {
             // Original code also listed this event which presumably opened bounty dialogue but MM7
@@ -737,7 +793,13 @@ void selectSpecialNPCTopicSelection(DialogueId topic, NPCData* npcData) {
         }
     } else if (topic == DIALOGUE_MAGIC_GUILD_JOIN) {
         if (membershipOrTrainingApproved) {
-            AwardId guildMembershipAwardBit = membershipAwardForGuild(static_cast<GuildId>(topicEventId - 400));
+            // MM6 join topics are 381-397 with award bit 64 + index; MM7's are 400-410/416.
+            bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+            AwardId guildMembershipAwardBit = isMm6
+                ? static_cast<AwardId>(64 + topicEventId - 381)
+                : membershipAwardForGuild(static_cast<GuildId>(topicEventId - 400));
+            unsigned int topicFirst = isMm6 ? 381 : 400;
+            unsigned int topicLast = isMm6 ? 397 : 416;
             pParty->TakeGold(gold_transaction_amount, true);
             for (Character &player : pParty->pCharacters) {
                 player.SetVariable(VAR_Award, std::to_underlying(guildMembershipAwardBit));
@@ -745,27 +807,27 @@ void selectSpecialNPCTopicSelection(DialogueId topic, NPCData* npcData) {
 
             switch (guildMembershipNPCTopicId) {
               case DIALOGUE_SCRIPTED_LINE_1:
-                if (npcData->dialogue_1_evt_id >= 400 && npcData->dialogue_1_evt_id <= 416)
+                if (npcData->dialogue_1_evt_id >= topicFirst && npcData->dialogue_1_evt_id <= topicLast)
                     npcData->dialogue_1_evt_id = 0;
                 break;
               case DIALOGUE_SCRIPTED_LINE_2:
-                if (npcData->dialogue_2_evt_id >= 400 && npcData->dialogue_2_evt_id <= 416)
+                if (npcData->dialogue_2_evt_id >= topicFirst && npcData->dialogue_2_evt_id <= topicLast)
                     npcData->dialogue_2_evt_id = 0;
                 break;
               case DIALOGUE_SCRIPTED_LINE_3:
-                if (npcData->dialogue_3_evt_id >= 400 && npcData->dialogue_3_evt_id <= 416)
+                if (npcData->dialogue_3_evt_id >= topicFirst && npcData->dialogue_3_evt_id <= topicLast)
                     npcData->dialogue_3_evt_id = 0;
                 break;
               case DIALOGUE_SCRIPTED_LINE_4:
-                if (npcData->dialogue_4_evt_id >= 400 && npcData->dialogue_4_evt_id <= 416)
+                if (npcData->dialogue_4_evt_id >= topicFirst && npcData->dialogue_4_evt_id <= topicLast)
                     npcData->dialogue_4_evt_id = 0;
                 break;
               case DIALOGUE_SCRIPTED_LINE_5:
-                if (npcData->dialogue_5_evt_id >= 400 && npcData->dialogue_5_evt_id <= 416)
+                if (npcData->dialogue_5_evt_id >= topicFirst && npcData->dialogue_5_evt_id <= topicLast)
                     npcData->dialogue_5_evt_id = 0;
                 break;
               case DIALOGUE_SCRIPTED_LINE_6:
-                if (npcData->dialogue_6_evt_id >= 400 && npcData->dialogue_6_evt_id <= 416)
+                if (npcData->dialogue_6_evt_id >= topicFirst && npcData->dialogue_6_evt_id <= topicLast)
                     npcData->dialogue_6_evt_id = 0;
                 break;
               default:

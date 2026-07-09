@@ -70,10 +70,16 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         {"Element Guild", HOUSE_TYPE_ELEMENTAL_GUILD}, // This is MM6 only.
         {"Self Guild", HOUSE_TYPE_SELF_GUILD},
         {"Mirrored Path Guild", HOUSE_TYPE_MIRRORED_PATH_GUILD},
-        {"Mercenary Guild", HOUSE_TYPE_TOWN_HALL}, // This is MM6 only. MM6.EXE maps "mer" to type 17 (0x439314) - but note
-                                                   // MM6's data spells it "Merc Guild", which this exact-string map misses,
-                                                   // so those rows currently fall through to the type-18 default
-                                                   // (docs/pending/mm6-house-types.md).
+        {"Merc Guild", HOUSE_TYPE_MERCENARY_GUILD},    // This is MM6 only: the six fighter guilds, houses 141-146.
+        {"Thieves Guild", HOUSE_TYPE_MERCENARY_GUILD}, // This is MM6 only: the six thief guilds, houses 147-152.
+                                                       // Both are membership skill-teaching houses handled by
+                                                       // GUIWindow_MercenaryGuild's house-id-keyed MM6 model. (In MM6.EXE
+                                                       // the 2dEvents type is 17/18 and the DIALOG dispatch type comes
+                                                       // from the anim-room table - thf* anims are 17, merc* 18 - but
+                                                       // both types share one handler, 0x49c420, so a single HouseType
+                                                       // is faithful. The 2dEvents type feeds only the learn price base,
+                                                       // 100 "Merc Guild" / 250 "Thieves Guild", which the window keys
+                                                       // by house id instead.)
         {"General Store", HOUSE_TYPE_ALCHEMY_SHOP}, // This is MM6 only. MM6.EXE maps "gen" to type 4, the alchemist slot -
                                                     // general stores ARE MM6's alchemy-shop analog (herbs, bottles, and a
                                                     // random-items shelf; see GUIWindow_AlchemyShop::generateShopItems).

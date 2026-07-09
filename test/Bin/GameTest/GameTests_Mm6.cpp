@@ -58,6 +58,7 @@
 #include "Engine/AssetsManager.h"
 
 #include "GUI/GUIButton.h"
+#include "GUI/GUIDialogues.h"
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/UICharacter.h"
@@ -4031,6 +4032,133 @@ static void openProprietorDialogue(EngineController &game) {
     game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
     game.tick(2);
     ASSERT_NE(pDialogueWindow, nullptr);
+}
+
+// Escapes out of any open house dialogue and the house itself, back to the game screen.
+static void leaveHouse(EngineController &game) {
+    for (int i = 0; i < 4 && current_screen_type != SCREEN_GAME; i++) {
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(2);
+    }
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+// Finds a proprietor-dialogue option button by its DialogueId, or nullptr when not offered.
+// Option buttons are re-laid-out to rendered-text metrics on draw - locate by message param only.
+static const GUIButton *findProprietorOption(DialogueId option) {
+    if (!pDialogueWindow)
+        return nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(option))
+            return button;
+    return nullptr;
+}
+
+// MM6's fighter and thief guilds are membership skill-teaching houses. The model, from MM6.EXE:
+// - 2dEvents "Merc Guild" rows are houses 141-146, "Thieves Guild" rows 147-152. Every membership
+//   house (magic guilds 119-140 included) maps to a per-house membership award bit via the word
+//   pair table @0x4C3CB8: Blades' End 141/145 -> bit 69, Duelists' Edge 142/144 -> 70, Berserkers'
+//   Fury 143/146 -> 71, Buccaneers' Lair 147/148 -> 66, Protection Services 149/150 -> 67,
+//   Smugglers' Guild 151/152 -> 68 (awards.txt rows 64-80 are the "Joined the ..." strings).
+// - Joining happens through npcdata NPC topics 381..397 (npctopic "<Guild> Membership"): topic id
+//   381+idx -> award bit 64+idx for ALL FOUR characters at the price from the dword table
+//   @0x4C3E10 (Blades' End 25 gold), and the NPC's topic slot is cleared (0x496a96).
+// - Inside the house, a member is offered the house's taught skills (house-id-keyed lists in the
+//   option builder @0x498ec4/0x4991e3; house 141 = Sword/Axe/Spear/Staff/Leather, 147 =
+//   Dagger/Merchant/IdentifyItem/Perception/DisarmTrap), filtered by the class-can-learn table
+//   @0x4C2694 and by not-already-knowing the skill. Learning costs trunc(base x 2dEvents price
+//   multiplier), base 100 for "Merc Guild" rows and 250 for "Thieves Guild" rows (0x49c4cd),
+//   merchant-discounted with a floor of a third, and sets the skill to novice 1 (0x49c712).
+// - A non-member (and any plain type-18 house) gets NO options - it must not crash: unmapped MM6
+//   type strings used to fall into the MM7-shaped award array read that aborted on draw.
+GAME_TEST(Mm6, MercGuildJoinAndLearnSkills) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->SetGold(2000);
+
+    EXPECT_EQ(houseTable[HouseId(141)].name, "Blades' End");
+    EXPECT_EQ(houseTable[HouseId(147)].name, "Buccaneers' Lair");
+    EXPECT_EQ(houseTable[HouseId(141)].fPriceMultiplier, 1.5f);
+    EXPECT_EQ(houseTable[HouseId(147)].fPriceMultiplier, 1.5f);
+
+    // Not a member: Blades' End opens safely and offers no skill training.
+    ASSERT_TRUE(enterHouse(HouseId(141)));
+    createHouseUI(HouseId(141));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    openProprietorDialogue(game);
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption)
+            EXPECT_FALSE(IsSkillLearningDialogue(static_cast<DialogueId>(button->msg_param)));
+    leaveHouse(game);
+
+    // Join Blade's End through its recruiter: Harold Hess in New Sorpigal's House P1 (473), whose
+    // third npcdata topic is 386 ("Blade's End Membership").
+    NPCData *recruiter = &pNPCStats->pNPCData[33];
+    EXPECT_EQ(recruiter->name, "Harold Hess");
+    ASSERT_EQ(recruiter->house, HouseId(473));
+    ASSERT_EQ(recruiter->dialogue_3_evt_id, 386);
+    EXPECT_EQ(pNPCTopics[386].pTopic, "Blade's End Membership");
+    ASSERT_TRUE(enterHouse(HouseId(473)));
+    createHouseUI(HouseId(473));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    clickHouseNpcPortrait(game, recruiter);
+    int goldBefore = pParty->GetGold();
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_3);
+    selectScriptedTopic(game, DIALOGUE_MAGIC_GUILD_JOIN);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 25); // MM6.EXE join price table 0x4C3E10, Blades' End = 25.
+    for (const Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(69)]); // awards.txt 69 "Joined the Blade's End Guild".
+    EXPECT_EQ(recruiter->dialogue_3_evt_id, 0); // The recruiter no longer offers the topic.
+    leaveHouse(game);
+
+    // As a member, Blades' End teaches. Roderick the Paladin already knows Sword, so it is
+    // filtered out; Staff is learnable (class-can-learn table, Paladin/Staff nonzero).
+    ASSERT_TRUE(enterHouse(HouseId(141)));
+    createHouseUI(HouseId(141));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_EQ(pParty->activeCharacter().name, pParty->pCharacters[0].name); // Roderick is active.
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_STAFF), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_AXE), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_SPEAR), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_LEATHER), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_MERCHANT), nullptr); // Not taught here.
+    // Sword is taught here but Roderick already knows it: the option button stays (like MM7's
+    // learn dialogues its label just goes blank) and clicking it is a no-op.
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_SWORD), nullptr);
+    goldBefore = pParty->GetGold();
+    clickProprietorOption(game, DIALOGUE_LEARN_SWORD);
+    EXPECT_EQ(pParty->GetGold(), goldBefore);
+    goldBefore = pParty->GetGold();
+    EXPECT_FALSE(pParty->pCharacters[0].pActiveSkills[SKILL_STAFF]);
+    clickProprietorOption(game, DIALOGUE_LEARN_STAFF);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 150); // trunc(100 x 1.5), no merchant discount on a fresh party.
+    EXPECT_EQ(pParty->pCharacters[0].pActiveSkills[SKILL_STAFF], CombinedSkillValue::novice());
+    leaveHouse(game);
+
+    // Thieves guilds share the model at learn base price 250. Grant Buccaneers' membership (bit 66)
+    // directly and have Alexis the Archer learn Dagger at house 147: trunc(250 x 1.5) = 375.
+    for (Character &character : pParty->pCharacters)
+        character._achievedAwardsBits.set(static_cast<AwardId>(66), true);
+    pParty->setActiveCharacterIndex(2); // Alexis.
+    pParty->GetPlayingTime() += Duration::fromHours(10); // Thieves keep night hours (open 18-6).
+    game.tick(1);
+    ASSERT_TRUE(enterHouse(HouseId(147)));
+    createHouseUI(HouseId(147));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_EQ(pParty->activeCharacter().name, pParty->pCharacters[1].name);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_DAGGER), nullptr);
+    goldBefore = pParty->GetGold();
+    EXPECT_FALSE(pParty->pCharacters[1].pActiveSkills[SKILL_DAGGER]);
+    clickProprietorOption(game, DIALOGUE_LEARN_DAGGER);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 375);
+    EXPECT_EQ(pParty->pCharacters[1].pActiveSkills[SKILL_DAGGER], CombinedSkillValue::novice());
+    leaveHouse(game);
 }
 
 // MM6 has three town halls (2dEvents houses 89-91: New Sorpigal, Castle Ironfist, Silver Cove) whose
