@@ -753,6 +753,16 @@ GAME_TEST(Mm6, QuestItemPickup) {
     game.tick(5);
 }
 
+// Collects the proprietor dialogue options currently on offer, in on-screen order.
+static std::vector<DialogueId> listProprietorOptions() {
+    std::vector<DialogueId> result;
+    if (pDialogueWindow)
+        for (const GUIButton *button : pDialogueWindow->vButtons)
+            if (button->msg == UIMSG_SelectProprietorDialogueOption)
+                result.push_back(static_cast<DialogueId>(button->msg_param));
+    return result;
+}
+
 GAME_TEST(Mm6, EnterWeaponShop) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -789,6 +799,12 @@ GAME_TEST(Mm6, EnterWeaponShop) {
     EXPECT_EQ(current_screen_type, SCREEN_HOUSE);
     ASSERT_NE(window_SpeakInHouse, nullptr);
     EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(1));
+
+    // MM6 shops offer the flat five-option menu of MM6.EXE's option factory - Buy Standard /
+    // Sell / Identify / Repair / Buy Special - and NO skill teaching (no MM6 shop teaches).
+    EXPECT_EQ(listProprietorOptions(),
+              (std::vector<DialogueId>{DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_SELL, DIALOGUE_SHOP_IDENTIFY,
+                                       DIALOGUE_SHOP_REPAIR, DIALOGUE_SHOP_BUY_SPECIAL}));
 
     // Escape leaves the shop and the game is live again.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
@@ -1037,6 +1053,10 @@ GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
 
     pParty->SetGold(2000); // Enough for any treasure-level-1 cloak or boots.
 
+    // MM6 general stores offer just Buy / Sell (MM6.EXE option factory type-4 case @0x4987c7);
+    // their special stock exists but is unreachable even in the original engine.
+    EXPECT_EQ(listProprietorOptions(), (std::vector<DialogueId>{DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_SELL}));
+
     // Pick "Buy Standard Goods" - this generates both stocks from the MM6 general-store model.
     clickProprietorOption(game, DIALOGUE_SHOP_BUY_STANDARD);
 
@@ -1083,8 +1103,7 @@ GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
 
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE); // Leave the buy screen.
     game.tick(2);
-    clickProprietorOption(game, DIALOGUE_SHOP_DISPLAY_EQUIPMENT);
-    clickProprietorOption(game, DIALOGUE_SHOP_SELL);
+    clickProprietorOption(game, DIALOGUE_SHOP_SELL); // Sell is a top-level option in MM6's flat menu.
 
     goldBefore = pParty->GetGold();
     game.pressAndReleaseButton(BUTTON_LEFT, swordCenter.x, swordCenter.y);
@@ -1092,11 +1111,59 @@ GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
     EXPECT_EQ(pParty->GetGold(), goldBefore + sellPrice);
     EXPECT_FALSE(pParty->activeCharacter().inventory.find(ItemId(5)));
 
-    // Leave the sell screen, the inventory screen, then the shop.
+    // Leave the sell screen (straight back to the main menu), then the shop.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// MM6 training halls are 2dEvents rows 79-88 and they ONLY train - the MM6.EXE option factory
+// (type-30 case @0x4984a6) creates the single Train option, and no learn-skill options exist
+// anywhere in MM6 houses outside the guilds. The per-hall level caps come from the EXE's word
+// table @0x4C3DE2 indexed by raw house id (0xFFFF = The Sparring Ground's "no max"); the MM7
+// cap table is keyed [89, 98] and would abort on MM6's ids. The training price is the SAME
+// formula as MM7's (level x multiplier x class tier, merchant-discounted, floored at a third):
+// MM6.EXE @0x499e27 divides the class byte by 3 and uses remainder+1, which IS the class tier.
+GAME_TEST(Mm6, TrainAtTrainingHall) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // New Sorpigal Training Grounds: 2dEvents row 79, cap "Max level = 15".
+    EXPECT_EQ(houseTable[HouseId(79)].uType, HOUSE_TYPE_TRAINING_GROUND);
+    ASSERT_TRUE(enterHouse(HouseId(79)));
+    createHouseUI(HouseId(79));
+
+    // Train is the only option on offer - no Learn Skills (MM6 has no Armsmaster at all).
+    EXPECT_EQ(listProprietorOptions(), (std::vector<DialogueId>{DIALOGUE_TRAINING_HALL_TRAIN}));
+
+    // Train Roderick to level 2.
+    Character &hero = pParty->activeCharacter();
+    hero.experience = 1000; // Exactly the level-2 requirement (1000 * level * (level + 1) / 2).
+    pParty->SetGold(10000);
+    int price = PriceCalculator::trainingCostForPlayer(&hero, houseTable[HouseId(79)]);
+    EXPECT_GT(price, 0);
+    int skillPointsBefore = hero.uSkillPoints;
+    Time timeBefore = pParty->GetPlayingTime();
+    clickProprietorOption(game, DIALOGUE_TRAINING_HALL_TRAIN);
+    EXPECT_EQ(hero.uLevel, 2);
+    EXPECT_EQ(hero.uSkillPoints, skillPointsBefore + 5);
+    EXPECT_EQ(hero.health, hero.GetMaxHealth());
+    EXPECT_EQ(pParty->GetGold(), 10000 - price);
+    EXPECT_GE(pParty->GetPlayingTime() - timeBefore, Duration::fromDays(7)); // Training takes a week.
+
+    // The hall's level cap refuses further training: at the cap, nothing changes.
+    hero.uLevel = 15;
+    hero.experience = 1000000;
+    int goldBefore = pParty->GetGold();
+    clickProprietorOption(game, DIALOGUE_TRAINING_HALL_TRAIN);
+    EXPECT_EQ(hero.uLevel, 15);
+    EXPECT_EQ(pParty->GetGold(), goldBefore);
+
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);

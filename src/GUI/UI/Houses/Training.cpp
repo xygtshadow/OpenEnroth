@@ -1,4 +1,7 @@
+#include <array>
+#include <cassert>
 #include <string>
+#include <utility>
 #include <vector>
 #include <limits>
 
@@ -28,6 +31,32 @@ static constexpr IndexedArray<int, HOUSE_FIRST_TRAINING_HALL, HOUSE_LAST_TRAININ
     {HOUSE_TRAINING_HALL_STONE_CITY, 100},
 };
 
+// MM6's training halls are 2dEvents rows 79-88, and their level caps come from MM6.EXE's own
+// word table @0x4C3DE2, indexed by raw house id (train handler read @0x499de5). 0xFFFF = no cap
+// (The Sparring Ground). The MM7-keyed table above would OOB on these ids.
+static constexpr int MM6_FIRST_TRAINING_HALL = 79;
+static constexpr std::array<int, 10> mm6TrainingHallMaxLevels = {
+    15,   // 79 New Sorpigal Training Grounds.
+    60,   // 80 Free Haven Academy.
+    40,   // 81 Abdul's Discount Training Center.
+    0xFFFF,  // 82 The Sparring Ground (Bootleg Bay) - no cap.
+    20,   // 83 Training-by-the-Sea.
+    100,  // 84 Wolf's Den.
+    200,  // 85 Royal Gymnasium.
+    30,   // 86 Island Testing Center.
+    80,   // 87 Lone Tree Training.
+    50,   // 88 Riverside Academy.
+};
+
+static int trainingHallMaxLevel(HouseId houseId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        int index = std::to_underlying(houseId) - MM6_FIRST_TRAINING_HALL;
+        assert(index >= 0 && index < static_cast<int>(mm6TrainingHallMaxLevels.size()));
+        return mm6TrainingHallMaxLevels[index];
+    }
+    return trainingHallMaxLevels[houseId];
+}
+
 void GUIWindow_Training::mainDialogue() {
     if (!checkIfPlayerCanInteract()) {
         return;
@@ -37,7 +66,7 @@ void GUIWindow_Training::mainDialogue() {
     uint64_t expForNextLevel = 1000ull * pParty->activeCharacter().uLevel * (pParty->activeCharacter().uLevel + 1) / 2;
     std::string trainText = "";
 
-    if (pParty->activeCharacter().uLevel >= trainingHallMaxLevels[houseId()]) {
+    if (pParty->activeCharacter().uLevel >= trainingHallMaxLevel(houseId())) {
         trainText = fmt::format("{}\n \n{}", localization->str(LSTR_WITH_YOUR_SKILLS_YOU_SHOULD_BE_WORKING), localization->str(LSTR_SORRY_BUT_WE_ARE_UNABLE_TO_TRAIN_YOU));
     } else {
         if (pParty->activeCharacter().experience < expForNextLevel) {
@@ -48,7 +77,9 @@ void GUIWindow_Training::mainDialogue() {
         }
     }
 
-    std::vector<std::string> optionsText = {trainText, localization->str(LSTR_LEARN_SKILLS)};
+    std::vector<std::string> optionsText = {trainText};
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        optionsText.push_back(localization->str(LSTR_LEARN_SKILLS));
 
     drawOptions(optionsText, colorTable.Sunflower);
 }
@@ -62,7 +93,7 @@ void GUIWindow_Training::trainDialogue() {
         return;
     }
 
-    if (pParty->activeCharacter().uLevel < trainingHallMaxLevels[houseId()]) {
+    if (pParty->activeCharacter().uLevel < trainingHallMaxLevel(houseId())) {
         if (pParty->activeCharacter().experience >= expForNextLevel) {
             if (pParty->GetGold() >= pPrice) {
                 pParty->TakeGold(pPrice);
@@ -140,6 +171,15 @@ void GUIWindow_Training::houseSpecificDialogue() {
 }
 
 std::vector<DialogueId> GUIWindow_Training::listDialogueOptions() {
+    // MM6 training halls only train: the MM6.EXE option factory (@0x498490, type-30 case
+    // @0x4984a6) creates the single Train(17) option - MM6 has no Armsmaster skill and
+    // Bodybuilding is taught at the fighter guilds instead.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (_currentDialogue == DIALOGUE_MAIN)
+            return {DIALOGUE_TRAINING_HALL_TRAIN};
+        return {};
+    }
+
     switch (_currentDialogue) {
       case DIALOGUE_MAIN:
         return {DIALOGUE_TRAINING_HALL_TRAIN, DIALOGUE_LEARN_SKILLS};

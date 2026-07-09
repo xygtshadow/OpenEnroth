@@ -1,5 +1,6 @@
 #include "Shops.h"
 
+#include <cassert>
 #include <cstdlib>
 #include <algorithm>
 #include <string>
@@ -269,8 +270,35 @@ void GUIWindow_Shop::mainDialogue() {
         return;
     }
 
-    std::vector<std::string> optionsText = {localization->str(LSTR_STANDARD), localization->str(LSTR_SPECIAL),
-                                            localization->str(LSTR_DISPLAY_INVENTORY), localization->str(LSTR_LEARN_SKILLS)};
+    std::vector<std::string> optionsText;
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // Labels for the flat MM6 menu, parallel to listDialogueOptions().
+        for (DialogueId option : listDialogueOptions()) {
+            switch (option) {
+              case DIALOGUE_SHOP_BUY_STANDARD:
+                optionsText.push_back(localization->str(LSTR_STANDARD));
+                break;
+              case DIALOGUE_SHOP_SELL:
+                optionsText.push_back(localization->str(LSTR_SELL));
+                break;
+              case DIALOGUE_SHOP_IDENTIFY:
+                optionsText.push_back(localization->str(LSTR_IDENTIFY));
+                break;
+              case DIALOGUE_SHOP_REPAIR:
+                optionsText.push_back(localization->str(LSTR_REPAIR));
+                break;
+              case DIALOGUE_SHOP_BUY_SPECIAL:
+                optionsText.push_back(localization->str(LSTR_SPECIAL));
+                break;
+              default:
+                assert(false);
+                break;
+            }
+        }
+    } else {
+        optionsText = {localization->str(LSTR_STANDARD), localization->str(LSTR_SPECIAL),
+                       localization->str(LSTR_DISPLAY_INVENTORY), localization->str(LSTR_LEARN_SKILLS)};
+    }
 
     drawOptions(optionsText, colorTable.Sunflower);
 }
@@ -786,11 +814,7 @@ std::vector<DialogueId> GUIWindow_MagicShop::listShopLearnableSkills() {
 }
 
 std::vector<DialogueId> GUIWindow_AlchemyShop::listShopLearnableSkills() {
-    // MM6 has neither an Alchemy nor a Monster ID skill - offering the MM7 pair here would teach an MM6
-    // character a skill that doesn't exist in its game. What (if anything) MM6 general stores teach still
-    // needs reversing (docs/pending/mm6-house-types.md).
-    if (engine->gameVersion() == GAME_VERSION_MM6)
-        return {};
+    // Unreachable in MM6 sessions - MM6 shops offer no Learn Skills option at all (see listDialogueOptions).
     return {DIALOGUE_LEARN_ALCHEMY, DIALOGUE_LEARN_MONSTER_ID};
 }
 
@@ -859,6 +883,17 @@ void GUIWindow_Shop::houseDialogueOptionSelected(DialogueId option) {
 }
 
 std::vector<DialogueId> GUIWindow_Shop::listDialogueOptions() {
+    // MM6 shops have a FLAT main menu and teach no skills: the MM6.EXE option factory (@0x498490,
+    // per-type case table @0x499318) creates exactly Buy Standard(2) / Sell(3) / Identify(4) /
+    // Repair(5) / Buy Special(6) for weapon, armor and magic shops, and never creates any
+    // learn-skill option (kinds 36-66) for a shop type. The Display Inventory / Learn Skills
+    // submenus are MM7 additions.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (_currentDialogue == DIALOGUE_MAIN)
+            return {DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_SELL, DIALOGUE_SHOP_IDENTIFY, DIALOGUE_SHOP_REPAIR, DIALOGUE_SHOP_BUY_SPECIAL};
+        return {};
+    }
+
     switch (_currentDialogue) {
       case DIALOGUE_MAIN:
         return {DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_BUY_SPECIAL, DIALOGUE_SHOP_DISPLAY_EQUIPMENT, DIALOGUE_LEARN_SKILLS};
@@ -872,6 +907,15 @@ std::vector<DialogueId> GUIWindow_Shop::listDialogueOptions() {
 }
 
 std::vector<DialogueId> GUIWindow_AlchemyShop::listDialogueOptions() {
+    // MM6 general stores (this house type's MM6 tenant) are Buy(2) / Sell(3) only in the option
+    // factory. Their special stock is generated but UNREACHABLE in MM6.EXE - the buy case
+    // (@0x4a138d) reads only the standard array - so no Buy Special option is offered here either.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (_currentDialogue == DIALOGUE_MAIN)
+            return {DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_SELL};
+        return {};
+    }
+
     if (_currentDialogue == DIALOGUE_SHOP_DISPLAY_EQUIPMENT) {
         return {DIALOGUE_SHOP_SELL, DIALOGUE_SHOP_IDENTIFY};
     }
@@ -879,13 +923,17 @@ std::vector<DialogueId> GUIWindow_AlchemyShop::listDialogueOptions() {
 }
 
 void GUIWindow_Shop::updateDialogueOnEscape() {
-    if (IsSkillLearningDialogue(_currentDialogue)) {
-        _currentDialogue = DIALOGUE_LEARN_SKILLS;
-        return;
-    }
-    if (_currentDialogue == DIALOGUE_SHOP_SELL || _currentDialogue == DIALOGUE_SHOP_IDENTIFY || _currentDialogue == DIALOGUE_SHOP_REPAIR) {
-        _currentDialogue = DIALOGUE_SHOP_DISPLAY_EQUIPMENT;
-        return;
+    // MM6 shop screens all hang directly off the flat main menu - the Display Inventory and
+    // Learn Skills intermediate states don't exist there.
+    if (engine->gameVersion() != GAME_VERSION_MM6) {
+        if (IsSkillLearningDialogue(_currentDialogue)) {
+            _currentDialogue = DIALOGUE_LEARN_SKILLS;
+            return;
+        }
+        if (_currentDialogue == DIALOGUE_SHOP_SELL || _currentDialogue == DIALOGUE_SHOP_IDENTIFY || _currentDialogue == DIALOGUE_SHOP_REPAIR) {
+            _currentDialogue = DIALOGUE_SHOP_DISPLAY_EQUIPMENT;
+            return;
+        }
     }
     if (_currentDialogue == DIALOGUE_MAIN) {
         _currentDialogue = DIALOGUE_NULL;
