@@ -107,11 +107,12 @@ void eventCastSpell(SpellId uSpellID, Mastery skillMastery, int skillLevel, Vec3
 void armageddonProgress();
 
 /**
- * Overwrites the mana costs and recovery times in `pSpellDatas` with the MM6 values extracted from
- * MM6.EXE, and clamps `skillMastery` down from Grandmaster to Master (MM6 has no Grandmaster tier).
- * `pSpellDatas` is statically initialized with MM7 numbers; this must be called once at engine init
- * when running MM6 (right after `SpellStats::Initialize`), and must not be called for MM7.
- * `baseDamage`, `bonusSkillDamage` and `flags` are left untouched (MM6's spell table carries no such
- * fields, so those keep their MM7 approximations).
+ * Overwrites the mana costs, recovery times and damage numbers in `pSpellDatas` with the MM6 values
+ * extracted from MM6.EXE (mana/recovery from the SpellInfo table, damage from MM6.EXE's own
+ * CalcSpellDamage routine, both keyed by the NATIVE spell id), and clamps `skillMastery` down from
+ * Grandmaster to Master (MM6 has no Grandmaster tier). `pSpellDatas` is statically initialized with
+ * MM7 numbers; this must be called once at engine init when running MM6 (right after
+ * `SpellStats::Initialize`), and must not be called for MM7. `flags` are left untouched (MM6's spell
+ * table carries no flags column, so those keep their MM7 approximations).
  */
 void applyMm6SpellDatas();

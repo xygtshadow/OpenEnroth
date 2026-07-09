@@ -3354,6 +3354,79 @@ GAME_TEST(Mm6, DayOfTheGods) {
     }
 }
 
+// MM6 computes spell damage with its own per-spell formulas (MM6.EXE CalcSpellDamage @0x47F0A0), keyed on the
+// NATIVE spell id and independent of mastery. CalcSpellDamage must reproduce them exactly instead of borrowing
+// the MM7 effect spell's numbers through the translateForCast remap. Cross-checked against MM6's spells.txt
+// descriptions (which agree with the EXE everywhere except Acid Burst, see below).
+GAME_TEST(Mm6, SpellDamageNumbers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Deterministic "base + 1 per point of skill" spells at skill 10. All of these differ from the MM7 effect
+    // spell's dice (e.g. Ring of Fire rides Inferno's effect, which rolls 12 + skill x d1 = 22, not 16), and
+    // MM6 damage never varies with mastery.
+    for (Mastery mastery : {MASTERY_NOVICE, MASTERY_EXPERT, MASTERY_MASTER}) {
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(7), 10, mastery, 0), 16);   // Ring of Fire: 6 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(9), 10, mastery, 0), 18);   // Meteor Shower: 8 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(10), 10, mastery, 0), 22);  // Inferno: 12 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(15), 10, mastery, 0), 12);  // Sparks: 2 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(22), 10, mastery, 0), 30);  // Starburst: 20 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(43), 10, mastery, 0), 30);  // Death Blossom: 20 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(84), 10, mastery, 0), 35);  // Prismatic Light: 25 + skill.
+        EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(99), 10, mastery, 0), 60);  // Dark Containment: 50 + skill.
+    }
+
+    // Flat-dice spells ignore skill entirely - even at skill 30 they stay within their fixed range.
+    for (int i = 0; i < 64; i++) {
+        int flameArrow = CalcSpellDamage(static_cast<SpellId>(2), 30, MASTERY_MASTER, 0);   // 1d8.
+        EXPECT_GE(flameArrow, 1);
+        EXPECT_LE(flameArrow, 8);
+        int staticCharge = CalcSpellDamage(static_cast<SpellId>(13), 30, MASTERY_MASTER, 0); // 2-6.
+        EXPECT_GE(staticCharge, 2);
+        EXPECT_LE(staticCharge, 6);
+        int coldBeam = CalcSpellDamage(static_cast<SpellId>(24), 30, MASTERY_MASTER, 0);     // 2d3 = 2-6.
+        EXPECT_GE(coldBeam, 2);
+        EXPECT_LE(coldBeam, 6);
+        int magicArrow = CalcSpellDamage(static_cast<SpellId>(35), 30, MASTERY_MASTER, 0);   // 3-8.
+        EXPECT_GE(magicArrow, 3);
+        EXPECT_LE(magicArrow, 8);
+        int spiritArrow = CalcSpellDamage(static_cast<SpellId>(45), 30, MASTERY_MASTER, 0);  // 1d6.
+        EXPECT_GE(spiritArrow, 1);
+        EXPECT_LE(spiritArrow, 6);
+    }
+
+    // Per-skill dice: Fire Bolt (native id 4) rolls skill x d4, so [10, 40] at skill 10 - the current MM7
+    // remap can't produce values this low once skill dice differ.
+    for (int i = 0; i < 64; i++) {
+        int fireBolt = CalcSpellDamage(static_cast<SpellId>(4), 10, MASTERY_NOVICE, 0);
+        EXPECT_GE(fireBolt, 10);
+        EXPECT_LE(fireBolt, 40);
+        int sunRay = CalcSpellDamage(static_cast<SpellId>(87), 10, MASTERY_NOVICE, 0);       // 20 + skill x d20.
+        EXPECT_GE(sunRay, 30);
+        EXPECT_LE(sunRay, 220);
+    }
+
+    // Acid Burst (native id 30): the EXE rolls 9 + skill x (0..8) - a 0-based die, unlike the "9 plus 1-9 per
+    // point of skill" its description claims. At skill 1 the range is [9, 17] and the 0 face makes min == 9
+    // (an MM7-style 9 + 1d9 would bottom out at 10); over 256 rolls P(no 0 seen) = (8/9)^256 ~ 8e-14.
+    int acidMin = 1000, acidMax = 0;
+    for (int i = 0; i < 256; i++) {
+        int acid = CalcSpellDamage(static_cast<SpellId>(30), 1, MASTERY_NOVICE, 0);
+        acidMin = std::min(acidMin, acid);
+        acidMax = std::max(acidMax, acid);
+    }
+    EXPECT_EQ(acidMin, 9);
+    EXPECT_LE(acidMax, 17);
+
+    // Mass Distortion (native id 44): 25% of the target's current HP plus 2% per point of skill, deterministic.
+    EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(44), 10, MASTERY_NOVICE, 1000), 450);
+
+    // Non-damage spells stay at zero (native id 5 = MM6 Haste; the EXE default case returns 0).
+    EXPECT_EQ(CalcSpellDamage(static_cast<SpellId>(5), 10, MASTERY_MASTER, 0), 0);
+}
+
 // MM6 Mass Curse (native id 91, the third Dark spell) has no MM7 counterpart, so translateForCast runs it as
 // Toxic Cloud - a poison AoE. Its real effect (spells.txt: "Inflicts the cursed condition on all monsters in
 // the sight of the caster"; MM6.EXE 0x42928b) is to curse every monster in the caster's line of sight for

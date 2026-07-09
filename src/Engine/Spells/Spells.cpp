@@ -304,17 +304,29 @@ IndexedArray<SpellData, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> pSpellDatas = {
 
 namespace {
 
-/** Per-mastery MM6 spell point cost and recovery time for a single spell. See `applyMm6SpellDatas`. */
-struct Mm6SpellCost {
+/** Per-mastery MM6 spell point cost / recovery time and MM6 damage numbers for a single spell. See `applyMm6SpellDatas`. */
+struct Mm6SpellData {
     std::array<uint16_t, 3> mana;      // [Novice, Expert, Master] spell points.
     std::array<uint16_t, 3> recovery;  // [Novice, Expert, Master] recovery time, in game ticks.
+    uint8_t baseDamage = 0;            // Flat damage added once.
+    uint8_t skillDiceSides = 0;        // One d(sides) die rolled per point of skill.
 };
 
 /**
- * MM6 per-mastery spell point costs and recovery times, extracted verbatim from MM6.EXE's SpellInfo
- * table (MMExtension `Game.Spells`, VA 0x4BDD70; 99 entries of 0xE bytes each: `SpellPoints[3]`
- * int16 @0x0, `Delay[3]` int16 @0x6, `Bits` uint16 @0xC). MM6 has only three skill masteries
- * (Novice/Expert/Master), so there is no Grandmaster tier in the source data.
+ * MM6 per-mastery spell point costs, recovery times and damage numbers. Mana and recovery are extracted
+ * verbatim from MM6.EXE's SpellInfo table (MMExtension `Game.Spells`, VA 0x4BDD70; 99 entries of 0xE
+ * bytes each: `SpellPoints[3]` int16 @0x0, `Delay[3]` int16 @0x6, `Bits` uint16 @0xC). MM6 has only
+ * three skill masteries (Novice/Expert/Master), so there is no Grandmaster tier in the source data.
+ *
+ * The damage numbers come from MM6.EXE's own CalcSpellDamage (VA 0x47F0A0, MMExtension hook name;
+ * a jump table over spell ids 2..99): damage = baseDamage + one d(skillDiceSides) die per point of
+ * skill, INDEPENDENT of mastery. `skillDiceSides == 1` is a deterministic "+1 per point of skill"
+ * (matching e.g. "does six points of damage plus one per point of skill" in spells.txt). Spells whose
+ * EXE formula doesn't fit this shape (the flat-dice arrows, Acid Burst's 0-based die, Mass Distortion's
+ * percent-of-hp) carry 0 here and are special-cased in `CalcSpellDamage`. Every value cross-checks
+ * against the MM6 spells.txt damage descriptions except Acid Burst (see `CalcSpellDamage`). Native id
+ * 96 (Moon Ray) is the one spells.txt-sourced entry: the EXE computes its all-in-sight damage/heal at
+ * the cast site, not in CalcSpellDamage, but the engine routes the analog's impact through this table.
  *
  * The keys are MM7 `SpellId` names, but they denote the *native* MM6 spell in that id slot (which is
  * how `pSpellDatas` is indexed). The MM6 spell at a given id is often a different spell than the MM7
@@ -322,56 +334,56 @@ struct Mm6SpellCost {
  *
  * Cross-validated: decoding MM7.EXE's SpellInfo table (VA 0x4E3C48, 0x14-byte entries) with the same
  * reader reproduces the mana and recovery of all 99 `pSpellDatas` rows exactly. The table is
- * regenerable from the VA + struct layout above (dumper kept in docs/scratch/dump_spelldata.py during
- * development).
+ * regenerable from the VA + struct layout above (dumpers kept in docs/scratch/dump_spelldata.py and
+ * docs/scratch/dump_calcdmg.py during development).
  */
-const IndexedArray<Mm6SpellCost, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6SpellCosts = {
+const IndexedArray<Mm6SpellData, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6SpellDatas = {
     {SPELL_FIRE_TORCH_LIGHT,             {{   1,   1,   1}, {   60,   60,   60}}},
     {SPELL_FIRE_FIRE_BOLT,               {{   2,   1,   0}, {  100,   90,   80}}},
     {SPELL_FIRE_PROTECTION_FROM_FIRE,    {{   3,   3,   3}, {  120,  120,  120}}},
-    {SPELL_FIRE_FIRE_AURA,               {{   4,   4,   4}, {  110,  100,   90}}},
+    {SPELL_FIRE_FIRE_AURA,               {{   4,   4,   4}, {  110,  100,   90},  0,  4}},  // MM6 Fire Bolt: 1-4 per skill.
     {SPELL_FIRE_HASTE,                   {{   5,   5,   5}, {  120,  120,  120}}},
-    {SPELL_FIRE_FIREBALL,                {{   8,   8,   8}, {  110,  100,   90}}},
-    {SPELL_FIRE_FIRE_SPIKE,              {{  10,  10,  10}, {  110,  100,   90}}},
-    {SPELL_FIRE_IMMOLATION,              {{  15,  15,  15}, {  110,   90,   70}}},
-    {SPELL_FIRE_METEOR_SHOWER,           {{  20,  20,  20}, {  120,  110,  100}}},
-    {SPELL_FIRE_INFERNO,                 {{  25,  25,  25}, {  140,  120,  100}}},
-    {SPELL_FIRE_INCINERATE,              {{  30,  30,  30}, {  150,  130,  110}}},
+    {SPELL_FIRE_FIREBALL,                {{   8,   8,   8}, {  110,  100,   90},  0,  6}},  // Fireball: 1-6 per skill.
+    {SPELL_FIRE_FIRE_SPIKE,              {{  10,  10,  10}, {  110,  100,   90},  6,  1}},  // MM6 Ring of Fire: 6 + skill.
+    {SPELL_FIRE_IMMOLATION,              {{  15,  15,  15}, {  110,   90,   70},  4,  3}},  // MM6 Fire Blast: 4 + 1-3 per skill.
+    {SPELL_FIRE_METEOR_SHOWER,           {{  20,  20,  20}, {  120,  110,  100},  8,  1}},  // Meteor Shower: 8 + skill per meteor.
+    {SPELL_FIRE_INFERNO,                 {{  25,  25,  25}, {  140,  120,  100}, 12,  1}},  // Inferno: 12 + skill.
+    {SPELL_FIRE_INCINERATE,              {{  30,  30,  30}, {  150,  130,  110}, 15, 15}},  // Incinerate: 15 + 1-15 per skill.
 
     {SPELL_AIR_WIZARD_EYE,               {{   1,   1,   1}, {   60,   60,   60}}},
     {SPELL_AIR_FEATHER_FALL,             {{   2,   2,   0}, {  100,   90,   90}}},
     {SPELL_AIR_PROTECTION_FROM_AIR,      {{   3,   3,   3}, {  120,  120,  120}}},
-    {SPELL_AIR_SPARKS,                   {{   4,   4,   4}, {  110,  100,   90}}},
+    {SPELL_AIR_SPARKS,                   {{   4,   4,   4}, {  110,  100,   90},  2,  1}},  // Sparks: 2 + skill per spark.
     {SPELL_AIR_JUMP,                     {{   5,   5,   5}, {  120,  120,  120}}},
     {SPELL_AIR_SHIELD,                   {{   8,   8,   8}, {  120,  120,  120}}},
-    {SPELL_AIR_LIGHTNING_BOLT,           {{  10,  10,  10}, {  110,  100,   90}}},
+    {SPELL_AIR_LIGHTNING_BOLT,           {{  10,  10,  10}, {  110,  100,   90},  0,  8}},  // Lightning Bolt: 1-8 per skill.
     {SPELL_AIR_INVISIBILITY,             {{  15,  15,  15}, {  110,   90,   70}}},
-    {SPELL_AIR_IMPLOSION,                {{  20,  20,  20}, {  120,  110,  100}}},
+    {SPELL_AIR_IMPLOSION,                {{  20,  20,  20}, {  120,  110,  100}, 10, 10}},  // Implosion: 10 + 1-10 per skill.
     {SPELL_AIR_FLY,                      {{  25,  25,  25}, {  250,  250,  250}}},
-    {SPELL_AIR_STARBURST,                {{  30,  30,  30}, {  150,  130,  110}}},
+    {SPELL_AIR_STARBURST,                {{  30,  30,  30}, {  150,  130,  110}, 20,  1}},  // Starburst: 20 + skill per star.
 
     {SPELL_WATER_AWAKEN,                 {{   1,   1,   1}, {   60,   60,   60}}},
     {SPELL_WATER_POISON_SPRAY,           {{   2,   1,   0}, {   90,   80,   80}}},
     {SPELL_WATER_PROTECTION_FROM_WATER,  {{   3,   3,   3}, {  120,  120,  120}}},
-    {SPELL_WATER_ICE_BOLT,               {{   4,   4,   4}, {  110,  100,   90}}},
+    {SPELL_WATER_ICE_BOLT,               {{   4,   4,   4}, {  110,  100,   90},  2,  2}},  // MM6 Poison Spray: 2 + 1-2 per skill.
     {SPELL_WATER_WATER_WALK,             {{   5,   5,   5}, {  150,  120,  120}}},
-    {SPELL_WATER_RECHARGE_ITEM,          {{   8,   8,   8}, {  110,  100,   90}}},
+    {SPELL_WATER_RECHARGE_ITEM,          {{   8,   8,   8}, {  110,  100,   90},  0,  7}},  // MM6 Ice Bolt: 1-7 per skill.
     {SPELL_WATER_ACID_BURST,             {{  10,  10,  10}, {  140,  140,  140}}},
-    {SPELL_WATER_ENCHANT_ITEM,           {{  15,  15,  15}, {  110,  100,   90}}},
+    {SPELL_WATER_ENCHANT_ITEM,           {{  15,  15,  15}, {  110,  100,   90}}},          // MM6 Acid Burst: special-cased.
     {SPELL_WATER_TOWN_PORTAL,            {{  20,  20,  20}, {  200,  200,  200}}},
-    {SPELL_WATER_ICE_BLAST,              {{  25,  25,  25}, {  120,  100,   80}}},
+    {SPELL_WATER_ICE_BLAST,              {{  25,  25,  25}, {  120,  100,   80}, 12,  2}},  // Ice Blast: 12 + 1-2 per skill per shard.
     {SPELL_WATER_LLOYDS_BEACON,          {{  30,  30,  30}, {  250,  250,  250}}},
 
     {SPELL_EARTH_STUN,                   {{   1,   1,   1}, {   80,   80,   80}}},
     {SPELL_EARTH_SLOW,                   {{   2,   1,   0}, {  100,   90,   80}}},
     {SPELL_EARTH_PROTECTION_FROM_EARTH,  {{   3,   3,   3}, {  120,  120,  120}}},
-    {SPELL_EARTH_DEADLY_SWARM,           {{   4,   4,   4}, {  110,  100,   90}}},
+    {SPELL_EARTH_DEADLY_SWARM,           {{   4,   4,   4}, {  110,  100,   90},  5,  3}},  // Deadly Swarm: 5 + 1-3 per skill.
     {SPELL_EARTH_STONESKIN,              {{   5,   5,   5}, {  120,  120,  120}}},
-    {SPELL_EARTH_BLADES,                 {{   8,   8,   8}, {  110,  100,   90}}},
+    {SPELL_EARTH_BLADES,                 {{   8,   8,   8}, {  110,  100,   90},  0,  5}},  // Blades: 1-5 per skill.
     {SPELL_EARTH_STONE_TO_FLESH,         {{  10,  10,  10}, {  140,  140,  140}}},
-    {SPELL_EARTH_ROCK_BLAST,             {{  15,  15,  15}, {  110,  100,   90}}},
+    {SPELL_EARTH_ROCK_BLAST,             {{  15,  15,  15}, {  110,  100,   90},  0,  8}},  // Rock Blast: 1-8 per skill.
     {SPELL_EARTH_TELEKINESIS,            {{  20,  20,  20}, {  130,  130,  130}}},
-    {SPELL_EARTH_DEATH_BLOSSOM,          {{  25,  25,  25}, {  120,  110,  100}}},
+    {SPELL_EARTH_DEATH_BLOSSOM,          {{  25,  25,  25}, {  120,  110,  100}, 20,  1}},  // Death Blossom: 20 + skill.
     {SPELL_EARTH_MASS_DISTORTION,        {{  30,  30,  30}, {  140,  120,  100}}},
 
     {SPELL_SPIRIT_DETECT_LIFE,           {{   1,   1,   0}, {   90,   80,   80}}},
@@ -388,58 +400,58 @@ const IndexedArray<Mm6SpellCost, SPELL_FIRST_REGULAR, SPELL_LAST_REGULAR> kMm6Sp
 
     {SPELL_MIND_REMOVE_FEAR,             {{   1,   1,   1}, {  120,  120,  120}}},
     {SPELL_MIND_MIND_BLAST,              {{   2,   2,   2}, {  120,  120,  120}}},
-    {SPELL_MIND_PROTECTION_FROM_MIND,    {{   3,   3,   3}, {  110,  100,   90}}},
+    {SPELL_MIND_PROTECTION_FROM_MIND,    {{   3,   3,   3}, {  110,  100,   90},  5,  2}},  // MM6 Mind Blast: 5 + 1-2 per skill.
     {SPELL_MIND_TELEPATHY,               {{   4,   4,   4}, {  120,  120,  120}}},
     {SPELL_MIND_CHARM,                   {{   5,   5,   5}, {  120,  120,  120}}},
     {SPELL_MIND_CURE_PARALYSIS,          {{   8,   8,   8}, {  100,  100,  100}}},
     {SPELL_MIND_BERSERK,                 {{  10,  10,  10}, {  100,   90,   80}}},
     {SPELL_MIND_MASS_FEAR,               {{  15,  15,  15}, {  110,  100,   90}}},
     {SPELL_MIND_CURE_INSANITY,           {{  20,  20,  20}, {  120,  120,  120}}},
-    {SPELL_MIND_PSYCHIC_SHOCK,           {{  25,  25,  25}, {  130,  120,  110}}},
+    {SPELL_MIND_PSYCHIC_SHOCK,           {{  25,  25,  25}, {  130,  120,  110}, 12, 12}},  // Psychic Shock: 12 + 1-12 per skill.
     {SPELL_MIND_ENSLAVE,                 {{  30,  30,  30}, {  250,  250,  250}}},
 
     {SPELL_BODY_CURE_WEAKNESS,           {{   1,   1,   1}, {  120,  120,  120}}},
     {SPELL_BODY_FIRST_AID,               {{   2,   2,   2}, {   80,   80,   80}}},
     {SPELL_BODY_PROTECTION_FROM_BODY,    {{   3,   3,   3}, {  120,  120,  120}}},
-    {SPELL_BODY_HARM,                    {{   4,   4,   4}, {  110,  100,   90}}},
+    {SPELL_BODY_HARM,                    {{   4,   4,   4}, {  110,  100,   90},  8,  2}},  // Harm: 8 + 1-2 per skill.
     {SPELL_BODY_REGENERATION,            {{   5,   5,   5}, {  100,   90,   80}}},
     {SPELL_BODY_CURE_POISON,             {{   8,   8,   8}, {  120,  120,  120}}},
     {SPELL_BODY_HAMMERHANDS,             {{  10,  10,  10}, {  120,  120,  120}}},
     {SPELL_BODY_CURE_DISEASE,            {{  15,  15,  15}, {  120,  120,  120}}},
     {SPELL_BODY_PROTECTION_FROM_MAGIC,   {{  20,  20,  20}, {  120,  120,  120}}},
-    {SPELL_BODY_FLYING_FIST,             {{  25,  25,  25}, {  130,  120,  110}}},
+    {SPELL_BODY_FLYING_FIST,             {{  25,  25,  25}, {  130,  120,  110}, 30,  5}},  // Flying Fist: 30 + 1-5 per skill.
     {SPELL_BODY_POWER_CURE,              {{  30,  30,  30}, {  150,  125,  100}}},
 
     {SPELL_LIGHT_LIGHT_BOLT,             {{  20,  20,  20}, {  100,  100,  100}}},
     {SPELL_LIGHT_DESTROY_UNDEAD,         {{  25,  25,  25}, {  100,  100,  100}}},
     {SPELL_LIGHT_DISPEL_MAGIC,           {{  30,  30,  30}, {  120,  110,  100}}},
     {SPELL_LIGHT_PARALYZE,               {{  35,  35,  35}, {  120,  100,   80}}},
-    {SPELL_LIGHT_SUMMON_ELEMENTAL,       {{  40,  40,  40}, {  120,  110,  100}}},
+    {SPELL_LIGHT_SUMMON_ELEMENTAL,       {{  40,  40,  40}, {  120,  110,  100}, 16, 16}},  // MM6 Destroy Undead: 16 + 1-16 per skill.
     {SPELL_LIGHT_DAY_OF_THE_GODS,        {{  45,  45,  45}, {  500,  500,  500}}},
-    {SPELL_LIGHT_PRISMATIC_LIGHT,        {{  50,  50,  50}, {  150,  135,  120}}},
+    {SPELL_LIGHT_PRISMATIC_LIGHT,        {{  50,  50,  50}, {  150,  135,  120}, 25,  1}},  // Prismatic Light: 25 + skill.
     {SPELL_LIGHT_DAY_OF_PROTECTION,      {{  55,  55,  55}, {  250,  250,  250}}},
     {SPELL_LIGHT_HOUR_OF_POWER,          {{  60,  60,  60}, {  160,  140,  120}}},
-    {SPELL_LIGHT_SUNRAY,                 {{  65,  65,  65}, {  180,  165,  150}}},
+    {SPELL_LIGHT_SUNRAY,                 {{  65,  65,  65}, {  180,  165,  150}, 20, 20}},  // MM6 Sun Ray: 20 + 1-20 per skill.
     {SPELL_LIGHT_DIVINE_INTERVENTION,    {{  70,  70,  70}, {  300,  300,  300}}},
 
     {SPELL_DARK_REANIMATE,               {{  20,  20,  20}, {  100,  100,  100}}},
-    {SPELL_DARK_TOXIC_CLOUD,             {{  30,  30,  30}, {  120,  110,  100}}},
+    {SPELL_DARK_TOXIC_CLOUD,             {{  30,  30,  30}, {  120,  110,  100}, 25, 10}},  // Toxic Cloud: 25 + 1-10 per skill.
     {SPELL_DARK_VAMPIRIC_WEAPON,         {{  40,  40,  40}, {  120,  120,  120}}},
-    {SPELL_DARK_SHRINKING_RAY,           {{  50,  50,  50}, {  100,   90,   80}}},
+    {SPELL_DARK_SHRINKING_RAY,           {{  50,  50,  50}, {  100,   90,   80},  6,  6}},  // MM6 Shrapmetal: 6 + 1-6 per skill per piece.
     {SPELL_DARK_SHARPMETAL,              {{  60,  60,  60}, {  120,  120,  120}}},
     {SPELL_DARK_CONTROL_UNDEAD,          {{  70,  70,  70}, {  500,  500,  500}}},
     {SPELL_DARK_PAIN_REFLECTION,         {{  80,  80,  80}, {  130,  130,  130}}},
-    {SPELL_DARK_SACRIFICE,               {{  90,  90,  90}, {  150,  140,  130}}},
-    {SPELL_DARK_DRAGON_BREATH,           {{ 100, 100, 100}, {  160,  140,  120}}},
-    {SPELL_DARK_ARMAGEDDON,              {{ 150, 150, 150}, {  250,  250,  250}}},
-    {SPELL_DARK_SOULDRINKER,             {{ 200, 200, 200}, {  300,  300,  300}}}
+    {SPELL_DARK_SACRIFICE,               {{  90,  90,  90}, {  150,  140,  130},  0,  4}},  // MM6 Moon Ray: 1-4 per skill (spells.txt).
+    {SPELL_DARK_DRAGON_BREATH,           {{ 100, 100, 100}, {  160,  140,  120},  0, 25}},  // Dragon Breath: 1-25 per skill.
+    {SPELL_DARK_ARMAGEDDON,              {{ 150, 150, 150}, {  250,  250,  250}, 50,  1}},  // Armageddon: 50 + skill.
+    {SPELL_DARK_SOULDRINKER,             {{ 200, 200, 200}, {  300,  300,  300}, 50,  1}}   // MM6 Dark Containment: 50 + skill.
 };
 
 } // namespace
 
 void applyMm6SpellDatas() {
     for (SpellId spell : pSpellDatas.indices()) {
-        const Mm6SpellCost &cost = kMm6SpellCosts[spell];
+        const Mm6SpellData &cost = kMm6SpellDatas[spell];
         SpellData &data = pSpellDatas[spell];
 
         data.mana_per_skill[MASTERY_NOVICE] = cost.mana[0];
@@ -458,8 +470,10 @@ void applyMm6SpellDatas() {
         if (data.skillMastery == MASTERY_GRANDMASTER)
             data.skillMastery = MASTERY_MASTER;
 
-        // baseDamage and bonusSkillDamage are intentionally left at their MM7 pSpellDatas values - MM6's
-        // SpellInfo table carries no damage fields. flags are likewise unchanged.
+        // MM6's own damage numbers, keyed by the NATIVE spell id (see kMm6SpellDatas / CalcSpellDamage's
+        // MM6 branch). flags are left unchanged (MM6's spell table carries no flags column).
+        data.baseDamage = cost.baseDamage;
+        data.bonusSkillDamage = cost.skillDiceSides;
     }
 }
 
@@ -1072,17 +1086,33 @@ int CalcSpellDamage(SpellId uSpellID, int spellLevel, Mastery skillMastery, int 
     int result;       // eax@1
     unsigned int diceSides;  // [sp-4h] [bp-8h]@9
 
-    // The damage magnitude comes from pSpellDatas / the per-spell formulas below, both keyed by spell id. For
-    // a shifted MM6 spell the native id points at a different MM7 spell's data (often a 0-damage buff, e.g.
-    // MM6 Fire Bolt = native id 4 = Fire Aura's slot), so resolve to the EFFECT spell here - the same "run the
-    // MM7 effect's behavior" rule the cast/impact paths use. Every CalcSpellDamage caller is a damage sink
-    // (projectile/AoE impact, monster spell attack, item damage), and callers derive the damage school from
-    // pSpellStats->pInfos[nativeId] separately (MM6 loads that correctly), so only the magnitude is remapped.
-    // For MM7 (and aligned MM6 spells) translateForCast is the identity, so this is a no-op there.
-    // TODO(mm6): the EXACT MM6 damage numbers (baseDamage/bonusSkillDamage) are still the MM7 effect's; loading
-    // MM6's own values would make the native-id lookup correct without this remap. Tracked as Scope-C residue.
-    if (engine->gameVersion() == GAME_VERSION_MM6)
-        uSpellID = translateForCast(uSpellID, GAME_VERSION_MM6);
+    // MM6 computes spell damage with its own per-spell formulas, keyed on the NATIVE spell id and independent
+    // of skill mastery - decoded verbatim from MM6.EXE's CalcSpellDamage (VA 0x47F0A0, a jump table over spell
+    // ids 2..99). The generic shape "baseDamage + one d(bonusSkillDamage) die per point of skill" is loaded
+    // into pSpellDatas by applyMm6SpellDatas(); the spells below don't fit that shape and are hardcoded here,
+    // exactly like the EXE does. Every CalcSpellDamage caller is a damage sink (projectile/AoE impact, monster
+    // spell attack, item damage), and callers derive the damage school from pSpellStats->pInfos separately.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        switch (uSpellID) {
+            case SPELL_FIRE_FIRE_BOLT:        // Native id 2 = MM6 Flame Arrow: a flat 1d8, no skill scaling.
+                return grng->randomDice(1, 8);
+            case SPELL_AIR_FEATHER_FALL:      // Native id 13 = MM6 Static Charge: flat 2-6.
+                return 1 + grng->randomDice(1, 5);
+            case SPELL_WATER_POISON_SPRAY:    // Native id 24 = MM6 Cold Beam: flat 2d3 = 2-6.
+                return grng->randomDice(2, 3);
+            case SPELL_EARTH_SLOW:            // Native id 35 = MM6 Magic Arrow: flat 3-8.
+                return 2 + grng->randomDice(1, 6);
+            case SPELL_SPIRIT_DETECT_LIFE:    // Native id 45 = MM6 Spirit Arrow: a flat 1d6.
+                return grng->randomDice(1, 6);
+            case SPELL_WATER_ENCHANT_ITEM:    // Native id 30 = MM6 Acid Burst: 9 + skill x (0..8). The EXE die
+                                              // is 0-based, unlike the "1-9 per point" its description claims.
+                return 9 - spellLevel + grng->randomDice(spellLevel, 9);
+            case SPELL_EARTH_MASS_DISTORTION: // Aligned id 44: 25% of current hp, plus 2% per point of skill.
+                return currentHp * (25 + 2 * spellLevel) / 100;
+            default:
+                return pSpellDatas[uSpellID].baseDamage + grng->randomDice(spellLevel, pSpellDatas[uSpellID].bonusSkillDamage);
+        }
+    }
 
     result = 0;
     if (uSpellID == SPELL_FIRE_FIRE_SPIKE) {
