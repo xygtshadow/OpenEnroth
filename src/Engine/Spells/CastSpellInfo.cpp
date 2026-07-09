@@ -142,6 +142,34 @@ static void applyMm6StatBuff(CastSpellInfo *pCastSpell, int spellLevel, Mastery 
 }
 
 /**
+ * Flashes MM6's one-shot cast fx over the character portraits when a buff/heal/utility spell lands
+ * (MM6.EXE's per-spell addScreenOverlay sites in the CastSpell dispatch 0x422C93). The fx is keyed by the
+ * NATIVE MM6 spell id, since MM6's doverlay/asset banks are native-slot indexed. Character-targeted spells
+ * (cures/heals/resurrects and the mastery-gated single-target buffs) flash over the targeted portrait; every
+ * other cast-fx spell is a party buff and flashes over all four portraits. This reproduces MM6.EXE's
+ * per-spell target argument (100 + targeted char vs a loop over the party). A picked character sets
+ * targetCharacterIndex (the ON_CAST_Targeted* flags are already cleared by target picking, so they can't be
+ * tested here); ON_CAST_TargetIsParty also sets it to the caster, so it is excluded to keep whole-party
+ * (e.g. temple) casts on the four-portrait path. Only called for MM6 - MM7's doverlay entries are all null
+ * sprites and MM7 stubbed the screen-overlay spawn, so its cast path stays byte-for-byte unchanged.
+ */
+static void spawnMm6CastFx(CastSpellInfo *pCastSpell) {
+    if (int fxOverlay = mm6SpellCastFxOverlayId(std::to_underlying(pCastSpell->uSpellID))) {
+        bool singleChar = pCastSpell->targetCharacterIndex >= 0 && !(pCastSpell->flags & ON_CAST_TargetIsParty);
+        if (singleChar) {
+            pActiveOverlayList->addScreenOverlay(fxOverlay, 100 + pCastSpell->targetCharacterIndex, 0_ticks, 65536);
+        } else {
+            for (int portrait = 0; portrait < 4; portrait++)
+                pActiveOverlayList->addScreenOverlay(fxOverlay, 100 + portrait, 0_ticks, 65536);
+        }
+    }
+    // Power (MM6 id 75) is the one spell with a second add site: MM6.EXE also spawns overlay 6030 over
+    // character 0's portrait alongside the primary 7080.
+    if (pCastSpell->uSpellID == SPELL_BODY_PROTECTION_FROM_MAGIC)
+        pActiveOverlayList->addScreenOverlay(6030, 100, 0_ticks, 65536);
+}
+
+/**
  * Casts the MM6-unique spells whose behavior has no MM7 counterpart, keyed by the NATIVE MM6 spell id.
  *
  * castSpell()'s effect switch below is keyed on the translated MM7 effect id, so these spells would otherwise
@@ -286,6 +314,7 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
     caster->SpendMana(requiredMana);
     setSpellRecovery(pCastSpell, recoveryTime);
     pAudioPlayer->playSpellSound(pCastSpell->uSpellID, false, SOUND_MODE_EXCLUSIVE);
+    spawnMm6CastFx(pCastSpell);
     return true;
 }
 
@@ -3177,29 +3206,8 @@ void CastSpellInfoHelpers::castSpell() {
             setSpellRecovery(pCastSpell, recoveryTime);
             pAudioPlayer->playSpellSound(pCastSpell->uSpellID, false, SOUND_MODE_EXCLUSIVE);
 
-            // MM6 flashes a one-shot cast fx over the character portraits when a buff/heal/utility spell
-            // lands (MM6.EXE's per-spell addScreenOverlay sites in the CastSpell dispatch 0x422C93). The fx
-            // is keyed by the NATIVE MM6 spell id, since MM6's doverlay/asset banks are native-slot indexed.
-            // MM7's doverlay entries are all null sprites and MM7 stubbed the screen-overlay spawn, so this
-            // is gated off there to keep the MM7 cast path byte-for-byte unchanged.
-            if (engine->gameVersion() == GAME_VERSION_MM6) {
-                if (int fxOverlay = mm6SpellCastFxOverlayId(std::to_underlying(pCastSpell->uSpellID))) {
-                    // Character-targeted spells (cures/heals/resurrects and the mastery-gated single-target
-                    // buffs) flash over the targeted portrait; every other cast-fx spell is a party buff and
-                    // flashes over all four portraits. This reproduces MM6.EXE's per-spell target argument
-                    // (100 + targeted char vs a loop over the party). A picked character sets
-                    // targetCharacterIndex (the ON_CAST_Targeted* flags are already cleared by target picking,
-                    // so they can't be tested here); ON_CAST_TargetIsParty also sets it to the caster, so it
-                    // is excluded to keep whole-party (e.g. temple) casts on the four-portrait path.
-                    bool singleChar = pCastSpell->targetCharacterIndex >= 0 && !(pCastSpell->flags & ON_CAST_TargetIsParty);
-                    if (singleChar) {
-                        pActiveOverlayList->addScreenOverlay(fxOverlay, 100 + pCastSpell->targetCharacterIndex, 0_ticks, 65536);
-                    } else {
-                        for (int portrait = 0; portrait < 4; portrait++)
-                            pActiveOverlayList->addScreenOverlay(fxOverlay, 100 + portrait, 0_ticks, 65536);
-                    }
-                }
-            }
+            if (engine->gameVersion() == GAME_VERSION_MM6)
+                spawnMm6CastFx(pCastSpell);
         }
 
         pCastSpell->uSpellID = SPELL_NONE;
@@ -3223,6 +3231,11 @@ static size_t pushCastSpellInfo(SpellId uSpellID,
             pCastSpellInfo[i].casterCharacterIndex = casterIndex;
             if (uFlags & ON_CAST_TargetIsParty) {
                 pCastSpellInfo[i].targetCharacterIndex = casterIndex;
+            } else {
+                // Queue slots are reused, so restore the no-target default; the target-picking flow (or a
+                // caller that knows the target) fills it in after this push. Without this a party-wide
+                // quick-cast picks up the previous spell's target from the recycled slot.
+                pCastSpellInfo[i].targetCharacterIndex = -1;
             }
             pCastSpellInfo[i].targetPid = Pid();
             pCastSpellInfo[i].flags = uFlags;

@@ -2749,6 +2749,44 @@ GAME_TEST(Mm6, SpellCastFx) {
                 pOverlayList->pOverlays[slot.indexToOverlayList].uOverlayID == 7010)
             onChar2 = true;
     EXPECT_TRUE(onChar2);
+
+    // The MM6-unique spells (Create Food, the stat-buff family, Day of the Gods, ...) run through
+    // castMm6UniqueSpell, which applies the cast tail itself - their fx must spawn there too. Day of the
+    // Gods (MM6 id 83, overlay 8050) is always party-wide. Casting it right after the picked-target First
+    // Aid above also proves a reused cast-queue slot doesn't leak the old target onto a party cast.
+    pActiveOverlayList->Reset();
+    pushSpellOrRangedAttack(static_cast<SpellId>(83), 0, CombinedSkillValue::none(), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(portraitFxFor(8050), 4);
+
+    // Power (MM6 id 75) is the one spell with two cast-fx add sites: MM6.EXE spawns a secondary overlay
+    // 6030 over character 0's portrait alongside the primary 7080.
+    pActiveOverlayList->Reset();
+    pushSpellOrRangedAttack(static_cast<SpellId>(75), 0, CombinedSkillValue::none(), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(portraitFxFor(7080), 4); // AllMagic casts at grandmaster, so the buff is party-wide.
+    EXPECT_EQ(portraitFxFor(6030), 1);
+    bool secondaryOnChar0 = false;
+    for (const ActiveOverlay &slot : pActiveOverlayList->pOverlays)
+        if (slot.animLength > 0 && slot.target == 100 &&
+                pOverlayList->pOverlays[slot.indexToOverlayList].uOverlayID == 6030)
+            secondaryOnChar0 = true;
+    EXPECT_TRUE(secondaryOnChar0);
+
+    // Below Master the single-stat buffs pick one character, and the fx follows onto that portrait alone:
+    // Lucky Day (MM6 id 48, overlay 5030) picked onto character 1.
+    engine->config->debug.AllMagic.setValue(false);
+    pActiveOverlayList->Reset();
+    pushSpellOrRangedAttack(static_cast<SpellId>(48), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 0);
+    spellTargetPicked(Pid(), 1);
+    game.tick(1);
+    EXPECT_EQ(portraitFxFor(5030), 1);
+    bool onChar1 = false;
+    for (const ActiveOverlay &slot : pActiveOverlayList->pOverlays)
+        if (slot.animLength > 0 && slot.target == 101 &&
+                pOverlayList->pOverlays[slot.indexToOverlayList].uOverlayID == 5030)
+            onChar1 = true;
+    EXPECT_TRUE(onChar1);
 }
 
 GAME_TEST(Mm6, TurnBasedCombatIcon) {

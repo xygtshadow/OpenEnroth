@@ -297,7 +297,7 @@ int mm6SpellCastFxOverlayId(int mm6SpellId) {
         case 72: return 7050;
         case 73: return 7060;
         case 74: return 7070;
-        case 75: return 7080; // MM6.EXE also spawns 6030 over char 0 here; secondary fx tracked as residue.
+        case 75: return 7080; // MM6.EXE also spawns 6030 over char 0 here; see spawnMm6CastFx.
         case 77: return 7100;
         case 83: return 8050;
         case 85: return 8070;
