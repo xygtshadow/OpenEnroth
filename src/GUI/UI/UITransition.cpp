@@ -58,7 +58,12 @@ int getSpecialTransferMessageIndex(std::string_view locationName) {
 GUIWindow_Transition::GUIWindow_Transition(WindowType windowType, ScreenType screenType) : GUIWindow(windowType, {0, 0}, render->GetRenderDimensions()) {
     pEventTimer->setPaused(true);
 
-    game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43a4e0: transition prompts always use the fixed marble panel evpan004.
+        game_ui_dialogue_background = assets->getImage_Solid("evpan004");
+    } else {
+        game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    }
 
     prev_screen_type = current_screen_type;
     current_screen_type = screenType;
@@ -67,9 +72,14 @@ GUIWindow_Transition::GUIWindow_Transition(WindowType windowType, ScreenType scr
 void GUIWindow_Transition::createButtons(const std::string &okHint, const std::string &cancelHint, UIMessageType confirmMsg, UIMessageType cancelMsg) {
     this->sHint = okHint;
 
-    pBtn_ExitCancel = CreateButton({556, 445}, {75, 33}, BUTTON_TYPE_NORMAL, 0, cancelMsg, 0, INPUT_ACTION_TRANSITION_NO, cancelHint, {ui_buttdesc2});
-    pBtn_YES = CreateButton({476, 445}, {75, 33}, BUTTON_TYPE_NORMAL, 0, confirmMsg, 0, INPUT_ACTION_TRANSITION_YES, okHint, {ui_buttyes2});
-    CreateButton({pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]}, {63, 73}, BUTTON_TYPE_NORMAL, 0, confirmMsg, 1, INPUT_ACTION_INTERACT, okHint);
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    Pointi escPos = isMm6 ? MM6_DIALOGUE_ESC_BUTTON_POS : Pointi(556, 445);
+    Pointi yesPos = isMm6 ? MM6_DIALOGUE_YES_BUTTON_POS : Pointi(476, 445);
+    Sizei buttonSize = isMm6 ? MM6_DIALOGUE_BUTTON_SIZE : Sizei(75, 33);
+    Pointi portraitPos = isMm6 ? MM6_DIALOGUE_PORTRAIT_POS : Pointi(pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]);
+    pBtn_ExitCancel = CreateButton(escPos, buttonSize, BUTTON_TYPE_NORMAL, 0, cancelMsg, 0, INPUT_ACTION_TRANSITION_NO, cancelHint, {ui_buttdesc2});
+    pBtn_YES = CreateButton(yesPos, buttonSize, BUTTON_TYPE_NORMAL, 0, confirmMsg, 0, INPUT_ACTION_TRANSITION_YES, okHint, {ui_buttyes2});
+    CreateButton(portraitPos, {63, 73}, BUTTON_TYPE_NORMAL, 0, confirmMsg, 1, INPUT_ACTION_INTERACT, okHint);
     CreateButton({8, 8}, {460, 344}, BUTTON_TYPE_NORMAL, 0, confirmMsg, 1, INPUT_ACTION_INVALID, okHint);
 }
 
@@ -107,11 +117,20 @@ GUIWindow_Travel::GUIWindow_Travel() : GUIWindow_Transition(WINDOW_Travel, SCREE
 void GUIWindow_Travel::Update() {
     MapId destinationMap = pOutdoor->getTravelDestination(pParty->pos.x, pParty->pos.y);
 
-    render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
-    render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
-    render->DrawQuad2D(transition_ui_icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
-    render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
-    render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43a630: marble panel over the right column, travel picture directly on it,
+        // yes/cancel pair on the panel's bottom row. The HUD frames are already drawn.
+        render->DrawQuad2D(game_ui_dialogue_background, MM6_DIALOGUE_PANEL_POS);
+        render->DrawQuad2D(transition_ui_icon, MM6_DIALOGUE_PORTRAIT_POS);
+        render->DrawQuad2D(ui_exit_cancel_button_background, MM6_DIALOGUE_ESC_BUTTON_POS);
+        render->DrawQuad2D(game_ui_mm6_buttyes, MM6_DIALOGUE_YES_BUTTON_POS);
+    } else {
+        render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
+        render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
+        render->DrawQuad2D(transition_ui_icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+        render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
+        render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+    }
     if (destinationMap != MAP_INVALID) {
         Recti travel_window = pPrimaryWindow->frameRect;
         travel_window.x = 493;
@@ -145,13 +164,13 @@ GUIWindow_IndoorEntryExit::GUIWindow_IndoorEntryExit(HouseId transitionHouse, un
 
     _mapName = locationName;
 
-    transition_ui_icon = assets->getImage_Solid(pHouse_ExitPictures[exit_pic_id]);
+    transition_ui_icon = assets->getImage_Solid(houseExitPictureName(exit_pic_id));
 
     // animation or special transfer message
     if (transitionHouse != HOUSE_INVALID || getSpecialTransferMessageIndex(locationName)) {
         // TODO(Nik-RE-dev): if message is special then no video when entering indoor?
         if (!getSpecialTransferMessageIndex(locationName))
-            pMediaPlayer->OpenHouseMovie(pAnimatedRooms[houseTable[transitionHouse].uAnimationID].video_name, 1);
+            pMediaPlayer->OpenHouseMovie(houseAnimDescr(houseTable[transitionHouse].uAnimationID).video_name, 1);
 
         std::string destMap = std::string(locationName);
         if (locationName[0] == '0') {
@@ -161,7 +180,7 @@ GUIWindow_IndoorEntryExit::GUIWindow_IndoorEntryExit(HouseId transitionHouse, un
             hint = localization->format(LSTR_ENTER_S, pMapStats->pInfos[pMapStats->GetMapInfo(destMap)].name);
         } else {
             hint = localization->str(LSTR_EXIT_DIALOGUE);
-            if (transitionHouse != HOUSE_INVALID && pAnimatedRooms[houseTable[transitionHouse].uAnimationID].uRoomSoundId)
+            if (transitionHouse != HOUSE_INVALID && houseAnimDescr(houseTable[transitionHouse].uAnimationID).uRoomSoundId)
                 playHouseSound(transitionHouse, HOUSE_SOUND_GENERAL_GREETING);
         }
         if (uCurrentlyLoadedLevelType == LEVEL_INDOOR && pParty->hasActiveCharacter() && pParty->GetRedOrYellowAlert())
@@ -174,7 +193,7 @@ GUIWindow_IndoorEntryExit::GUIWindow_IndoorEntryExit(HouseId transitionHouse, un
         } else {
             hint = localization->str(LSTR_EXIT_DIALOGUE);
         }
-        if (transitionHouse != HOUSE_INVALID && pAnimatedRooms[houseTable[transitionHouse].uAnimationID].uRoomSoundId)
+        if (transitionHouse != HOUSE_INVALID && houseAnimDescr(houseTable[transitionHouse].uAnimationID).uRoomSoundId)
             playHouseSound(transitionHouse, HOUSE_SOUND_GENERAL_GREETING);
         if (uCurrentlyLoadedLevelType == LEVEL_INDOOR && pParty->hasActiveCharacter() && pParty->GetRedOrYellowAlert())
             pParty->activeCharacter().playReaction(SPEECH_LEAVE_DUNGEON);
@@ -184,12 +203,21 @@ GUIWindow_IndoorEntryExit::GUIWindow_IndoorEntryExit(HouseId transitionHouse, un
 }
 
 void GUIWindow_IndoorEntryExit::Update() {
-    render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
-    render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
-    render->DrawQuad2D(transition_ui_icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
-    render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
-    render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
-    render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43a300: marble panel over the right column, transition picture directly on it
+        // (no evtnpc frame), yes/cancel pair on the panel's bottom row.
+        render->DrawQuad2D(game_ui_dialogue_background, MM6_DIALOGUE_PANEL_POS);
+        render->DrawQuad2D(transition_ui_icon, MM6_DIALOGUE_PORTRAIT_POS);
+        render->DrawQuad2D(ui_exit_cancel_button_background, MM6_DIALOGUE_ESC_BUTTON_POS);
+        render->DrawQuad2D(game_ui_mm6_buttyes, MM6_DIALOGUE_YES_BUTTON_POS);
+    } else {
+        render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
+        render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
+        render->DrawQuad2D(transition_ui_icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+        render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
+        render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
+        render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+    }
 
     MapId map_id = engine->_currentLoadedMapId;
     // TODO(captainurist): mm7 map names never starts with ' ', what is this check?

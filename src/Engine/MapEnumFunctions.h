@@ -32,6 +32,20 @@ bool isMapUnderwater(MapId mapid);
  */
 bool isHirelingsBlockedOnMap(MapId mapid);
 
+/**
+ * 1-based file index of the map's level file inside MM6's games.lod, or -1 for an invalid map.
+ *
+ * MM6 stores maps this way in Lloyd's Beacon slots, the transport schedules and 2dEvents exit
+ * maps. Computed as the case-insensitive rank of the map's file name among all mapstats entries
+ * (the MM6 games.lod directory holds the map files first, sorted case-insensitively).
+ */
+int mm6GamesLodFileIndex(MapId mapId);
+
+/**
+ * Inverse of `mm6GamesLodFileIndex`; returns MAP_INVALID when no map has this index.
+ */
+MapId mm6MapIdFromGamesLodFileIndex(int index);
+
 inline Segment<MapId> allMaps() {
     return {MAP_FIRST, MAP_LAST};
 }

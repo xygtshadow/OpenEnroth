@@ -109,6 +109,7 @@ extern std::array<GraphicsImage *, 4> game_ui_mm6_tapestries;  // TAP1..TAP4, th
 extern GraphicsImage *game_ui_mm6_border5;   // Viewport top-left corner patch.
 extern GraphicsImage *game_ui_mm6_border6;   // Viewport top-right corner patch.
 extern GraphicsImage *game_ui_mm6_facemask;  // Oval mask drawn over each portrait.
+extern GraphicsImage *game_ui_mm6_buttyes;   // buttyes1, the unpressed confirm button on dialogue panels.
 
 /**
  * @return The MM6 top-right tapestry (sky-through-the-arch) for an in-game hour, per MM6.EXE 0x417960:

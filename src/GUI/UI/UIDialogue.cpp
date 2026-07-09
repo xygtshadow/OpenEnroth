@@ -57,7 +57,12 @@ void initializeNPCDialogue(int npcId, int bPlayerSaysHello, Actor *actor) {
         }
     }
 
-    game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43be50: street dialogue always uses the fixed marble panel evpan019.
+        game_ui_dialogue_background = assets->getImage_Solid("evpan019");
+    } else {
+        game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    }
 
     currentHouseNpc = 0;
 
@@ -112,8 +117,13 @@ void initializeNPCDialogue(int npcId, int bPlayerSaysHello, Actor *actor) {
 GUIWindow_Dialogue::GUIWindow_Dialogue(DialogWindowType type) : GUIWindow(WINDOW_Dialogue, {0, 0}, render->GetRenderDimensions()) {
     prev_screen_type = current_screen_type;
     current_screen_type = SCREEN_NPC_DIALOGUE;
-    pBtn_ExitCancel = CreateButton({0x1D7u, 0x1BDu}, {0xA9u, 0x23u}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
-                                   localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        pBtn_ExitCancel = CreateButton(MM6_DIALOGUE_ESC_CENTERED_POS, MM6_DIALOGUE_BUTTON_SIZE, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+                                       localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
+    } else {
+        pBtn_ExitCancel = CreateButton({0x1D7u, 0x1BDu}, {0xA9u, 0x23u}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+                                       localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
+    }
 
     int text_line_height = assets->pFontArrus->GetHeight() - 3;
     NPCData *speakingNPC = getNPCData(speakingNpcId);
@@ -180,10 +190,17 @@ void GUIWindow_Dialogue::Update() {
     // Window title(Заголовок окна)----
     NPCData *pNPC = getNPCData(speakingNpcId);
     NpcType npcType = getNPCType(speakingNpcId);
-    render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
-    render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
-    render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
-    render->DrawQuad2D(houseNpcs[0].icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43ab90: the HUD is already drawn; blit the marble panel over the right column
+        // and the NPC portrait directly on it - MM6 has no evtnpc portrait frame.
+        render->DrawQuad2D(game_ui_dialogue_background, MM6_DIALOGUE_PANEL_POS);
+        render->DrawQuad2D(houseNpcs[0].icon, MM6_DIALOGUE_PORTRAIT_POS);
+    } else {
+        render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
+        render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
+        render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
+        render->DrawQuad2D(houseNpcs[0].icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+    }
 
     Recti titleWindow = pDialogueWindow->frameRect;
     titleWindow.w -= 10;
@@ -318,7 +335,8 @@ void GUIWindow_Dialogue::Update() {
             DrawTitleText(assets->pFontArrus.get(), 0, pButton->rect.y, pTextColor, pButton->sLabel, 3, window);
         }
     }
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+    render->DrawQuad2D(ui_exit_cancel_button_background,
+                       engine->gameVersion() == GAME_VERSION_MM6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445));
 }
 
 void BuildHireableNpcDialogue() {

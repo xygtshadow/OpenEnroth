@@ -21,6 +21,20 @@ constexpr int SIDE_TEXT_BOX_BODY_TEXT_HEIGHT = 174;
 constexpr int SIDE_TEXT_BOX_BODY_TEXT_OFFSET = 138;
 constexpr int SIDE_TEXT_BOX_MAX_SPACING = 32;
 
+// MM6 dialogue-skin layout, reversed from MM6.EXE (street dialogue draw @0x43ab90, house dialogue
+// draw @0x497ebf, transition draws @0x43a300/0x43a630): dialogue screens keep the regular HUD and
+// blit an "evpan###" marble panel (152x353) over the right column, with the portrait / transition
+// picture directly on it (MM6 has no evtnpc portrait frame). The confirm/cancel buttons
+// (buttyes*/buttesc*, 61x28, blit x offsets 0x3CC/0x41C/0x46C = 486/526/566) sit on the panel's
+// bottom row; the row's y comes from a runtime global the disassembly doesn't pin down, placed
+// here 7px above the panel's bottom edge, mirroring the side margins.
+constexpr Pointi MM6_DIALOGUE_PANEL_POS = {481, 0};         // evpan###, 152x353.
+constexpr Pointi MM6_DIALOGUE_PORTRAIT_POS = {525, 34};     // npc###, 63x73.
+constexpr Pointi MM6_DIALOGUE_YES_BUTTON_POS = {486, 318};  // buttyes*.
+constexpr Pointi MM6_DIALOGUE_ESC_BUTTON_POS = {566, 318};  // buttesc* when paired with a yes-button.
+constexpr Pointi MM6_DIALOGUE_ESC_CENTERED_POS = {526, 318};  // buttesc* when it is the only button.
+constexpr Sizei MM6_DIALOGUE_BUTTON_SIZE = {61, 28};
+
 void BackToHouseMenu();
 
 /**
@@ -133,7 +147,7 @@ class GUIWindow_House : public GUIWindow {
 // Originally was a packed struct.
 struct HouseAnimDescr {
     std::string video_name;
-    int field_4;
+    int uDialoguePanelId; // MM6: the "evpan###" dialogue-panel bitmap index. Unused by MM7 (leftover data).
     int house_npc_id;
     HouseType uBuildingType; // Originally was 1 byte.
     uint8_t uRoomSoundId;
@@ -143,6 +157,21 @@ struct HouseAnimDescr {
 extern GraphicsImage *_591428_endcap;
 
 extern std::array<const HouseAnimDescr, 196> pAnimatedRooms;
+extern std::array<const HouseAnimDescr, 119> pAnimatedRoomsMm6;
+
+/**
+ * Version-aware accessor for the animated-rooms table (MM7 0x4E5F70 / MM6.EXE 0x4BE888
+ * "HouseMovies"). MM6 records carry the house FLC animation name, the evpan dialogue-panel index
+ * (in `uDialoguePanelId`), the proprietor portrait id and the room sound id; indexing MM7's table with MM6
+ * animation ids used to yield garbage sound/portrait ids. Out-of-range ids resolve to entry 0.
+ */
+const HouseAnimDescr &houseAnimDescr(int animId);
+
+/**
+ * Version-aware name of a transition picture for a 2dEvents exit-pic id / event transition
+ * (MM7 `pHouse_ExitPictures`, MM6.EXE name table @0x4BEFF8). Out-of-range ids resolve to entry 0.
+ */
+const char *houseExitPictureName(unsigned picId);
 
 extern const IndexedArray<int, HOUSE_TYPE_WEAPON_SHOP, HOUSE_TYPE_DARK_GUILD> itemAmountInShop;
 

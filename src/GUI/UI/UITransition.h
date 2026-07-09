@@ -7,6 +7,10 @@
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/UIHouseEnums.h"
 
+class GraphicsImage;
+
+extern GraphicsImage *transition_ui_icon;
+
 class GUIWindow_Transition : public GUIWindow {
  public:
     GUIWindow_Transition(WindowType windowType, ScreenType screenType);

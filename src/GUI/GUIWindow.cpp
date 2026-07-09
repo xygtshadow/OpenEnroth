@@ -639,6 +639,7 @@ void SetUserInterface(PartyAlignment align) {
         game_ui_btn_quickref = assets->getImage_Alpha("buttref");
         game_ui_btn_settings = assets->getImage_Alpha("buttmenu");
         ui_exit_cancel_button_background = assets->getImage_Alpha("buttesc1");
+        game_ui_mm6_buttyes = assets->getImage_Alpha("buttyes1");  // Confirm button on dialogue/transition panels.
 
         // The message-box parchment assets share MM7's names (MM6.EXE loads the same set @0x418225).
         messagebox_corner_y = assets->getImage_Alpha("cornr_ll");
@@ -655,8 +656,9 @@ void SetUserInterface(PartyAlignment align) {
         // (MM6.EXE 0x416616). Drawn with the palette-0-transparent blit like the other fr_*.
         ui_character_inventory_background = assets->getImage_Alpha("fr_inven");
 
-        // No MM6 equivalents (the dialogue skin is tracked separately; MM6 shows buffs via the
-        // overlay rows and has no selection-frame analog) - keep placeholders.
+        // No MM6 equivalents (MM6 has no evtnpc portrait frame - dialogue portraits sit directly on
+        // the evpan panel and the MM6 draw paths skip these; MM6 shows buffs via the overlay rows
+        // and has no selection-frame analog) - keep placeholders.
         GraphicsImage *placeholder = GraphicsImage::Create(1, 1);
         game_ui_player_selection_frame = placeholder;
         game_ui_playerbuff_bless = placeholder;

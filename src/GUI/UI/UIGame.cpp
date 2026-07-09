@@ -163,6 +163,7 @@ std::array<GraphicsImage *, 4> game_ui_mm6_tapestries = {};
 GraphicsImage *game_ui_mm6_border5 = nullptr;
 GraphicsImage *game_ui_mm6_border6 = nullptr;
 GraphicsImage *game_ui_mm6_facemask = nullptr;
+GraphicsImage *game_ui_mm6_buttyes = nullptr;
 
 // MM6 HUD layout, reversed from MM6.EXE (game-screen setup @0x418090, HUD draw cluster @0x417dc0/0x417df0,
 // portrait/gem draw @0x486900, HP/SP bar loop @0x417c10 with the x table @0x4bd0fc).

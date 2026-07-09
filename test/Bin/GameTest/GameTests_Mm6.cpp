@@ -64,6 +64,7 @@
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
+#include "GUI/UI/UITransition.h"
 #include "GUI/UI/Houses/Shops.h"
 #include "GUI/UI/Houses/TownHall.h"
 #include "GUI/UI/Houses/Transport.h"
@@ -414,6 +415,18 @@ GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
     // Interacting with the door fires event 102, which opens the enter-the-dungeon prompt.
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(1);
+
+    // The prompt draws MM6's dialogue skin: the evpan004 marble panel with the transition picture
+    // directly on it, and the yes/cancel buttons on the panel's bottom row (see Mm6.DialogueSkin).
+    ASSERT_NE(game_ui_dialogue_background, nullptr);
+    EXPECT_EQ(game_ui_dialogue_background->name(), "evpan004");
+    EXPECT_EQ(game_ui_dialogue_background->size(), Sizei(152, 353));
+    ASSERT_NE(transition_ui_icon, nullptr);
+    EXPECT_EQ(transition_ui_icon->name(), "castle"); // Event 102 passes exit-pic id 1 = MM6's "castle".
+    ASSERT_NE(pBtn_YES, nullptr);
+    EXPECT_EQ(pBtn_YES->rect, Recti(486, 318, 62, 29));
+    ASSERT_NE(pBtn_ExitCancel, nullptr);
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(566, 318, 62, 29));
 
     // Confirming it loads the Abandoned Temple.
     game.pressAndReleaseKey(PlatformKey::KEY_Y);
@@ -778,6 +791,92 @@ GAME_TEST(Mm6, EnterWeaponShop) {
     game.tick(5);
 }
 
+// MM6 dialogue screens draw MM6's own skin, reversed from MM6.EXE (street dialogue draw @0x43ab90,
+// house dialogue draw @0x497ebf, transition draws @0x43a300/0x43a630, house asset init @0x43c66a,
+// occupant loader @0x43c140): the regular HUD stays up and an "evpan###" marble panel (152x353)
+// covers the right column at (481,0) - per-house from the animated-rooms table (MM6.EXE 0x4BE888,
+// now `pAnimatedRoomsMm6`), evpan019 for street NPCs, evpan004 for transition prompts. Portraits
+// (63x73) sit frameless at (525,34) on the panel; the buttyes/buttesc buttons (61x28) sit on the
+// panel's bottom row. The same table fixes the house room sounds (id formula type + 100 * (id +
+// 300) hits MM6's own 3xx_0y sound entries) and the proprietor portraits (npc505+ commoner block).
+GAME_TEST(Mm6, DialogueSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The animated-rooms accessor dispatches to the MM6 table extracted from MM6.EXE 0x4BE888.
+    EXPECT_EQ(pAnimatedRoomsMm6.size(), 119u);
+    EXPECT_EQ(houseTable[HouseId(1)].uAnimationID, 2); // The Knife Shoppe.
+    EXPECT_EQ(houseAnimDescr(2).video_name, "Blcksmid");
+    EXPECT_EQ(houseAnimDescr(2).uDialoguePanelId, 13);
+    EXPECT_EQ(houseAnimDescr(2).house_npc_id, 506);
+    EXPECT_EQ(houseAnimDescr(2).uRoomSoundId, 33);
+    EXPECT_EQ(houseAnimDescr(44).video_name, "Bank");
+    EXPECT_EQ(houseAnimDescr(44).uBuildingType, HOUSE_TYPE_BANK);
+    // Town halls (houses 89-91) use the City* rows: a named proprietor in 2dEvents but no portrait.
+    EXPECT_EQ(houseAnimDescr(houseTable[HouseId(89)].uAnimationID).house_npc_id, 0);
+    EXPECT_EQ(houseTable[HouseId(89)].pProprieterName, "Janice");
+
+    // MM6's 2dEvents exit columns: the pic id indexes MM6's own picture table and the map is a
+    // 1-based games.lod file index. The City Council (house 165) exits down a staircase; indexing
+    // MM7's 11-entry picture list with the raw map value used to run out of bounds.
+    EXPECT_EQ(houseTable[HouseId(165)].uExitPicID, 5);
+    ASSERT_NE(houseTable[HouseId(165)].uExitMapID, MAP_INVALID);
+    EXPECT_EQ(houseTable[HouseId(165)].uExitMapID, mm6MapIdFromGamesLodFileIndex(49));
+    prepareHouse(HouseId(165));
+    ASSERT_FALSE(houseNpcs.empty());
+    EXPECT_EQ(houseNpcs.back().type, HOUSE_TRANSITION);
+    ASSERT_NE(houseNpcs.back().icon, nullptr);
+    EXPECT_EQ(houseNpcs.back().icon->name(), "istairdn");
+    EXPECT_EQ(houseNpcs.back().icon->size(), Sizei(57, 67));
+    for (HouseNpcDesc &desc : houseNpcs)
+        if (desc.icon)
+            desc.icon->release();
+    houseNpcs.clear();
+
+    // Enter The Knife Shoppe (see Mm6.EnterWeaponShop for the door mechanics).
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        for (const BLVFace &face : model.faces) {
+            if (face.eventId == 17 && face.Clickable()) {
+                door = &face;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    // The house dialogue panel is the shop's own marble evpan, and the proprietor is the MM6
+    // blacksmith portrait from the commoner block, not a garbage id from MM7's table.
+    ASSERT_NE(game_ui_dialogue_background, nullptr);
+    EXPECT_EQ(game_ui_dialogue_background->name(), "evpan013");
+    EXPECT_EQ(game_ui_dialogue_background->size(), Sizei(152, 353));
+    ASSERT_FALSE(houseNpcs.empty());
+    EXPECT_EQ(houseNpcs[0].type, HOUSE_PROPRIETOR);
+    ASSERT_NE(houseNpcs[0].icon, nullptr);
+    EXPECT_EQ(houseNpcs[0].icon->name(), "npc506");
+    EXPECT_EQ(houseNpcs[0].icon->size(), Sizei(63, 73));
+
+    // The exit button sits on the panel's bottom row (CreateButton stores w+1/h+1).
+    ASSERT_NE(pBtn_ExitCancel, nullptr);
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 318, 62, 29));
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
 GAME_TEST(Mm6, BuyFromWeaponShop) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -884,8 +983,15 @@ GAME_TEST(Mm6, StreetCitizenDialogueAndHire) {
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(2);
 
-    // The standard NPC dialogue opened on the generated citizen.
+    // The standard NPC dialogue opened on the generated citizen, drawing MM6's street-dialogue
+    // skin: the fixed evpan019 marble panel, the portrait frameless on it, and the cancel button
+    // on the panel's bottom row (see Mm6.DialogueSkin).
     ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    ASSERT_NE(game_ui_dialogue_background, nullptr);
+    EXPECT_EQ(game_ui_dialogue_background->name(), "evpan019");
+    EXPECT_EQ(game_ui_dialogue_background->size(), Sizei(152, 353));
+    ASSERT_NE(pBtn_ExitCancel, nullptr);
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 318, 62, 29));
     ASSERT_GE(speakingNpcId, 5000);
     NPCData *citizen = getNPCData(speakingNpcId);
     EXPECT_FALSE(citizen->name.empty());

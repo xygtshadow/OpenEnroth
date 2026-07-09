@@ -256,6 +256,167 @@ std::array<const HouseAnimDescr, 196> pAnimatedRooms = { {  // 0x4E5F70
     { "Player Castle Bad", 0x24, 0, HOUSE_TYPE_CASTLE, 0, 0 }
 } };
 
+// MM6.EXE 0x4BE888 ("HouseMovies" in MMExtension terms): the MM6 analog of `pAnimatedRooms`,
+// indexed by the same 2dEvents "Picture" column. Per record: house FLC animation name (played in
+// the viewport; the FLCs live extension-less in anims1/anims2.vid - FLIC playback itself is still
+// pending), the evpan dialogue-panel index (stored in `uDialoguePanelId`), the proprietor portrait id
+// ("npc%03u"), the building type (numbering matches the HouseType enum; only the throne-room jail
+// check reads it) and the room sound id (sound = type + 100 * (id + 300), same formula as MM7).
+std::array<const HouseAnimDescr, 119> pAnimatedRoomsMm6 = { {
+    { "", 4, 500, HOUSE_TYPE_INVALID, 0, 0 },  // 0
+    { "blcksrch", 22, 505, HOUSE_TYPE_WEAPON_SHOP, 34, 4 },
+    { "Blcksmid", 13, 506, HOUSE_TYPE_WEAPON_SHOP, 33, 0 },
+    { "blcksPor", 23, 507, HOUSE_TYPE_WEAPON_SHOP, 32, 0 },
+    { "Apthcrch", 10, 501, HOUSE_TYPE_MAGIC_SHOP, 46, 0 },
+    { "Apthcmid", 14, 502, HOUSE_TYPE_MAGIC_SHOP, 45, 0 },  // 5
+    { "Apthcwch", 42, 503, HOUSE_TYPE_MAGIC_SHOP, 44, 0 },
+    { "magrch", 30, 516, HOUSE_TYPE_MAGIC_SHOP, 43, 0 },
+    { "magmid", 7, 517, HOUSE_TYPE_MAGIC_SHOP, 42, 0 },
+    { "magicpor", 36, 518, HOUSE_TYPE_MAGIC_SHOP, 41, 3 },
+    { "genstrch", 14, 513, HOUSE_TYPE_ALCHEMY_SHOP, 40, 0 },  // 10
+    { "genstmid", 12, 514, HOUSE_TYPE_ALCHEMY_SHOP, 39, 0 },
+    { "genstpor", 11, 515, HOUSE_TYPE_ALCHEMY_SHOP, 38, 0 },
+    { "Cityrich", 16, 0, HOUSE_TYPE_TOWN_HALL_MM6, 14, 0 },
+    { "Citymid", 41, 0, HOUSE_TYPE_TOWN_HALL_MM6, 13, 0 },
+    { "CityPoor", 14, 0, HOUSE_TYPE_TOWN_HALL_MM6, 12, 5 },  // 15
+    { "CitySpec", 30, 0, HOUSE_TYPE_TOWN_HALL_MM6, 0, 0 },
+    { "Citytrtr", 16, 0, HOUSE_TYPE_TOWN_HALL_MM6, 0, 0 },
+    { "throne06", 25, 0, HOUSE_TYPE_THRONE_ROOM, 61, 0 },
+    { "throne03", 9, 0, HOUSE_TYPE_THRONE_ROOM, 60, 0 },
+    { "throne02", 34, 0, HOUSE_TYPE_THRONE_ROOM, 59, 0 },  // 20
+    { "throne01", 19, 0, HOUSE_TYPE_THRONE_ROOM, 63, 0 },
+    { "throne05", 18, 0, HOUSE_TYPE_THRONE_ROOM, 62, 0 },
+    { "throne04", 38, 0, HOUSE_TYPE_THRONE_ROOM, 64, 0 },
+    { "tavpoor1", 13, 175, HOUSE_TYPE_TAVERN, 21, 0 },
+    { "tavrich", 15, 530, HOUSE_TYPE_TAVERN, 20, 4 },  // 25
+    { "tavpoor2", 21, 20, HOUSE_TYPE_TAVERN, 22, 0 },
+    { "TavMid", 36, 297, HOUSE_TYPE_TAVERN, 23, 0 },
+    { "tavpirat", 13, 358, HOUSE_TYPE_TAVERN, 24, 4 },
+    { "tavgob", 20, 552, HOUSE_TYPE_TAVERN, 25, 0 },
+    { "temppoor", 36, 550, HOUSE_TYPE_TEMPLE, 16, 3 },  // 30
+    { "tempmid", 31, 549, HOUSE_TYPE_TEMPLE, 18, 0 },
+    { "temprich", 18, 548, HOUSE_TYPE_TEMPLE, 17, 0 },
+    { "tempevil", 30, 551, HOUSE_TYPE_TEMPLE, 19, 3 },
+    { "tempruin", 32, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "t7", 24, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 35
+    { "t6", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t1", 24, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t4", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t5", 20, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t8", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 40
+    { "oracrich", 17, 0, HOUSE_TYPE_SEER, 2, 0 },
+    { "oracpoor", 33, 0, HOUSE_TYPE_SEER, 1, 0 },
+    { "circus1", 55, 0, HOUSE_TYPE_CIRCUS, 0, 0 },
+    { "Bank", 6, 504, HOUSE_TYPE_BANK, 15, 0 },
+    { "stables", 33, 385, HOUSE_TYPE_STABLE, 11, 3 },  // 45
+    { "ship", 15, 72, HOUSE_TYPE_BOAT, 10, 3 },
+    { "jail", 49, 0, HOUSE_TYPE_JAIL, 0, 0 },
+    { "thfrich", 37, 533, HOUSE_TYPE_TOWN_HALL, 28, 0 },
+    { "thfpoor", 35, 534, HOUSE_TYPE_TOWN_HALL, 27, 0 },
+    { "thfpirat", 36, 535, HOUSE_TYPE_TOWN_HALL, 26, 4 },  // 50
+    { "mercrich", 39, 519, HOUSE_TYPE_MERCENARY_GUILD, 31, 0 },
+    { "mercmid", 39, 520, HOUSE_TYPE_MERCENARY_GUILD, 30, 0 },
+    { "mercpoor", 39, 521, HOUSE_TYPE_MERCENARY_GUILD, 29, 4 },
+    { "elemFire", 28, 510, HOUSE_TYPE_FIRE_GUILD, 47, 0 },
+    { "elemerth", 27, 509, HOUSE_TYPE_EARTH_GUILD, 50, 0 },  // 55
+    { "elemair", 29, 508, HOUSE_TYPE_AIR_GUILD, 48, 3 },
+    { "elemwatr", 26, 511, HOUSE_TYPE_WATER_GUILD, 49, 0 },
+    { "elemall", 43, 512, HOUSE_TYPE_ELEMENTAL_GUILD, 56, 3 },
+    { "mirpthl", 24, 332, HOUSE_TYPE_LIGHT_GUILD, 54, 3 },
+    { "mirpthd", 24, 91, HOUSE_TYPE_DARK_GUILD, 55, 3 },  // 60
+    { "mirpthdl", 24, 0, HOUSE_TYPE_MIRRORED_PATH_GUILD, 58, 3 },
+    { "selfspir", 25, 260, HOUSE_TYPE_SPIRIT_GUILD, 51, 0 },
+    { "selfmind", 38, 61, HOUSE_TYPE_MIND_GUILD, 52, 0 },
+    { "selfbody", 25, 549, HOUSE_TYPE_BODY_GUILD, 53, 0 },
+    { "selfall", 18, 256, HOUSE_TYPE_SELF_GUILD, 57, 0 },  // 65
+    { "roompor1", 8, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roompor2", 3, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roompor3", 13, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roompor4", 2, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roommid1", 36, 0, HOUSE_TYPE_HOUSE, 0, 0 },  // 70
+    { "roommid2", 36, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roommid3", 1, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roommid4", 15, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roomrch1", 9, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roomrch2", 41, 0, HOUSE_TYPE_HOUSE, 0, 0 },  // 75
+    { "roomrch3", 30, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "roomrch4", 24, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "ArmRich", 22, 545, HOUSE_TYPE_ARMOR_SHOP, 37, 0 },
+    { "Armmid", 36, 546, HOUSE_TYPE_ARMOR_SHOP, 36, 4 },
+    { "Armpoor", 13, 547, HOUSE_TYPE_ARMOR_SHOP, 35, 4 },  // 80
+    { "train1", 40, 532, HOUSE_TYPE_TRAINING_GROUND, 3, 4 },
+    { "train2", 44, 532, HOUSE_TYPE_TRAINING_GROUND, 4, 4 },
+    { "train3", 45, 532, HOUSE_TYPE_TRAINING_GROUND, 5, 4 },
+    { "train4", 24, 532, HOUSE_TYPE_TRAINING_GROUND, 6, 4 },
+    { "train5", 22, 532, HOUSE_TYPE_TRAINING_GROUND, 7, 4 },  // 85
+    { "train6", 8, 532, HOUSE_TYPE_TRAINING_GROUND, 8, 4 },
+    { "Pyramid", 53, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "hive", 54, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d14", 52, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d06", 24, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 90
+    { "d16", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d05", 13, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d15", 46, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d13", 25, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d17", 25, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 95
+    { "d03", 30, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d09", 51, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d12", 25, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t2", 25, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "t3", 47, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 100
+    { "d10", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d11", 13, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d02", 20, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d04", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d18", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },  // 105
+    { "d19", 20, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d07", 51, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d20", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "d08", 19, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "CstlGood", 14, 0, HOUSE_TYPE_CASTLE, 9, 3 },  // 110
+    { "d01", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "cd1", 25, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "cd2", 49, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "cd3", 36, 0, HOUSE_TYPE_DUNGEON, 0, 0 },
+    { "circus2", 55, 0, HOUSE_TYPE_CIRCUS, 0, 0 },  // 115
+    { "statue", 55, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "archloop", 55, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+    { "noarchie", 55, 0, HOUSE_TYPE_HOUSE, 0, 0 },
+} };
+
+const HouseAnimDescr &houseAnimDescr(int animId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (animId < 0 || animId >= static_cast<int>(pAnimatedRoomsMm6.size()))
+            animId = 0;
+        return pAnimatedRoomsMm6[animId];
+    }
+    if (animId < 0 || animId >= static_cast<int>(pAnimatedRooms.size()))
+        animId = 0;
+    return pAnimatedRooms[animId];
+}
+
+// MM6.EXE 0x4BEFF8: transition-picture names, indexed by the 2dEvents exit-pic column and the
+// exit-pic argument of transition events. Ids 6-8 coincide with MM7's list; 1-5 differ.
+static constexpr std::array<const char *, 9> pHouse_ExitPicturesMm6 = {{
+    "", "castle", "dungeon", "idoor", "isecdoor", "istairdn", "istairup", "itrap", "outside"
+}};
+
+const char *houseExitPictureName(unsigned picId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return pHouse_ExitPicturesMm6[picId < pHouse_ExitPicturesMm6.size() ? picId : 0];
+    return pHouse_ExitPictures[picId < pHouse_ExitPictures.size() ? picId : 0];
+}
+
+// The house exit/cancel button: MM7 paints a wide box under the right panel; MM6's buttesc sits
+// centered on the dialogue panel's bottom row.
+static Pointi houseExitButtonPos() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445);
+}
+
+static Sizei houseExitButtonSize() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? MM6_DIALOGUE_BUTTON_SIZE : Sizei(169, 35);
+}
+
 const IndexedArray<int, HOUSE_TYPE_WEAPON_SHOP, HOUSE_TYPE_DARK_GUILD> itemAmountInShop = {{
     {HOUSE_TYPE_WEAPON_SHOP,   6},
     {HOUSE_TYPE_ARMOR_SHOP,    8},
@@ -348,7 +509,7 @@ bool enterHouse(HouseId uHouseID) {
     }
 
     uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
-    if (pAnimatedRooms[uCurrentHouse_Animation].uBuildingType == HOUSE_TYPE_THRONE_ROOM && pParty->uFine) {  // going to jail
+    if (houseAnimDescr(uCurrentHouse_Animation).uBuildingType == HOUSE_TYPE_THRONE_ROOM && pParty->uFine) {  // going to jail
         uHouseID = HOUSE_JAIL;
         uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
         restAndHeal(Duration::fromYears(1));
@@ -362,14 +523,20 @@ bool enterHouse(HouseId uHouseID) {
     }
 
     currentHouseNpc = -1;
-    game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x43c66a: each house type carries its own marble dialogue panel, drawn over the
+        // right HUD column (see MM6_DIALOGUE_PANEL_POS).
+        game_ui_dialogue_background = assets->getImage_Solid(fmt::format("evpan{:03}", houseAnimDescr(uCurrentHouse_Animation).uDialoguePanelId));
+    } else {
+        game_ui_dialogue_background = assets->getImage_Solid(dialogueBackgroundResourceByAlignment[pParty->alignment]);
+    }
 
     prepareHouse(uHouseID);
 
     if (houseNpcs.size() == 1) {
         currentHouseNpc = 0;
     }
-    pMediaPlayer->OpenHouseMovie(pAnimatedRooms[uCurrentHouse_Animation].video_name, 1u);
+    pMediaPlayer->OpenHouseMovie(houseAnimDescr(uCurrentHouse_Animation).video_name, 1u);
     if (isMagicGuild(uHouseID)) {
         // TODO(pskelton): check this behaviour
         if (!pParty->hasActiveCharacter()) { // avoid nzi
@@ -391,13 +558,17 @@ bool enterHouse(HouseId uHouseID) {
 void prepareHouse(HouseId house) {
     houseNpcs.clear();
 
-    // Default proprietor of non-simple houses
-    int proprietorId = pAnimatedRooms[houseTable[house].uAnimationID].house_npc_id;
-    if (proprietorId) {
+    // Default proprietor of non-simple houses. MM6 town halls have a named proprietor in 2dEvents
+    // (Janice/Earnest/Jake) but no portrait in the animated-rooms table - the house dialogue is
+    // still anchored on them, so push a portrait-less entry (draw sites skip null icons).
+    int proprietorId = houseAnimDescr(houseTable[house].uAnimationID).house_npc_id;
+    bool mm6NamedProprietor = engine->gameVersion() == GAME_VERSION_MM6 && !houseTable[house].pProprieterName.empty();
+    if (proprietorId || mm6NamedProprietor) {
         HouseNpcDesc desc;
         desc.type = HOUSE_PROPRIETOR;
         desc.label = localization->format(LSTR_CONVERSE_WITH_S, houseTable[house].pProprieterName);
-        desc.icon = assets->getImage_ColorKey(fmt::format("npc{:03}", proprietorId));
+        if (proprietorId)
+            desc.icon = assets->getImage_ColorKey(fmt::format("npc{:03}", proprietorId));
 
         houseNpcs.push_back(desc);
     }
@@ -430,13 +601,23 @@ void prepareHouse(HouseId house) {
         if (houseTable[house]._quest_bit == QBIT_INVALID || !pParty->_questBits[houseTable[house]._quest_bit]) {
             MapId id = houseTable[house].uExitMapID;
 
-            HouseNpcDesc desc;
-            desc.type = HOUSE_TRANSITION;
-            desc.label = localization->format(LSTR_ENTER_S, pMapStats->pInfos[id].name);
-            desc.icon = assets->getImage_ColorKey(pHouse_ExitPictures[static_cast<int>(id)]);
-            desc.targetMapID = id;
+            // MM6 castle entrances chain to a throne room via a "2D <event>" exit that parses to no
+            // map (deferred, see docs/pending/mm6-game-ui-skin.md) - don't offer a broken transition.
+            if (id != MAP_INVALID) {
+                HouseNpcDesc desc;
+                desc.type = HOUSE_TRANSITION;
+                desc.label = localization->format(LSTR_ENTER_S, pMapStats->pInfos[id].name);
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6's exit-pic column is an index into its own picture table; MM7's data
+                    // instead makes the target map id double as the picture index below.
+                    desc.icon = assets->getImage_ColorKey(houseExitPictureName(houseTable[house].uExitPicID));
+                } else {
+                    desc.icon = assets->getImage_ColorKey(pHouse_ExitPictures[static_cast<int>(id)]);
+                }
+                desc.targetMapID = id;
 
-            houseNpcs.push_back(desc);
+                houseNpcs.push_back(desc);
+            }
         }
     }
 }
@@ -451,7 +632,7 @@ void NPCHireableDialogPrepare() {
     NPCData *v1 = houseNpcs[currentHouseNpc].npc;
 
     pDialogueWindow = std::make_unique<GUIWindow>(WINDOW_Dialogue, Pointi(0, 0), Sizei(render->GetRenderDimensions().w, 350));
-    pBtn_ExitCancel = pDialogueWindow->CreateButton({471, 445}, {169, 35}, BUTTON_TYPE_NORMAL, 0,
+    pBtn_ExitCancel = pDialogueWindow->CreateButton(houseExitButtonPos(), houseExitButtonSize(), BUTTON_TYPE_NORMAL, 0,
         UIMSG_Escape, 0, INPUT_ACTION_INVALID, localization->str(LSTR_CANCEL), {ui_exit_cancel_button_background}
     );
     pDialogueWindow->CreateButton({0, 0}, {0, 0}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseScreenClick, 0);
@@ -525,9 +706,14 @@ void updateHouseNPCTopics(int npc) {
     if (houseNpcs[npc].type == HOUSE_TRANSITION) {
         // TODO(Nik-RE-dev): can use GUIWindow_Transition
         pDialogueWindow = std::make_unique<GUIWindow>(WINDOW_Dialogue, Pointi(0, 0), render->GetRenderDimensions());
-        pBtn_ExitCancel = pDialogueWindow->CreateButton({566, 445}, {75, 33}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_TRANSITION_NO, localization->str(LSTR_CANCEL), {ui_buttdesc2});
-        pBtn_YES = pDialogueWindow->CreateButton({486, 445}, {75, 33}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseTransitionConfirmation, 1, INPUT_ACTION_TRANSITION_YES, houseNpcs[npc].label, {ui_buttyes2});
-        pDialogueWindow->CreateButton({pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]}, {63, 73}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseTransitionConfirmation, 1,
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        Pointi escPos = isMm6 ? MM6_DIALOGUE_ESC_BUTTON_POS : Pointi(566, 445);
+        Pointi yesPos = isMm6 ? MM6_DIALOGUE_YES_BUTTON_POS : Pointi(486, 445);
+        Sizei buttonSize = isMm6 ? MM6_DIALOGUE_BUTTON_SIZE : Sizei(75, 33);
+        Pointi portraitPos = isMm6 ? MM6_DIALOGUE_PORTRAIT_POS : Pointi(pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]);
+        pBtn_ExitCancel = pDialogueWindow->CreateButton(escPos, buttonSize, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_TRANSITION_NO, localization->str(LSTR_CANCEL), {ui_buttdesc2});
+        pBtn_YES = pDialogueWindow->CreateButton(yesPos, buttonSize, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseTransitionConfirmation, 1, INPUT_ACTION_TRANSITION_YES, houseNpcs[npc].label, {ui_buttyes2});
+        pDialogueWindow->CreateButton(portraitPos, {63, 73}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseTransitionConfirmation, 1,
                                       INPUT_ACTION_INTERACT, houseNpcs[npc].label);
         pDialogueWindow->CreateButton({8, 8}, {460, 344}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseTransitionConfirmation, 1, INPUT_ACTION_TRANSITION_YES, houseNpcs[npc].label);
     } else {
@@ -693,9 +879,9 @@ void BackToHouseMenu() {
 }
 
 void playHouseSound(HouseId houseID, HouseSoundType type) {
-    if (houseID != HOUSE_INVALID && pAnimatedRooms[houseTable[houseID].uAnimationID].uRoomSoundId) {
+    if (houseID != HOUSE_INVALID && houseAnimDescr(houseTable[houseID].uAnimationID).uRoomSoundId) {
         // TODO(captainurist): encapsulate
-        int roomSoundId = pAnimatedRooms[houseTable[houseID].uAnimationID].uRoomSoundId;
+        int roomSoundId = houseAnimDescr(houseTable[houseID].uAnimationID).uRoomSoundId;
         SoundId soundId = SoundId(std::to_underlying(type) + 100 * (roomSoundId + 300));
         pAudioPlayer->playHouseSound(soundId, true);
     }
@@ -786,7 +972,7 @@ void GUIWindow_House::reinitDialogueWindow() {
         pDialogueWindow = std::make_unique<GUIWindow>(WINDOW_Dialogue, Pointi(0, 0), Sizei(render->GetPresentDimensions().w, 345));
     }
 
-    pBtn_ExitCancel = pDialogueWindow->CreateButton({471, 445}, {169, 35}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+    pBtn_ExitCancel = pDialogueWindow->CreateButton(houseExitButtonPos(), houseExitButtonSize(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
         localization->str(LSTR_END_CONVERSATION), {ui_exit_cancel_button_background});
     pDialogueWindow->CreateButton({8, 8}, {450, 320}, BUTTON_TYPE_NORMAL, 0, UIMSG_HouseScreenClick, 0, INPUT_ACTION_INVALID, "");
 }
@@ -872,8 +1058,15 @@ void GUIWindow_House::houseDialogManager() {
 
     Recti pWindow = this->frameRect;
     pWindow.w -= 18;
-    render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
-    render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    if (isMm6) {
+        // MM6.EXE 0x497ebf: the HUD frames are already drawn (Engine::DrawGUI runs first); the
+        // dialogue just blits its marble panel over the right column. No panel-frame redraw.
+        render->DrawQuad2D(game_ui_dialogue_background, MM6_DIALOGUE_PANEL_POS);
+    } else {
+        render->DrawQuad2D(game_ui_dialogue_background, {477, 0});
+        render->DrawQuad2D(game_ui_right_panel_frame, {468, 0});
+    }
 
     if (currentHouseNpc == -1 || houseNpcs[currentHouseNpc].type != HOUSE_TRANSITION) {
         // Draw house title
@@ -891,7 +1084,7 @@ void GUIWindow_House::houseDialogManager() {
     pWindow.w += 8;
     if (currentHouseNpc == -1) {
         // Either house have no residents or current screen is for selecting resident to begin dialogue
-        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_exit_cancel_button_background, isMm6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445));
 
         if (buildingType() == HOUSE_TYPE_JAIL) {
             houseSpecificDialogue();
@@ -902,8 +1095,10 @@ void GUIWindow_House::houseDialogManager() {
         for (int i = 0; i < houseNpcs.size(); ++i) {
             int portraitX = pNPCPortraits_x[houseNpcs.size() - 1][i];
             int portraitY = pNPCPortraits_y[houseNpcs.size() - 1][i];
-            render->DrawQuad2D(game_ui_evtnpc, {portraitX - 4, portraitY - 4});
-            render->DrawQuad2D(houseNpcs[i].icon, {portraitX, portraitY});
+            if (!isMm6) // MM6 has no evtnpc portrait frame - portraits sit directly on the panel.
+                render->DrawQuad2D(game_ui_evtnpc, {portraitX - 4, portraitY - 4});
+            if (houseNpcs[i].icon) // MM6 town-hall proprietors have no portrait.
+                render->DrawQuad2D(houseNpcs[i].icon, {portraitX, portraitY});
             if (houseNpcs.size() < 4) {
                 std::string pTitleText = "";
                 int yPos = 0;
@@ -927,11 +1122,17 @@ void GUIWindow_House::houseDialogManager() {
         return;
     }
 
-    render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
-    render->DrawQuad2D(houseNpcs[currentHouseNpc].icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+    if (isMm6) {
+        // MM6.EXE 0x497f46: the selected occupant's portrait, frameless, at the panel's picture spot.
+        if (houseNpcs[currentHouseNpc].icon)
+            render->DrawQuad2D(houseNpcs[currentHouseNpc].icon, MM6_DIALOGUE_PORTRAIT_POS);
+    } else {
+        render->DrawQuad2D(game_ui_evtnpc, {pNPCPortraits_x[0][0] - 4, pNPCPortraits_y[0][0] - 4});
+        render->DrawQuad2D(houseNpcs[currentHouseNpc].icon, {pNPCPortraits_x[0][0], pNPCPortraits_y[0][0]});
+    }
     if (current_screen_type == SCREEN_SHOP_INVENTORY) {
         CharacterUI_InventoryTab_Draw(&pParty->activeCharacter(), true);
-        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_exit_cancel_button_background, isMm6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445));
         return;
     }
     if (currentHouseNpc || houseNpcs[0].type != HOUSE_PROPRIETOR) {
@@ -943,10 +1144,16 @@ void GUIWindow_House::houseDialogManager() {
         houseSpecificDialogue();
     }
     if (currentHouseNpc != -1 && houseNpcs[currentHouseNpc].type == HOUSE_TRANSITION) {
-        render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
-        render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+        if (isMm6) {
+            // MM6.EXE 0x4983a1: the yes/cancel pair on the panel's bottom row.
+            render->DrawQuad2D(ui_exit_cancel_button_background, MM6_DIALOGUE_ESC_BUTTON_POS);
+            render->DrawQuad2D(game_ui_mm6_buttyes, MM6_DIALOGUE_YES_BUTTON_POS);
+        } else {
+            render->DrawQuad2D(dialogue_ui_x_x_u, {556, 451});
+            render->DrawQuad2D(dialogue_ui_x_ok_u, {476, 451});
+        }
     } else {
-        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_exit_cancel_button_background, isMm6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445));
     }
 }
 
@@ -1050,7 +1257,7 @@ GUIWindow_House::GUIWindow_House(HouseId houseId) : GUIWindow(WINDOW_HouseInteri
     pEventTimer->setPaused(true);  // pause timer so not attacked
 
     current_screen_type = SCREEN_HOUSE;
-    pBtn_ExitCancel = CreateButton({471, 445}, {169, 35}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+    pBtn_ExitCancel = CreateButton(houseExitButtonPos(), houseExitButtonSize(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
                                    localization->str(LSTR_EXIT_BUILDING), {ui_exit_cancel_button_background});
 
     if (buildingType() <= HOUSE_TYPE_MIRRORED_PATH_GUILD) {

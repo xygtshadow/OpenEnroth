@@ -128,41 +128,16 @@ static const std::unordered_map<MapId, uint16_t> gamesLodIndexByMapId = {
 };
 static const std::unordered_map<uint16_t, MapId> mapIdByGamesLodIndex = inverted(gamesLodIndexByMapId);
 
-/**
- * MM6 beacons store a 1-based file index into games.lod. The MM6 games.lod directory holds
- * the 67 map files first, sorted case-insensitively by file name (the delta files follow),
- * so the index is exactly the case-insensitive rank of the map's file name among all
- * mapstats entries. Computed from mapstats data instead of a hardcoded table.
- */
-static uint16_t mm6GamesLodIndexByMapId(MapId mapId) {
-    if (mapId == MAP_INVALID || pMapStats->pInfos[mapId].fileName.empty())
-        return -1;
-    std::string fileName = ascii::toLower(pMapStats->pInfos[mapId].fileName);
-    uint16_t rank = 1;
-    for (MapId id : pMapStats->pInfos.indices()) {
-        std::string other = ascii::toLower(pMapStats->pInfos[id].fileName);
-        if (!other.empty() && other < fileName)
-            rank++;
-    }
-    return rank;
-}
-
-static MapId mm6MapIdByGamesLodIndex(uint16_t index) {
-    for (MapId id : pMapStats->pInfos.indices())
-        if (!pMapStats->pInfos[id].fileName.empty() && mm6GamesLodIndexByMapId(id) == index)
-            return id;
-    return MAP_INVALID;
-}
-
 static uint16_t gamesLodIndexForBeacon(MapId mapId) {
+    // MM6 beacons store a 1-based file index into games.lod, see mm6GamesLodFileIndex().
     if (engine->gameVersion() == GAME_VERSION_MM6)
-        return mm6GamesLodIndexByMapId(mapId);
+        return mm6GamesLodFileIndex(mapId);
     return valueOr(gamesLodIndexByMapId, mapId, static_cast<uint16_t>(-1));
 }
 
 static MapId beaconMapIdByGamesLodIndex(uint16_t index) {
     if (engine->gameVersion() == GAME_VERSION_MM6)
-        return mm6MapIdByGamesLodIndex(index);
+        return mm6MapIdFromGamesLodFileIndex(index);
     return valueOr(mapIdByGamesLodIndex, index, MAP_INVALID);
 }
 

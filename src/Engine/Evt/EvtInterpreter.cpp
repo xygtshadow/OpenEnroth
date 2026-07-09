@@ -307,7 +307,7 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
                 }
 
                 if (current_screen_type == SCREEN_HOUSE) {
-                    pMediaPlayer->OpenHouseMovie(pAnimatedRooms[uCurrentHouse_Animation].video_name, 1);
+                    pMediaPlayer->OpenHouseMovie(houseAnimDescr(uCurrentHouse_Animation).video_name, 1);
                 }
             }
             break;

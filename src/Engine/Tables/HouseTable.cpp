@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "Engine/Data/HouseEnums.h"
+#include "Engine/MapEnumFunctions.h"
 
 #include "Library/Logger/Logger.h"
 #include "Library/Serialization/Serialization.h"
@@ -125,7 +126,15 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         houseTable[houseId].uOpenTime = parseNum(tokens[18], 0);
         houseTable[houseId].uCloseTime = parseNum(tokens[19], 0);
         houseTable[houseId].uExitPicID = parseNum(tokens[20], 0);
-        houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));
+        if (version == GAME_VERSION_MM6) {
+            // MM6's exit-map column stores a 1-based games.lod file index (like Lloyd's Beacon slots
+            // and the transport schedules), not a map id. Castle entrances store text here instead
+            // ("2D 154" chains to another 2dEvents row) - those parse to 0 and stay without an exit;
+            // the throne-room chain model is deferred (docs/pending/mm6-game-ui-skin.md).
+            houseTable[houseId].uExitMapID = mm6MapIdFromGamesLodFileIndex(parseNum(tokens[21], 0));
+        } else {
+            houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));
+        }
         houseTable[houseId]._quest_bit = static_cast<QuestBit>(parseNum(tokens[22], 0));
         houseTable[houseId].pEnterText = removeQuotes(tokens[23]);
     }

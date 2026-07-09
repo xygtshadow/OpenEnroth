@@ -35,6 +35,30 @@ bool isHirelingsBlockedOnMap(MapId mapid) {
     return fileName == "out15.odm" || fileName == "d23.blv";
 }
 
+int mm6GamesLodFileIndex(MapId mapId) {
+    // MM6 stores maps as 1-based file indices into games.lod (Lloyd's Beacon slots, transport
+    // schedules, 2dEvents exit maps). The MM6 games.lod directory holds the 67 map files first,
+    // sorted case-insensitively by file name (the delta files follow), so the index is exactly
+    // the case-insensitive rank of the map's file name among all mapstats entries.
+    if (mapId == MAP_INVALID || pMapStats->pInfos[mapId].fileName.empty())
+        return -1;
+    std::string fileName = ascii::toLower(pMapStats->pInfos[mapId].fileName);
+    int rank = 1;
+    for (MapId id : pMapStats->pInfos.indices()) {
+        std::string other = ascii::toLower(pMapStats->pInfos[id].fileName);
+        if (!other.empty() && other < fileName)
+            rank++;
+    }
+    return rank;
+}
+
+MapId mm6MapIdFromGamesLodFileIndex(int index) {
+    for (MapId id : pMapStats->pInfos.indices())
+        if (!pMapStats->pInfos[id].fileName.empty() && mm6GamesLodFileIndex(id) == index)
+            return id;
+    return MAP_INVALID;
+}
+
 void MapStats::Initialize(const Blob &mapStats, GameVersion version) {
     // mapstats.txt table structure: map id | name (localized) | file name | ... |
     //                               map designer (set only in mm6, not used) | dev notes | parent map (not used).
