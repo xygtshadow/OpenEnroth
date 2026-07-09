@@ -537,13 +537,19 @@ bool enterHouse(HouseId uHouseID) {
         currentHouseNpc = 0;
     }
     pMediaPlayer->OpenHouseMovie(houseAnimDescr(uCurrentHouse_Animation).video_name, 1u);
-    if (isMagicGuild(uHouseID)) {
+    // MM6 magic-guild house ids (119-140) don't line up with MM7's (139-170) and carry MM6's own
+    // membership award bits - see MagicGuild.cpp.
+    bool magicGuild = engine->gameVersion() == GAME_VERSION_MM6 ? mm6IsMagicGuildHouse(uHouseID) : isMagicGuild(uHouseID);
+    if (magicGuild) {
         // TODO(pskelton): check this behaviour
         if (!pParty->hasActiveCharacter()) { // avoid nzi
             pParty->setActiveToFirstCanAct();
         }
 
-        if (!pParty->activeCharacter()._achievedAwardsBits[membershipAwardForGuild(uHouseID)]) {
+        AwardId membershipAward = engine->gameVersion() == GAME_VERSION_MM6
+            ? mm6MagicGuildMembershipAward(uHouseID)
+            : membershipAwardForGuild(uHouseID);
+        if (!pParty->activeCharacter()._achievedAwardsBits[membershipAward]) {
             playHouseSound(uHouseID, HOUSE_SOUND_MAGIC_GUILD_MEMBERS_ONLY);
             return true;
         }

@@ -4710,3 +4710,172 @@ GAME_TEST(Mm6, EnterCastleThroneRoom) {
     EXPECT_EQ(pParty->pos.x, posAtDoor.x);
     EXPECT_EQ(pParty->pos.y, posAtDoor.y);
 }
+
+// MM6 magic guilds (2dEvents houses 119-140, an Initiate + an Adept house per organization) run the
+// same membership model as the fighter/thief guilds on the house side (award-bit table @0x4C3CB8;
+// joining happens at recruiter NPC topics 389-397 + 381/382, covered by MercGuildJoinAndLearnSkills):
+// non-members are turned away with npctext row 172 ("You must be a member of this guild to study
+// here") and zero options; members get Buy Spells plus the guild's taught skills (option factory
+// @0x498a15..0x498ec4: school skill + Learning for fire/air/water/earth guilds, + Meditation for
+// spirit/mind/body, school skill only for light/dark; the MM6-only Element guild teaches all four
+// elemental schools and the Self guild all three self schools). Learning costs trunc(500 x 2dEvents
+// multiplier), merchant-discounted with a floor of a third (@0x49b854), and requires the class-can-
+// learn table @0x4C2694. Buy Spells restocks 12 identified spellbooks when the 2dEvents interval
+// elapses (generator @0x4a4320): item = 300 + school*11 + rand % N, where N comes from the per-house
+// word table @0x4C48B0 (7/11 for the school guilds, 6/10 light+dark, 4/8 element+self - the 2dEvents
+// "Spells = 1-N" annotations agree) and the combined guilds roll the school per slot. The engine's
+// guild shelf arrays are keyed by MM7's magic-guild house ids 139-170, so MM6 houses 119-140 map
+// onto slots houseId + 20 (the save format is untouched).
+GAME_TEST(Mm6, MagicGuildMembershipAndSpellbooks) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->SetGold(20000);
+
+    // MM6's guild rows parse with their own types, including the MM6-only combined guilds.
+    ASSERT_EQ(houseTable[HouseId(119)].uType, HOUSE_TYPE_FIRE_GUILD);
+    ASSERT_EQ(houseTable[HouseId(137)].uType, HOUSE_TYPE_ELEMENTAL_GUILD);
+    ASSERT_EQ(houseTable[HouseId(139)].uType, HOUSE_TYPE_SELF_GUILD);
+    EXPECT_EQ(houseTable[HouseId(137)].name, "Initiate Guild of the Elements");
+    EXPECT_EQ(houseTable[HouseId(137)].fPriceMultiplier, 1.5f);
+    EXPECT_EQ(houseTable[HouseId(119)].fPriceMultiplier, 2.0f);
+
+    // Non-member: New Sorpigal's Element guild opens safely and offers nothing.
+    ASSERT_TRUE(enterHouse(HouseId(137)));
+    createHouseUI(HouseId(137));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    openProprietorDialogue(game);
+    game.tick(2);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_GUILD_BUY_BOOKS), nullptr);
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption)
+            EXPECT_FALSE(IsSkillLearningDialogue(static_cast<DialogueId>(button->msg_param)));
+    leaveHouse(game);
+
+    // Membership in the Elemental-guild organization is award bit 64 on the active character.
+    for (Character &character : pParty->pCharacters)
+        character._achievedAwardsBits.set(static_cast<AwardId>(64), true);
+
+    // A member is offered Buy Spells + the four elemental school skills (MM6.EXE factory 0x498a15).
+    ASSERT_TRUE(enterHouse(HouseId(137)));
+    createHouseUI(HouseId(137));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_NE(findProprietorOption(DIALOGUE_GUILD_BUY_BOOKS), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_FIRE), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_AIR), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_WATER), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_EARTH), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_LEARNING), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_SPIRIT), nullptr);
+
+    // Zoltan the Sorcerer learns Air Magic for trunc(500 x 1.5) = 750 (no merchant discount on a
+    // fresh party). Fire is taught here too but he knows it from creation: blank no-op option.
+    pParty->setActiveCharacterIndex(4);
+    EXPECT_EQ(pParty->activeCharacter().name, pParty->pCharacters[3].name);
+    EXPECT_TRUE(pParty->pCharacters[3].pActiveSkills[SKILL_FIRE]);
+    int goldBefore = pParty->GetGold();
+    clickProprietorOption(game, DIALOGUE_LEARN_FIRE);
+    EXPECT_EQ(pParty->GetGold(), goldBefore);
+    EXPECT_FALSE(pParty->pCharacters[3].pActiveSkills[SKILL_AIR]);
+    clickProprietorOption(game, DIALOGUE_LEARN_AIR);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 750);
+    EXPECT_EQ(pParty->pCharacters[3].pActiveSkills[SKILL_AIR], CombinedSkillValue::novice());
+
+    // Roderick the Paladin can learn no magic at all (class-can-learn table @0x4C2694): no-op.
+    pParty->setActiveCharacterIndex(1);
+    goldBefore = pParty->GetGold();
+    clickProprietorOption(game, DIALOGUE_LEARN_WATER);
+    EXPECT_EQ(pParty->GetGold(), goldBefore);
+    EXPECT_FALSE(pParty->pCharacters[0].pActiveSkills[SKILL_WATER]);
+
+    // Buy Spells: the Initiate shelves stock 12 identified books rolled from the four elemental
+    // schools' first FOUR spells, and the refresh clock starts ticking.
+    clickProprietorOption(game, DIALOGUE_GUILD_BUY_BOOKS);
+    game.tick(2);
+    EXPECT_GT(pParty->PartyTimes.guildNextRefreshTime[HouseId(137 + 20)], pParty->GetPlayingTime());
+    std::array<Item, 12> &shelf = pParty->spellBooksInGuilds[HouseId(137 + 20)];
+    for (const Item &book : shelf) {
+        int id = std::to_underlying(book.itemId);
+        int school = (id - 300) / 11;
+        EXPECT_GE(school, 0) << "book id " << id;
+        EXPECT_LE(school, 3) << "book id " << id;
+        EXPECT_LT((id - 300) % 11, 4) << "book id " << id;
+        EXPECT_TRUE(book.IsIdentified());
+    }
+
+    // Buying the first shelf book pays the standard buying price and moves it into the active
+    // character's inventory; the slot empties until the next restock.
+    Item firstBook = shelf[0];
+    goldBefore = pParty->GetGold();
+    int price = PriceCalculator::itemBuyingPriceForPlayer(&pParty->activeCharacter(), firstBook.GetValue(),
+                                                          houseTable[HouseId(137)].fPriceMultiplier);
+    game.pressAndReleaseButton(BUTTON_LEFT, 36, 94);
+    game.tick(2);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - price);
+    EXPECT_EQ(shelf[0].itemId, ITEM_NULL);
+    bool bookInInventory = false;
+    for (InventoryConstEntry entry : pParty->activeCharacter().inventory.entries())
+        if (entry->itemId == firstBook.itemId)
+            bookInInventory = true;
+    EXPECT_TRUE(bookInInventory);
+    leaveHouse(game);
+
+    // The Self guild (house 139, organization award 65) teaches and stocks the three self schools.
+    // Serena the Cleric knows Mind and Body from creation and learns Spirit here.
+    for (Character &character : pParty->pCharacters)
+        character._achievedAwardsBits.set(static_cast<AwardId>(65), true);
+    pParty->setActiveCharacterIndex(3);
+    ASSERT_TRUE(enterHouse(HouseId(139)));
+    createHouseUI(HouseId(139));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_SPIRIT), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_MIND), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_BODY), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_FIRE), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_MEDITATION), nullptr);
+    goldBefore = pParty->GetGold();
+    EXPECT_FALSE(pParty->pCharacters[2].pActiveSkills[SKILL_SPIRIT]);
+    clickProprietorOption(game, DIALOGUE_LEARN_SPIRIT);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 750);
+    EXPECT_EQ(pParty->pCharacters[2].pActiveSkills[SKILL_SPIRIT], CombinedSkillValue::novice());
+    clickProprietorOption(game, DIALOGUE_GUILD_BUY_BOOKS);
+    game.tick(2);
+    for (const Item &book : pParty->spellBooksInGuilds[HouseId(139 + 20)]) {
+        int id = std::to_underlying(book.itemId);
+        int school = (id - 300) / 11;
+        EXPECT_GE(school, 4) << "book id " << id;
+        EXPECT_LE(school, 6) << "book id " << id;
+        EXPECT_LT((id - 300) % 11, 4) << "book id " << id;
+    }
+    leaveHouse(game);
+
+    // A single-school guild teaches its school + Learning and stocks spells 1-7 at Initiate level:
+    // the Fire guild (house 119, organization award 74, multiplier 2 -> Learning costs 1000).
+    for (Character &character : pParty->pCharacters)
+        character._achievedAwardsBits.set(static_cast<AwardId>(74), true);
+    ASSERT_TRUE(enterHouse(HouseId(119)));
+    createHouseUI(HouseId(119));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_NE(findProprietorOption(DIALOGUE_GUILD_BUY_BOOKS), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_FIRE), nullptr);
+    EXPECT_NE(findProprietorOption(DIALOGUE_LEARN_LEARNING), nullptr);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_LEARN_AIR), nullptr);
+    goldBefore = pParty->GetGold();
+    EXPECT_FALSE(pParty->pCharacters[2].pActiveSkills[SKILL_LEARNING]);
+    clickProprietorOption(game, DIALOGUE_LEARN_LEARNING);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 1000);
+    EXPECT_EQ(pParty->pCharacters[2].pActiveSkills[SKILL_LEARNING], CombinedSkillValue::novice());
+    clickProprietorOption(game, DIALOGUE_GUILD_BUY_BOOKS);
+    game.tick(2);
+    for (const Item &book : pParty->spellBooksInGuilds[HouseId(119 + 20)]) {
+        int id = std::to_underlying(book.itemId);
+        EXPECT_GE(id, 300) << "book id " << id;
+        EXPECT_LE(id, 306) << "book id " << id;
+    }
+    leaveHouse(game);
+}

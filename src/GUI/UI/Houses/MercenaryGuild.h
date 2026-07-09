@@ -5,6 +5,23 @@
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIHouseEnums.h"
 
+#include "Engine/Objects/CharacterEnums.h"
+
+class Character;
+
+/**
+ * MM6.EXE class-can-learn table @0x4C2694: 6 base classes x 31 MM6 skill slots. The fighter/thief
+ * guilds and the magic guilds all filter their taught skills through it.
+ */
+bool mm6ClassCanLearn(Class classType, Skill skill);
+
+/**
+ * MM6 guild skill-learning price: trunc(base * 2dEvents price multiplier), merchant-discounted with
+ * a floor of a third of the undiscounted price. Base is 100 for "Merc Guild" rows, 250 for
+ * "Thieves Guild" rows (MM6.EXE 0x49c4cd) and 500 for the magic guilds (0x49b854).
+ */
+int mm6SkillLearnPrice(const Character *player, HouseId houseId, int base);
+
 /**
  * MM6's membership skill-teaching guilds: the fighter guilds (2dEvents "Merc Guild", houses
  * 141-146) and the thief guilds ("Thieves Guild", houses 147-152). A member of the guild's

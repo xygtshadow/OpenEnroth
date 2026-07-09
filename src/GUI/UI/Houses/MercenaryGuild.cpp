@@ -16,6 +16,7 @@
 #include "Engine/Party.h"
 #include "Engine/PriceCalculator.h"
 #include "Engine/Tables/HouseTable.h"
+#include "Engine/Tables/NPCTable.h"
 
 #include "Media/Audio/AudioPlayer.h"
 
@@ -71,7 +72,7 @@ static const Mm6GuildHouse *mm6GuildHouse(HouseId houseId) {
 // MM6.EXE class-can-learn table @0x4C2694: 6 base classes x 31 MM6 skill slots. Zero means the
 // class can never learn the skill; the meaning of the nonzero grades 1/2/3 is not fully reversed
 // (they likely cap the NPC-teacher promotion tier) - here only zero/nonzero matters.
-static bool mm6ClassCanLearn(Class classType, Skill skill) {
+bool mm6ClassCanLearn(Class classType, Skill skill) {
     static constexpr std::array<std::array<uint8_t, 31>, 6> canLearn = {{
         {{3, 1, 2, 2, 2, 2, 3, 3, 2, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 2, 0, 2, 3, 0, 2, 3}}, // Knight
         {{2, 0, 0, 0, 0, 3, 1, 3, 2, 2, 3, 0, 0, 0, 0, 0, 2, 2, 1, 3, 3, 2, 3, 2, 3, 2, 3, 2, 0, 3, 3}}, // Cleric
@@ -102,7 +103,7 @@ static bool mm6ClassCanLearn(Class classType, Skill skill) {
 
 // MM6.EXE 0x49c4cd: trunc(base * multiplier), merchant-discounted, floored at a third of the
 // undiscounted price.
-static int mm6SkillLearnPrice(const Character *player, HouseId houseId, int base) {
+int mm6SkillLearnPrice(const Character *player, HouseId houseId, int base) {
     int price = static_cast<int>(base * houseTable[houseId].fPriceMultiplier);
     int effectivePrice = PriceCalculator::applyMerchantDiscount(player, price);
     if (effectivePrice < price / 3)
@@ -217,7 +218,15 @@ void GUIWindow_MercenaryGuild::houseSpecificDialogue() {
         return; // A plain house: nothing to offer (the proprietor name is already drawn).
 
     if (!pParty->activeCharacter()._achievedAwardsBits[guild->membershipAward]) {
-        // Non-members get no options (MM6.EXE 0x49cc02 zeroes the option count).
+        // Non-members are turned away with npctext row 172, "You must be a member of this guild to
+        // study here" - the fighter/thief and magic guilds read the same string global (MM6.EXE
+        // 0x49cc04 / 0x49c3b5), and the option count is zeroed (0x49cc02).
+        Recti dialogue = this->frameRect;
+        dialogue.x = SIDE_TEXT_BOX_POS_X;
+        dialogue.w = SIDE_TEXT_BOX_WIDTH;
+        int textHeight = assets->pFontArrus->CalcTextHeight(pNPCTopics[171].pText, dialogue.w, 0);
+        DrawTitleText(assets->pFontArrus.get(), 0, (SIDE_TEXT_BOX_BODY_TEXT_HEIGHT - textHeight) / 2 + SIDE_TEXT_BOX_BODY_TEXT_OFFSET,
+                      colorTable.PaleCanary, pNPCTopics[171].pText, 3, dialogue);
         pDialogueWindow->pNumPresenceButton = 0;
         return;
     }
