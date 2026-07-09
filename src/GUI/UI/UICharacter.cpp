@@ -852,6 +852,16 @@ void GUIWindow_CharacterRecord::CharacterUI_SkillsTab_Draw(Character *player) {
 std::string GUIWindow_CharacterRecord::getAchievedAwardsString(int idx) {
     std::string str;
 
+    // MM6's awards.txt has its own row numbering, so the MM7 enum cases below would format the wrong
+    // rows. Row 81 is MM6's town-hall bounty award ("Collected %u bounties"), counting claims rather
+    // than gold; the other counted MM6 rows (82 deaths, 83 prison terms, 84 arena victories) are never
+    // granted yet - their grant sites still use the MM7 award ids (see docs/pending).
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (std::to_underlying(_achievedAwardsList[idx]) == 81)
+            return fmt::sprintf(pAwards[_achievedAwardsList[idx]].pText, pParty->uNumBountiesCollected);
+        return std::string(pAwards[_achievedAwardsList[idx]].pText);
+    }
+
     // TODO(captainurist): fmt can throw
     switch (_achievedAwardsList[idx]) {
     case AWARD_ARENA_PAGE_WINS:

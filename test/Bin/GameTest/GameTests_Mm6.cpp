@@ -8,6 +8,7 @@
 
 #include "Testing/Game/GameTest.h"
 
+#include "Engine/Data/AwardEnums.h"
 #include "Engine/Engine.h"
 #include "Engine/Evt/EvtProgram.h"
 #include "Engine/Evt/Processor.h"
@@ -58,6 +59,7 @@
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UISpell.h"
 #include "GUI/UI/Houses/Shops.h"
+#include "GUI/UI/Houses/TownHall.h"
 #include "GUI/UI/Houses/Transport.h"
 
 #include "Io/Mouse.h"
@@ -2459,17 +2461,18 @@ static void advanceToTravelDay(EngineController &game, HouseId houseId) {
     ASSERT_TRUE(isTravelAvailable(houseId));
 }
 
-// Clicks the Nth transport schedule line in an open stables/dock dialogue. The option buttons
-// are re-laid-out to rendered-text metrics on draw, so locate them by message param.
-static void selectTransportSchedule(EngineController &game, DialogueId scheduleLine) {
+// Clicks a proprietor dialogue option (a transport schedule line, a town-hall service, ...) in an open
+// house dialogue. The option buttons are re-laid-out to rendered-text metrics on draw, so locate them
+// by message param.
+static void clickProprietorOption(EngineController &game, DialogueId option) {
     ASSERT_NE(pDialogueWindow, nullptr);
-    const GUIButton *option = nullptr;
+    const GUIButton *optionButton = nullptr;
     for (const GUIButton *button : pDialogueWindow->vButtons)
-        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(scheduleLine))
-            option = button;
-    ASSERT_NE(option, nullptr);
-    game.pressAndReleaseButton(BUTTON_LEFT, option->rect.x + option->rect.w / 2,
-                               option->rect.y + option->rect.h / 2);
+        if (button->msg == UIMSG_SelectProprietorDialogueOption && button->msg_param == std::to_underlying(option))
+            optionButton = button;
+    ASSERT_NE(optionButton, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, optionButton->rect.x + optionButton->rect.w / 2,
+                               optionButton->rect.y + optionButton->rect.h / 2);
     game.tick(2);
 }
 
@@ -2492,7 +2495,7 @@ GAME_TEST(Mm6, TravelByCoachAndBoat) {
 
     int goldBefore = pParty->GetGold();
     Time timeBefore = pParty->GetPlayingTime();
-    selectTransportSchedule(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
+    clickProprietorOption(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
     game.tick(10);
 
     EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "outd3.odm"); // Castle Ironfist.
@@ -2517,7 +2520,7 @@ GAME_TEST(Mm6, TravelByCoachAndBoat) {
 
     goldBefore = pParty->GetGold();
     timeBefore = pParty->GetPlayingTime();
-    selectTransportSchedule(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
+    clickProprietorOption(game, DIALOGUE_TRANSPORT_SCHEDULE_1);
     game.tick(10);
 
     EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute2.odm"); // Misty Islands.
@@ -3751,4 +3754,132 @@ GAME_TEST(Mm6, GuardianAngel) {
     EXPECT_EQ(pParty->GetGold(), 0);
     for (Character &character : pParty->pCharacters)
         EXPECT_EQ(character.health, 1);
+}
+
+// Opens the proprietor dialogue in a freshly entered house. Houses with a single occupant open it
+// automatically; houses that also lodge npcdata NPCs (like MM6's town halls) show a portrait row
+// instead, and the proprietor - always first in houseNpcs - must be clicked.
+static void openProprietorDialogue(EngineController &game) {
+    if (pDialogueWindow != nullptr)
+        return;
+    ASSERT_FALSE(houseNpcs.empty());
+    ASSERT_EQ(houseNpcs[0].type, HOUSE_PROPRIETOR);
+    ASSERT_NE(houseNpcs[0].button, nullptr);
+    Recti portrait = houseNpcs[0].button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
+    game.tick(2);
+    ASSERT_NE(pDialogueWindow, nullptr);
+}
+
+// MM6 has three town halls (2dEvents houses 89-91: New Sorpigal, Castle Ironfist, Silver Cove) whose
+// bounty state lives in three slots keyed as houseId - 89 (MM6.EXE 0x4A31AF); the engine's bounty arrays
+// are keyed by MM7's five town-hall house ids, so the MM6 town halls map onto the first three slots.
+// The monthly bounty is a uniform roll over monster ids 1-171 that re-rolls the non-monster rows
+// (88-90 VARN guardians, 103-105 Merchants, 121-126 + 133-135 true peasants, 148-150 VARN robots;
+// MM6.EXE 0x4A3238). Claiming pays 100 gold per monster level, brands every character with MM6's award
+// 81 ("Collected %u bounties"), counts ONE bounty (MM6's counter is a count, not gold like MM7's), and
+// nudges reputation toward notorious by the monster's level - killing for money (MM6.EXE 0x4A32DC).
+// The reply texts are MM6's own npctext rows 368-370.
+GAME_TEST(Mm6, TownHallBountyHunt) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // All three MM6 town halls parse as town halls.
+    ASSERT_EQ(houseTable[HouseId(89)].uType, HOUSE_TYPE_TOWN_HALL);
+    ASSERT_EQ(houseTable[HouseId(90)].uType, HOUSE_TYPE_TOWN_HALL);
+    ASSERT_EQ(houseTable[HouseId(91)].uType, HOUSE_TYPE_TOWN_HALL);
+
+    auto isExcludedFromBounties = [](int id) {
+        return (id >= 88 && id <= 90) || (id >= 103 && id <= 105) || (id >= 121 && id <= 126) ||
+               (id >= 133 && id <= 135) || (id >= 148 && id <= 150);
+    };
+
+    // The roll never produces an out-of-range or excluded monster.
+    for (int i = 0; i < 500; i++) {
+        int roll = std::to_underlying(GUIWindow_TownHall::randomMonsterForHunting(HouseId(89)));
+        ASSERT_GE(roll, 1);
+        ASSERT_LE(roll, 171);
+        ASSERT_FALSE(isExcludedFromBounties(roll)) << "rolled excluded monster id " << roll;
+    }
+
+    // Town halls open at 10:00 and the game starts at 9:00 - move to opening hours, then walk in through
+    // the same path EVENT_SpeakInHouse takes (the New Sorpigal town hall is house 89, on oute3).
+    pParty->GetPlayingTime() += Duration::fromHours(2);
+    game.tick(1);
+    ASSERT_TRUE(enterHouse(HouseId(89)));
+    createHouseUI(HouseId(89));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    ASSERT_EQ(window_SpeakInHouse->houseId(), HouseId(89));
+    openProprietorDialogue(game);
+
+    // Asking for the bounty posts this month's hunt: a valid target, not yet killed, regenerating at the
+    // start of next month, announced with MM6's npctext row 368 naming the monster.
+    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    HouseId slot = HOUSE_TOWN_HALL_HARMONDALE; // MM6 slot 0 = house 89.
+    MonsterId target = pParty->monster_id_for_hunting[slot];
+    ASSERT_NE(target, MONSTER_INVALID);
+    EXPECT_FALSE(isExcludedFromBounties(std::to_underlying(target)));
+    EXPECT_FALSE(pParty->monster_for_hunting_killed[slot]);
+    EXPECT_EQ(pParty->PartyTimes.bountyHuntNextGenTime[slot],
+              Time::fromMonths(pParty->GetPlayingTime().toMonths() + 1));
+    EXPECT_TRUE(current_npc_text.contains(pMonsterStats->infos[target].name));
+    EXPECT_TRUE(current_npc_text.contains("bounty"));
+
+    // Kill a monster of the hunted kind through the real death path - Actor::Die registers the kill.
+    // Escaping unwinds sub-dialogue -> main dialogue -> portrait row -> out of the house.
+    for (int i = 0; i < 5 && current_screen_type != SCREEN_GAME; i++) {
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(2);
+    }
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+    ASSERT_FALSE(pActors.empty());
+    pActors[0].monsterInfo.id = target;
+    Actor::Die(0);
+    game.tick(2);
+    EXPECT_TRUE(pParty->monster_for_hunting_killed[slot]);
+
+    // Claim the reward: 100 gold per level of the hunted monster, one bounty counted, award 81 on every
+    // character, reputation up (toward notorious) by the monster's level, and the slot retires for the
+    // rest of the month.
+    int level = pMonsterStats->infos[target].level;
+    pParty->SetGold(1000);
+    int bountiesBefore = pParty->uNumBountiesCollected;
+    int repBefore = currentLocationInfo().reputation;
+    ASSERT_TRUE(enterHouse(HouseId(89)));
+    createHouseUI(HouseId(89));
+    game.tick(2);
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    EXPECT_EQ(pParty->GetGold(), 1000 + 100 * level);
+    EXPECT_EQ(pParty->uNumBountiesCollected, bountiesBefore + 1);
+    EXPECT_EQ(currentLocationInfo().reputation, repBefore + level);
+    for (Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(81)]);
+    EXPECT_EQ(pParty->monster_id_for_hunting[slot], MONSTER_INVALID);
+    EXPECT_FALSE(pParty->monster_for_hunting_killed[slot]);
+    EXPECT_TRUE(current_npc_text.contains("Congratulations"));
+
+    // Asking again the same month: someone has already claimed the bounty (npctext row 370).
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE); // Back to the main dialogue.
+    game.tick(2);
+    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    EXPECT_TRUE(current_npc_text.contains("already claimed"));
+
+    // Next month a fresh bounty is posted (MM months are exactly 28 days).
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    pParty->GetPlayingTime() += Duration::fromDays(28);
+    game.tick(1);
+    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    EXPECT_NE(pParty->monster_id_for_hunting[slot], MONSTER_INVALID);
+    EXPECT_FALSE(pParty->monster_for_hunting_killed[slot]);
+    for (int i = 0; i < 5 && current_screen_type != SCREEN_GAME; i++) {
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(2);
+    }
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
 }

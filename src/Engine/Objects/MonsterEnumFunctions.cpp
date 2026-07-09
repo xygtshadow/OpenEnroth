@@ -265,6 +265,17 @@ bool isBountyHuntable(MonsterType monsterType, HouseId townHall) {
     return bountyHuntableMaskByMonsterType[monsterType][townHall];
 }
 
+bool isBountyHuntableMm6(MonsterId monsterId) {
+    int id = std::to_underlying(monsterId);
+    if (id < 1 || id > 171)
+        return false; // The MM6.EXE roll is rand() % 171 + 1: zDemonqueen (172) and zReactor (173) never come up.
+    // The re-rolled ranges, MM6.EXE 0x4A324F: 88-90 Defender/Sentinel/Guardian of VARN,
+    // 103-105 Merchants, 121-126 + 133-135 true peasants (the disguised Cutpurse / Witch Doctor /
+    // Apprentice Mage peasant rows ARE huntable), 148-150 Patrol/Enforcer/Terminator Units.
+    return !((id >= 88 && id <= 90) || (id >= 103 && id <= 105) || (id >= 121 && id <= 126) ||
+             (id >= 133 && id <= 135) || (id >= 148 && id <= 150));
+}
+
 ItemId itemDropForMonsterType(MonsterType monsterType) {
     switch (monsterType) {
     case MONSTER_TYPE_HARPY: return ITEM_REAGENT_HARPY_FEATHER;

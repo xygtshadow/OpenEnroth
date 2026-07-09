@@ -84,6 +84,17 @@ Race raceForMonsterType(MonsterType monsterType);
 
 bool isBountyHuntable(MonsterType monsterType, HouseId townHall);
 
+/**
+ * MM6 variant of isBountyHuntable(). MM6's bounty pool is shared by all three town halls: any
+ * monsters.txt row 1-171 except the rows MM6.EXE re-rolls (0x4A324F) - the VARN guardians,
+ * merchants, true peasants and VARN robots. Rows past 171 (zDemonqueen, zReactor) fall outside
+ * the roll range.
+ *
+ * @param monsterId                     MM6 monster id (monsters.txt row) to check.
+ * @return                              Whether this monster can be posted as a town-hall bounty.
+ */
+bool isBountyHuntableMm6(MonsterId monsterId);
+
 ItemId itemDropForMonsterType(MonsterType monsterType);
 
 

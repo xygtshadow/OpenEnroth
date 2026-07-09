@@ -1,11 +1,14 @@
 #include "TownHall.h"
 
+#include <algorithm>
 #include <cassert>
-#include <vector>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
+#include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Localization.h"
 #include "Engine/Data/AwardEnums.h"
@@ -26,7 +29,26 @@
 
 using Io::TextInputType;
 
+// MM6 has three town halls (2dEvents houses 89-91: New Sorpigal, Castle Ironfist, Silver Cove) and
+// keys their bounty state as houseId - 89 (MM6.EXE 0x4A31AF). The engine's bounty arrays are keyed
+// by MM7's five town-hall house ids, so the MM6 town halls map onto the first three slots.
+static HouseId bountyHuntSlot(HouseId townHall) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return static_cast<HouseId>(std::to_underlying(HOUSE_FIRST_TOWN_HALL) + std::to_underlying(townHall) - 89);
+    return townHall;
+}
+
 void GUIWindow_TownHall::mainDialogue() {
+    // MM6 has no fine mechanic (the original has no Party fine field), so its town hall offers just
+    // the bounty hunt, labeled with MM6's own npctopic row 399 - MM7's town-hall strings don't exist
+    // in MM6's global.txt. (Note that InitializeNPCTopics stores row N at pNPCTopics[N], unlike the
+    // -1-shifted pText.)
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        std::vector<std::string> optionsText = {pNPCTopics[399].pTopic};
+        drawOptions(optionsText, colorTable.PaleCanary, 170, true);
+        return;
+    }
+
     Recti townHall_window = this->frameRect;
     townHall_window.x = SIDE_TEXT_BOX_POS_X;
     townHall_window.w = SIDE_TEXT_BOX_WIDTH;
@@ -42,12 +64,14 @@ void GUIWindow_TownHall::mainDialogue() {
 }
 
 void GUIWindow_TownHall::bountyHuntDialogue() {
-    Recti townHall_window = this->frameRect;
-    townHall_window.x = SIDE_TEXT_BOX_POS_X;
-    townHall_window.w = SIDE_TEXT_BOX_WIDTH;
+    if (engine->gameVersion() != GAME_VERSION_MM6) { // No fine mechanic in MM6.
+        Recti townHall_window = this->frameRect;
+        townHall_window.x = SIDE_TEXT_BOX_POS_X;
+        townHall_window.w = SIDE_TEXT_BOX_WIDTH;
 
-    std::string fine_str = fmt::format("{}: {}", localization->str(LSTR_CURRENT_FINE), pParty->uFine);
-    DrawTitleText(assets->pFontArrus.get(), 0, 260, colorTable.PaleCanary, fine_str, 3, townHall_window);
+        std::string fine_str = fmt::format("{}: {}", localization->str(LSTR_CURRENT_FINE), pParty->uFine);
+        DrawTitleText(assets->pFontArrus.get(), 0, 260, colorTable.PaleCanary, fine_str, 3, townHall_window);
+    }
 
     current_npc_text = bountyHuntingText();
     DrawDialoguePanel(current_npc_text);
@@ -121,7 +145,7 @@ void GUIWindow_TownHall::houseDialogueOptionSelected(DialogueId option) {
 std::vector<DialogueId> GUIWindow_TownHall::listDialogueOptions() {
     switch (_currentDialogue) {
       case DIALOGUE_MAIN:
-        if (pParty->uFine) {
+        if (pParty->uFine && engine->gameVersion() != GAME_VERSION_MM6) { // No fine mechanic in MM6.
             return {DIALOGUE_TOWNHALL_BOUNTY_HUNT, DIALOGUE_TOWNHALL_PAY_FINE};
         } else {
             return {DIALOGUE_TOWNHALL_BOUNTY_HUNT};
@@ -132,6 +156,16 @@ std::vector<DialogueId> GUIWindow_TownHall::listDialogueOptions() {
 }
 
 MonsterId GUIWindow_TownHall::randomMonsterForHunting(HouseId townhall) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x4A3238: a uniform roll over monsters.txt rows 1-171, re-rolled while it hits one
+        // of the non-monster rows; the pool is the same for all three town halls.
+        while (true) {
+            MonsterId result = static_cast<MonsterId>(grng->random(171) + 1);
+            if (isBountyHuntableMm6(result))
+                return result;
+        }
+    }
+
     while (true) {
         MonsterId result = grng->randomSample(allMonsters());
         if (isBountyHuntable(monsterTypeForMonsterId(result), townhall))
@@ -140,7 +174,8 @@ MonsterId GUIWindow_TownHall::randomMonsterForHunting(HouseId townhall) {
 }
 
 void GUIWindow_TownHall::bountyHuntingDialogueOptionClicked() {
-    HouseId house = houseId();
+    bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    HouseId house = bountyHuntSlot(houseId());
 
     // Generate new bounty
     if (pParty->PartyTimes.bountyHuntNextGenTime[house] < pParty->GetPlayingTime()) {
@@ -151,27 +186,42 @@ void GUIWindow_TownHall::bountyHuntingDialogueOptionClicked() {
 
     _bountyHuntMonsterId = pParty->monster_id_for_hunting[house];
 
+    // The reply texts are the same three consecutive npctext rows in both games, at each game's own
+    // row numbers: MM6 368-370, MM7 352-354.
     if (!pParty->monster_for_hunting_killed[house]) {
         if (pParty->monster_id_for_hunting[house] != MONSTER_INVALID) {
-            _bountyHuntText = pNPCTopics[351].pText; // "This month's bounty is on a %s..."
+            _bountyHuntText = pNPCTopics[mm6 ? 367 : 351].pText; // "This month's bounty is on a %s..."
         } else {
-            _bountyHuntText = pNPCTopics[353].pText; // "Someone has already claimed the bounty this month..."
+            _bountyHuntText = pNPCTopics[mm6 ? 369 : 353].pText; // "Someone has already claimed the bounty this month..."
         }
     } else {
         // Get prize
         if (pParty->monster_id_for_hunting[house] != MONSTER_INVALID) {
-            int bounty = 100 * pMonsterStats->infos[pParty->monster_id_for_hunting[house]].level;
+            int level = pMonsterStats->infos[pParty->monster_id_for_hunting[house]].level;
+            int bounty = 100 * level;
 
             pParty->partyFindsGold(bounty, GOLD_RECEIVE_SHARE);
-            for (Character &player : pParty->pCharacters) {
-                player.SetVariable(VAR_Award, std::to_underlying(AWARD_BOUNTIES_COLLECTED));
+            if (mm6) {
+                // MM6.EXE 0x4A32BE: every character gets MM6's award 81 ("Collected %u bounties"),
+                // the bounty counter counts claims (not gold like MM7's), and the party's reputation
+                // slides toward notorious by the monster's level - bounty hunting is killing for money.
+                for (Character &player : pParty->pCharacters) {
+                    player.SetVariable(VAR_Award, 81);
+                }
+                pParty->uNumBountiesCollected++;
+                LocationInfo &location = currentLocationInfo();
+                location.reputation = std::min(location.reputation + level, 10000);
+            } else {
+                for (Character &player : pParty->pCharacters) {
+                    player.SetVariable(VAR_Award, std::to_underlying(AWARD_BOUNTIES_COLLECTED));
+                }
+                pParty->uNumBountiesCollected += bounty;
             }
-            pParty->uNumBountiesCollected += bounty;
             pParty->monster_id_for_hunting[house] = MONSTER_INVALID;
             pParty->monster_for_hunting_killed[house] = false;
         }
 
-        _bountyHuntText = pNPCTopics[352].pText; // "Congratulations on defeating the %s! Here is the %lu gold reward..."
+        _bountyHuntText = pNPCTopics[mm6 ? 368 : 352].pText; // "Congratulations on defeating the %s! Here is the %lu gold reward..."
     }
 }
 
