@@ -62,6 +62,7 @@
 #include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMessageScroll.h"
+#include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
 #include "GUI/UI/Houses/Shops.h"
 #include "GUI/UI/Houses/TownHall.h"
@@ -146,19 +147,21 @@ GAME_TEST(Mm6, NewGameDefaults) {
         int mainHand;
     };
     // Every caster knows the first spell of their school and carries the book of the second.
+    // Gear comes from the skill-derived creation grant (MM6.EXE 0x452820): the ring and herb
+    // are random rolls (asserted structurally below), the rest is deterministic per skills.
     std::array<DefaultCharacter, 4> expected = {{
         {"Roderick", CLASS_PALADIN, SEX_MALE, 0, {17, 5, 15, 15, 15, 13, 6},
          {SKILL_SWORD, SKILL_SHIELD, SKILL_CHAIN, SKILL_SPIRIT}, {45}, 343, 21, 31, 7,
-         {124, 345, 505}, 1}, // Blessed Ring, Bless book, The Letter; Longsword.
+         {345, 505}, 1}, // Bless book, The Letter; Longsword.
         {"Alexis", CLASS_ARCHER, SEX_FEMALE, 11, {14, 15, 5, 15, 17, 13, 6},
          {SKILL_AXE, SKILL_BOW, SKILL_AIR, SKILL_PERCEPTION}, {12}, 291, 21, 31, 7,
-         {122, 312, 163, 160}, 23}, // Lunar Ring, Static Charge book, bottle, Poppysnaps; Hand Axe.
+         {312, 163}, 23}, // Static Charge book, bottle (+ a random herb); Hand Axe.
         {"Serena", CLASS_CLERIC, SEX_FEMALE, 9, {11, 7, 17, 15, 13, 11, 12},
          {SKILL_MACE, SKILL_MIND, SKILL_BODY, SKILL_MEDITATION}, {56, 67}, 266, 22, 24, 22,
-         {121, 356, 367, 163, 162}, 50}, // Sparkling Ring, 2 books, bottle, Widoweeps Berries; Mace.
+         {356, 367, 163}, 50}, // 2 books, bottle (+ a random herb); Mace.
         {"Zoltan", CLASS_SORCERER, SEX_MALE, 7, {11, 17, 7, 15, 13, 13, 9},
          {SKILL_DAGGER, SKILL_FIRE, SKILL_WATER, SKILL_MEDITATION}, {1, 23}, 336, 25, 24, 22,
-         {122, 301, 323, 163, 160}, 15}, // Lunar Ring, 2 books, bottle, Poppysnaps; Dagger.
+         {301, 323, 163}, 15}, // 2 books, bottle (+ a random herb); Dagger.
     }};
 
     for (int i = 0; i < 4; i++) {
@@ -194,6 +197,16 @@ GAME_TEST(Mm6, NewGameDefaults) {
         EXPECT_EQ(mainHand->itemId, static_cast<ItemId>(want.mainHand)) << want.name;
         for (int itemId : want.backpack)
             EXPECT_TRUE(have.inventory.find(static_cast<ItemId>(itemId))) << want.name << " item " << itemId;
+        // Every character rolls a random tier-2 ring; the misc-skill characters also carry a
+        // random herb next to their potion bottle.
+        bool hasRing = false;
+        bool hasHerb = false;
+        for (InventoryConstEntry entry : have.inventory.entries()) {
+            hasRing = hasRing || pItemTable->items[entry->itemId].type == ITEM_TYPE_RING;
+            hasHerb = hasHerb || (std::to_underlying(entry->itemId) >= 160 && std::to_underlying(entry->itemId) <= 162);
+        }
+        EXPECT_TRUE(hasRing) << want.name;
+        EXPECT_EQ(hasHerb, have.pActiveSkills[SKILL_MEDITATION] || have.pActiveSkills[SKILL_PERCEPTION]) << want.name;
         for (InventoryConstEntry entry : have.inventory.entries())
             EXPECT_TRUE(entry->IsIdentified()) << want.name;
 
@@ -223,25 +236,11 @@ GAME_TEST(Mm6, NewGameDefaults) {
     roderick.classType = CLASS_PALADIN;
     roderick.uLevel = 1;
 
-    // Roderick's shield hand, armor, and his ring's rolled enchantment ("of Magic" +3).
+    // Roderick's shield hand and armor, and Alexis' bow slot - the creation grant equips
+    // what the skills provide.
     EXPECT_EQ(pParty->pCharacters[0].inventory.entry(ITEM_SLOT_OFF_HAND)->itemId, static_cast<ItemId>(84));
     EXPECT_EQ(pParty->pCharacters[0].inventory.entry(ITEM_SLOT_ARMOUR)->itemId, static_cast<ItemId>(71));
-    InventoryConstEntry blessedRing = pParty->pCharacters[0].inventory.find(static_cast<ItemId>(124));
-    ASSERT_TRUE(blessedRing);
-    EXPECT_EQ(blessedRing->standardEnchantment, ATTRIBUTE_MANA);
-    EXPECT_EQ(blessedRing->standardEnchantmentStrength, 3);
-
-    // Alexis' bow slot and her ring's enchantment ("of Fire Resistance" +1).
     EXPECT_EQ(pParty->pCharacters[1].inventory.entry(ITEM_SLOT_BOW)->itemId, static_cast<ItemId>(47));
-    InventoryConstEntry lunarRing = pParty->pCharacters[1].inventory.find(static_cast<ItemId>(122));
-    ASSERT_TRUE(lunarRing);
-    EXPECT_EQ(lunarRing->standardEnchantment, ATTRIBUTE_RESIST_FIRE);
-    EXPECT_EQ(lunarRing->standardEnchantmentStrength, 1);
-
-    // Zoltan's ring rolled no enchantment.
-    InventoryConstEntry plainRing = pParty->pCharacters[3].inventory.find(static_cast<ItemId>(122));
-    ASSERT_TRUE(plainRing);
-    EXPECT_EQ(plainRing->standardEnchantment, std::nullopt);
 }
 
 GAME_TEST(Mm6, WalkAndInteract) {
@@ -4048,4 +4047,190 @@ GAME_TEST(Mm6, CharacterScreenSkin) {
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+GAME_TEST(Mm6, PartyCreationSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // Open the creation screen without confirming it.
+    game.goToMainMenu();
+    game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+
+    auto findButton = [](UIMessageType msg, auto param) -> GUIButton * {
+        for (GUIButton *button : pGUIWindow_CurrentMenu->vButtons)
+            if (button->msg == msg && button->msg_param == static_cast<unsigned int>(param))
+                return button;
+        return nullptr;
+    };
+    auto countButtons = [](UIMessageType msg) {
+        return std::ranges::count_if(pGUIWindow_CurrentMenu->vButtons,
+                                     [&](GUIButton *button) { return button->msg == msg; });
+    };
+
+    // The skin is MM6's own: makeme.pcx body (640x457, drawn under the MAKETOP band), 12 face
+    // stills, six class icons, and the pillar flame animations (MM6.EXE loader 0x451d00).
+    EXPECT_EQ(assets->getImage_PCXFromIconsLOD("makeme.pcx")->size(), Sizei(640, 457));
+    EXPECT_EQ(assets->getImage_Solid("ccmalea")->size(), Sizei(59, 79));
+    EXPECT_EQ(assets->getImage_Solid("ccgirld")->size(), Sizei(59, 79));
+    EXPECT_EQ(assets->getImage_ColorKey("IC_KNIG")->size(), Sizei(44, 44));
+    EXPECT_EQ(assets->getImage_Alpha("fl1")->size(), Sizei(33, 79));
+    EXPECT_EQ(assets->getImage_Alpha("fr29")->size(), Sizei(40, 80));
+    EXPECT_GT(pSpriteFrameTable->FastFindSprite("aframe1"), 0); // The selected-portrait flame frameset.
+
+    // MM6 buttons (MM6.EXE 0x451ff4-0x452670): a lone BUTTMAKE OK scroll at (511,438) - no Clear
+    // button - MAKEMINU/MAKEPLUS point-buy buttons, 32x16 face arrows, and no voice arrows at all.
+    // CreateButton stores w+1/h+1 (closed-interval heritage).
+    GUIButton *okButton = findButton(UIMSG_PlayerCreationClickOK, 0);
+    ASSERT_NE(okButton, nullptr);
+    EXPECT_EQ(okButton->rect, Recti(511, 438, 64, 30));
+    EXPECT_EQ(okButton->vTextures[0], assets->getImage_Solid("BUTTMAKE"));
+    GUIButton *minusButton = findButton(UIMSG_PlayerCreationClickMinus, 0);
+    GUIButton *plusButton = findButton(UIMSG_PlayerCreationClickPlus, 1);
+    ASSERT_NE(minusButton, nullptr);
+    ASSERT_NE(plusButton, nullptr);
+    EXPECT_EQ(minusButton->rect, Recti(482, 392, 21, 36));
+    EXPECT_EQ(plusButton->rect, Recti(580, 392, 23, 36));
+    EXPECT_EQ(countButtons(UIMSG_PlayerCreationClickReset), 0);
+    EXPECT_EQ(countButtons(UIMSG_PlayerCreation_VoicePrev), 0);
+    EXPECT_EQ(countButtons(UIMSG_PlayerCreation_VoiceNext), 0);
+    GUIButton *facePrev0 = findButton(UIMSG_PlayerCreation_FacePrev, 0);
+    ASSERT_NE(facePrev0, nullptr);
+    EXPECT_EQ(facePrev0->rect, Recti(86, 31, 33, 17));
+
+    // Six class buttons on the LEFT (x=60/140, MM6.EXE 0x45248f): Knight/Cleric/Sorcerer down the
+    // first column, Paladin/Archer/Druid down the second; no Thief/Monk/Ranger.
+    EXPECT_EQ(countButtons(UIMSG_PlayerCreationSelectClass), 6);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_KNIGHT)->rect.x, 60);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_CLERIC)->rect.x, 60);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_SORCERER)->rect.x, 60);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_PALADIN)->rect.x, 140);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_ARCHER)->rect.x, 140);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_DRUID)->rect.x, 140);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_KNIGHT)->rect.y, 417);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_PALADIN)->rect.y, 417);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_THIEF), nullptr);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_MONK), nullptr);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectClass, CLASS_RANGER), nullptr);
+    // Nine available-skill buttons in the bottom-center grid at x=230+80*(i/3).
+    EXPECT_EQ(countButtons(UIMSG_PlayerCreationSelectActiveSkill), 9);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectActiveSkill, 0)->rect.x, 230);
+    EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectActiveSkill, 8)->rect.x, 390);
+
+    // The default party spends EXACTLY the 50-point MM6 pool (cross-validates the class-base
+    // stat table at MM6.EXE 0x4C2668 against the new.lod template).
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 0);
+
+    // Class change is a full MM6 reset (MM6.EXE SetClass 0x483d90): base stats from the class
+    // table, the class's 2 fixed skills, first spell of any granted school, exp/birth-year reroll.
+    Character &zoltan = pParty->pCharacters[3];
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreation_SelectAttribute, 3, 0);
+    game.tick(1);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_KNIGHT), 0);
+    game.tick(1);
+    EXPECT_EQ(zoltan.classType, CLASS_KNIGHT);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 14);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_INTELLIGENCE], 7);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_PERSONALITY], 7);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_ENDURANCE], 14);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_ACCURACY], 11);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_SPEED], 11);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_LUCK], 9);
+    EXPECT_EQ(zoltan.uLevel, 1);
+    EXPECT_GE(zoltan.experience, 251);
+    EXPECT_LE(zoltan.experience, 350);
+    EXPECT_GE(zoltan.uBirthYear, 1139);
+    EXPECT_LE(zoltan.uBirthYear, 1144);
+    auto activeSkills = [](const Character &character) {
+        std::vector<Skill> result;
+        for (Skill skill : allVisibleSkills())
+            if (character.pActiveSkills[skill])
+                result.push_back(skill);
+        return result;
+    };
+    EXPECT_EQ(activeSkills(zoltan), (std::vector<Skill>{SKILL_SWORD, SKILL_LEATHER}));
+    EXPECT_TRUE(std::ranges::none_of(zoltan.bHaveSpell, [](bool have) { return have; }));
+    // The other three template characters spend 13+12+13=38 of the pool.
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 12);
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_CLERIC), 0);
+    game.tick(1);
+    EXPECT_EQ(zoltan.classType, CLASS_CLERIC);
+    EXPECT_EQ(activeSkills(zoltan), (std::vector<Skill>{SKILL_MACE, SKILL_BODY}));
+    EXPECT_TRUE(zoltan.bHaveSpell[static_cast<SpellId>(67)]);   // Body school's first spell.
+    EXPECT_FALSE(zoltan.bHaveSpell[static_cast<SpellId>(1)]);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 7);               // Cleric bases.
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_PERSONALITY], 14);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_SPEED], 7);
+
+    // MM6 point buy: +/-1 per click against the CLASS base (not MM7's race StatTable) - floor
+    // base-2, cap 25, every point worth 1 (MM6.EXE 0x484450/0x484270/0x4848d0).
+    zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT);
+    zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT);
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 5);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 14);
+    zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT); // Floor: base 7 - 2.
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 5);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 14);
+    for (int i = 0; i < 30; i++)
+        zoltan.IncreaseAttribute(ATTRIBUTE_LUCK); // Cap: 25, from the base of 14.
+    EXPECT_EQ(zoltan._stats[ATTRIBUTE_LUCK], 25);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 3);
+
+    // Skill picks: 2 choices from the class's 9 creation options, same message flow as MM7.
+    // Cleric options in display order: Staff, Shield, Leather, Spirit, Mind, Id Item, Repair,
+    // Meditation, Diplomacy.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 0, 0);
+    game.tick(1);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 4, 0);
+    game.tick(1);
+    EXPECT_EQ(activeSkills(zoltan), (std::vector<Skill>{SKILL_STAFF, SKILL_MACE, SKILL_MIND, SKILL_BODY}));
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 8, 0);
+    game.tick(1); // Both optional slots taken - refused.
+    EXPECT_EQ(activeSkills(zoltan).size(), 4u);
+    EXPECT_FALSE(zoltan.pActiveSkills[SKILL_DIPLOMACY]);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationRemoveUpSkill, 3, 0);
+    game.tick(1); // Removes the first picked skill (Staff).
+    EXPECT_FALSE(zoltan.pActiveSkills[SKILL_STAFF]);
+    EXPECT_EQ(activeSkills(zoltan).size(), 3u);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 0, 0);
+    game.tick(1);
+    EXPECT_EQ(activeSkills(zoltan).size(), 4u);
+
+    // Faces: 12 stills, ids 0-7 male / 8-11 female; sex follows the face and the name rerolls
+    // from npcnames.txt (MM6.EXE 0x482cd0). Class and skills are untouched.
+    EXPECT_EQ(zoltan.uCurrentFace, 7);
+    EXPECT_EQ(zoltan.uSex, SEX_MALE);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreation_FaceNext, 3, 0);
+    game.tick(1);
+    EXPECT_EQ(zoltan.uCurrentFace, 8);
+    EXPECT_EQ(zoltan.uSex, SEX_FEMALE);
+    EXPECT_NE(zoltan.name, "Zoltan");
+    EXPECT_EQ(zoltan.classType, CLASS_CLERIC);
+    EXPECT_EQ(activeSkills(zoltan).size(), 4u);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreation_FacePrev, 3, 0);
+    game.tick(1);
+    EXPECT_EQ(zoltan.uCurrentFace, 7);
+    EXPECT_EQ(zoltan.uSex, SEX_MALE);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreation_FacePrev, 0, 0);
+    game.tick(1); // Wraps 0 -> 11 (a female face).
+    EXPECT_EQ(pParty->pCharacters[0].uCurrentFace, 11);
+    EXPECT_EQ(pParty->pCharacters[0].uSex, SEX_FEMALE);
+
+    // OK is refused while bonus points remain unspent (MM6.EXE 0x42ff14)...
+    game.pressGuiButton("PartyCreation_OK");
+    game.tick(5);
+    EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+    // ...and proceeds once the pool hits zero with 4 skills on everyone.
+    for (int i = 0; i < 3; i++)
+        zoltan.IncreaseAttribute(ATTRIBUTE_MIGHT);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 0);
+    game.pressGuiButton("PartyCreation_OK");
+    game.skipLoadingScreen();
+    game.tick(2);
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
+    EXPECT_EQ(pParty->pCharacters[3].classType, CLASS_CLERIC);
+    EXPECT_TRUE(pParty->pCharacters[3].pActiveSkills[SKILL_MIND]);
 }

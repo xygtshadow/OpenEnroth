@@ -343,8 +343,77 @@ static constexpr int parameter_to_bonus_value[29] = {
     30, 25, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8,
     7,  6,  5,  4,  3,  2,  1,  0,  -1, -2, -3, -4, -5, -6};
 
+// MM6's creation model keys on the character's class - there are no races. Per base class:
+// the point-buy anchor stats (MM6.EXE 0x4C2668, display order Might..Luck), the two skills the
+// class always starts with, and the nine skills it may pick two of at creation (both from the
+// class-skills table at MM6.EXE 0x4C2694, where 1 = starting, 2 = pickable, 0/3 = not offered).
+// Rows are indexed by the engine's base-class index (classType / 4); the Thief/Monk/Ranger rows
+// stay empty - MM6 sessions can't produce those classes.
+struct Mm6ClassCreationData {
+    std::array<int, 7> baseStats = {};
+    std::array<Skill, 2> startingSkills = {SKILL_INVALID, SKILL_INVALID};
+    std::array<Skill, 9> optionalSkills = {SKILL_INVALID, SKILL_INVALID, SKILL_INVALID,
+                                           SKILL_INVALID, SKILL_INVALID, SKILL_INVALID,
+                                           SKILL_INVALID, SKILL_INVALID, SKILL_INVALID};
+};
+static const std::array<Mm6ClassCreationData, 9> kMm6ClassCreationData = {{
+    {{14, 7, 7, 14, 11, 11, 9}, {SKILL_SWORD, SKILL_LEATHER},                             // Knight.
+     {SKILL_DAGGER, SKILL_AXE, SKILL_SPEAR, SKILL_BOW, SKILL_SHIELD, SKILL_CHAIN,
+      SKILL_BODYBUILDING, SKILL_PERCEPTION, SKILL_TRAP_DISARM}},
+    {},                                                                                   // Thief.
+    {},                                                                                   // Monk.
+    {{14, 7, 14, 11, 11, 9, 7}, {SKILL_SWORD, SKILL_SPIRIT},                              // Paladin.
+     {SKILL_DAGGER, SKILL_SPEAR, SKILL_MACE, SKILL_SHIELD, SKILL_LEATHER, SKILL_CHAIN,
+      SKILL_PERCEPTION, SKILL_DIPLOMACY, SKILL_TRAP_DISARM}},
+    {{9, 14, 7, 11, 14, 11, 7}, {SKILL_BOW, SKILL_AIR},                                   // Archer.
+     {SKILL_SWORD, SKILL_DAGGER, SKILL_AXE, SKILL_FIRE, SKILL_LEATHER, SKILL_ITEM_ID,
+      SKILL_PERCEPTION, SKILL_DIPLOMACY, SKILL_TRAP_DISARM}},
+    {},                                                                                   // Ranger.
+    {{7, 9, 14, 11, 11, 7, 14}, {SKILL_MACE, SKILL_BODY},                                 // Cleric.
+     {SKILL_STAFF, SKILL_SHIELD, SKILL_LEATHER, SKILL_SPIRIT, SKILL_MIND, SKILL_ITEM_ID,
+      SKILL_REPAIR, SKILL_MEDITATION, SKILL_DIPLOMACY}},
+    {{7, 14, 14, 11, 7, 11, 9}, {SKILL_STAFF, SKILL_EARTH},                               // Druid.
+     {SKILL_MACE, SKILL_LEATHER, SKILL_WATER, SKILL_SPIRIT, SKILL_BODY, SKILL_ITEM_ID,
+      SKILL_REPAIR, SKILL_MEDITATION, SKILL_LEARNING}},
+    {{7, 14, 9, 11, 7, 14, 11}, {SKILL_DAGGER, SKILL_FIRE},                               // Sorcerer.
+     {SKILL_STAFF, SKILL_LEATHER, SKILL_AIR, SKILL_WATER, SKILL_EARTH, SKILL_ITEM_ID,
+      SKILL_REPAIR, SKILL_MEDITATION, SKILL_DIPLOMACY}},
+}};
+
+static int mm6ClassBaseStat(Class classType, Attribute stat) {
+    return kMm6ClassCreationData[std::to_underlying(classType) / 4].baseStats[std::to_underlying(stat)];
+}
+
+// The MM6 equivalent of pSkillAvailabilityPerClass, in the same SkillAffinity terms
+// GetSkillIdxByOrder and ChangeClass consume.
+static SkillAffinity mm6SkillAffinityForCreation(Class classType, Skill skill) {
+    const Mm6ClassCreationData &data = kMm6ClassCreationData[std::to_underlying(classType) / 4];
+    if (std::ranges::contains(data.startingSkills, skill))
+        return SKILL_AFFINITY_PRIMARY;
+    if (std::ranges::contains(data.optionalSkills, skill))
+        return SKILL_AFFINITY_AVAILABLE;
+    return SKILL_AFFINITY_DENIED;
+}
+
+// Version dispatch for the two creation-table consumers.
+static SkillAffinity skillAffinityForCreation(Class classType, Skill skill) {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return mm6SkillAffinityForCreation(classType, skill);
+    return pSkillAvailabilityPerClass[std::to_underlying(classType) / 4][skill];
+}
+
 //----- (00490913) --------------------------------------------------------
 int CharacterCreation_GetUnspentAttributePointCount() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 point buy (MM6.EXE 0x4848D0): a party-wide pool of 50, every point worth exactly 1,
+        // measured against the class-base stats.
+        int remainingStatPoints = 50;
+        for (Character &character : pParty->pCharacters)
+            for (Attribute statNum : allStatAttributes())
+                remainingStatPoints += mm6ClassBaseStat(character.classType, statNum) - character._stats[statNum];
+        return remainingStatPoints;
+    }
+
     int CurrentStatValue = 50;
     int RemainingStatPoints = 50;
     int StatBaseValue;
@@ -3032,10 +3101,25 @@ void Character::ChangeClass(Class cls) {
     classType = cls;
     uLevel = 1;
     experience = 251ll + grng->random(100);
-    uBirthYear = 1147 - grng->random(6);
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's class change is a full creation reset (MM6.EXE SetClass 0x483D90): base stats
+        // come from the class table (MM6 has no races), the spell book resets to the first spell
+        // of every school the class starts trained in, and the birth year rerolls against MM6's
+        // own starting year. MM7 kept the same exp/birth-year formulas, just 3 years later.
+        uBirthYear = 1144 - grng->random(6);
+        for (Attribute stat : allStatAttributes())
+            _stats[stat] = mm6ClassBaseStat(classType, stat);
+        bHaveSpell.fill(false);
+        for (Skill school : allMagicSkills())
+            if (mm6SkillAffinityForCreation(classType, school) == SKILL_AFFINITY_PRIMARY)
+                bHaveSpell[static_cast<SpellId>(1 + 11 * (std::to_underlying(school) - std::to_underlying(SKILL_FIRE)))] = true;
+    } else {
+        uBirthYear = 1147 - grng->random(6);
+    }
 
     for (Skill i : allVisibleSkills()) {
-        if (pSkillAvailabilityPerClass[std::to_underlying(classType) / 4][i] != SKILL_AFFINITY_PRIMARY) {
+        if (skillAffinityForCreation(classType, i) != SKILL_AFFINITY_PRIMARY) {
             setSkillValue(i, CombinedSkillValue());
         } else {
             setSkillValue(i, CombinedSkillValue::novice());
@@ -3071,7 +3155,7 @@ Skill Character::GetSkillIdxByOrder(signed int order) {
     counter = 0;
     for (Skill i : allVisibleSkills()) {
         if ((this->pActiveSkills[i] || canBeInactive) &&
-            pSkillAvailabilityPerClass[std::to_underlying(classType) / 4][i] == requiredValue) {
+            skillAffinityForCreation(classType, i) == requiredValue) {
             if (counter == order - offset) return i;
             ++counter;
         }
@@ -3083,6 +3167,14 @@ Skill Character::GetSkillIdxByOrder(signed int order) {
 //----- (0049048D) --------------------------------------------------------
 // uint16_t PartyCreation_BtnMinusClick(Character *_this, int eAttribute)
 void Character::DecreaseAttribute(Attribute eAttribute) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 point buy (MM6.EXE 0x484270): -1 per click, floored two under the class base;
+        // every returned point goes back to the pool whole.
+        if (_stats[eAttribute] - 1 >= mm6ClassBaseStat(classType, eAttribute) - 2)
+            _stats[eAttribute] -= 1;
+        return;
+    }
+
     int pBaseValue;    // ecx@1
     int pDroppedStep;  // ebx@1
     int pStep;         // esi@1
@@ -3101,6 +3193,13 @@ void Character::DecreaseAttribute(Attribute eAttribute) {
 //----- (004905F5) --------------------------------------------------------
 // signed int  PartyCreation_BtnPlusClick(Character *this, int eAttribute)
 void Character::IncreaseAttribute(Attribute eAttribute) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 point buy (MM6.EXE 0x484450): +1 per click while the pool has points, capped at 25.
+        if (CharacterCreation_GetUnspentAttributePointCount() > 0 && _stats[eAttribute] < 25)
+            _stats[eAttribute] += 1;
+        return;
+    }
+
     int maxValue;            // ebx@1
     signed int baseStep;     // edi@1
     signed int tmp;          // eax@17

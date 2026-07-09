@@ -1,6 +1,8 @@
+#include <array>
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "Engine/AssetsManager.h"
 #include "Engine/Engine.h"
@@ -8,11 +10,13 @@
 #include "Engine/Objects/CharacterEnumFunctions.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Image.h"
+#include "Engine/Graphics/Sprites.h"
 #include "Engine/Localization.h"
 #include "Engine/Party.h"
 #include "Engine/Random/Random.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/IconFrameTable.h"
+#include "Engine/Tables/NPCTable.h"
 #include "Engine/TurnEngine/TurnEngine.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 #include "Engine/Time/Timer.h"
@@ -66,6 +70,14 @@ GUIButton* pPlayerCreationUI_BtnMinus;
 static Duration errorMessageExpireTime; // expiration time (misc timer) of error message
 
 static const int ARROW_SPIN_PERIOD_MS = 475;
+
+// --- MM6 party-creation skin, reversed from MM6.EXE (loader 0x451D00, draw 0x450DC0) -----------
+static std::array<GraphicsImage *, 12> creationMm6Portraits = {{}};    // ccmalea..h + ccgirla..d stills; ids 0-7 male, 8-11 female.
+static std::array<GraphicsImage *, 29> creationMm6FlamesLeft = {{}};   // fl1..fl29 - the left pillar torch.
+static std::array<GraphicsImage *, 29> creationMm6FlamesRight = {{}};  // fr1..fr29 - the right pillar torch.
+static int creationMm6FlameFramesetId = 0;                             // aframe1 sprite frameset - the flame below the selected portrait.
+static std::array<bool, 4> creationMm6NameTyped = {{}};                // A typed name stops face changes from rerolling it (MM6.EXE 0x482CD0).
+static constexpr std::array<int, 4> kMm6SelectedFlameX = {45, 204, 362, 521};  // MM6.EXE 0x451CC4 jump table.
 
 bool PartyCreationUI_LoopInternal();
 
@@ -134,58 +146,56 @@ void CreateParty_EventLoop() {
             break;
         }
         case UIMSG_PlayerCreation_FacePrev:
-            // pPlayer = &pParty->pCharacters[pParam];
-            if (!pParty->pCharacters[param].uCurrentFace)
-                pParty->pCharacters[param].uCurrentFace = 19;
-            else
-                pParty->pCharacters[param].uCurrentFace -= 1;
-            pParty->pCharacters[param].uVoiceID =
-                pParty->pCharacters[param].uCurrentFace;
-            pParty->pCharacters[param].SetInitialStats();
-            pParty->pCharacters[param].SetSexByVoice();
-            pParty->pCharacters[param].RandomizeName();
+        case UIMSG_PlayerCreation_FaceNext: {
+            Character &character = pParty->pCharacters[param];
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                // MM6 cycles 12 stills; the face fixes voice and sex, and rerolls the name
+                // from npcnames.txt unless one was typed (MM6.EXE 0x43048D/0x482CD0). Stats
+                // are untouched - MM6's point buy anchors on the class, not the portrait.
+                character.uCurrentFace = (character.uCurrentFace + (msg == UIMSG_PlayerCreation_FaceNext ? 1 : 11)) % 12;
+                character.uVoiceID = character.uCurrentFace;
+                character.uSex = character.uCurrentFace >= 8 ? SEX_FEMALE : SEX_MALE;
+                if (!creationMm6NameTyped[param])
+                    character.name = grng->randomSample(pNPCStats->pNPCNames[character.uSex]);
+            } else {
+                if (msg == UIMSG_PlayerCreation_FaceNext)
+                    character.uCurrentFace = (character.uCurrentFace + 1) % 20;
+                else
+                    character.uCurrentFace = character.uCurrentFace ? character.uCurrentFace - 1 : 19;
+                character.uVoiceID = character.uCurrentFace;
+                character.SetInitialStats();
+                character.SetSexByVoice();
+                character.RandomizeName();
+            }
             pGUIWindow_CurrentMenu->pCurrentPosActiveItem =
                 (pGUIWindow_CurrentMenu->pCurrentPosActiveItem -
                     pGUIWindow_CurrentMenu->pStartingPosActiveItem) %
                 7 +
                 pGUIWindow_CurrentMenu->pStartingPosActiveItem + 7 * param;
             uPlayerCreationUI_SelectedCharacter = param;
-            new OnButtonClick(pCreationUI_BtnPressLeft[param]->rect.topLeft(), {0, 0},
-                pCreationUI_BtnPressLeft[param], std::string(), false);
+            if (engine->gameVersion() != GAME_VERSION_MM6) {
+                // MM6's face arrows are baked into the background and don't flash.
+                GUIButton *arrowButton = msg == UIMSG_PlayerCreation_FaceNext
+                    ? pCreationUI_BtnPressRight[param] : pCreationUI_BtnPressLeft[param];
+                new OnButtonClick(arrowButton->rect.topLeft(), {0, 0}, arrowButton, std::string(), false);
+            }
             pAudioPlayer->playUISound(SOUND_SelectingANewCharacter);
             pAudioPlayer->stopVoiceSounds();
-            pParty->pCharacters[param].playReaction(SPEECH_PICK_ME);
+            character.playReaction(SPEECH_PICK_ME);
             break;
-        case UIMSG_PlayerCreation_FaceNext:
-            // pPlayer = &pParty->pCharacters[pParam];
-            int v20;
-            v20 =
-                (char)((int)pParty->pCharacters[param].uCurrentFace + 1) % 20;
-            pParty->pCharacters[param].uCurrentFace = v20;
-            pParty->pCharacters[param].uVoiceID = v20;
-            pParty->pCharacters[param].SetInitialStats();
-            pParty->pCharacters[param].SetSexByVoice();
-            pParty->pCharacters[param].RandomizeName();
-            pGUIWindow_CurrentMenu->pCurrentPosActiveItem =
-                (pGUIWindow_CurrentMenu->pCurrentPosActiveItem -
-                    pGUIWindow_CurrentMenu->pStartingPosActiveItem) %
-                7 +
-                pGUIWindow_CurrentMenu->pStartingPosActiveItem + 7 * param;
-            uPlayerCreationUI_SelectedCharacter = param;
-            new OnButtonClick(pCreationUI_BtnPressRight[param]->rect.topLeft(), {0, 0},
-                pCreationUI_BtnPressRight[param], std::string(), false);
-            pAudioPlayer->playUISound(SOUND_SelectingANewCharacter);
-            pAudioPlayer->stopVoiceSounds();
-            pParty->pCharacters[param].playReaction(SPEECH_PICK_ME);
-            break;
+        }
         case UIMSG_PlayerCreationClickPlus:
-            new OnButtonClick({613, 393}, {0, 0}, pPlayerCreationUI_BtnPlus, std::string(), false);
+            // The pressed image flashes inside the socket painted into makeme.pcx for MM6
+            // (MM6.EXE 0x42FF65/0x42FFD3 use these exact spots).
+            new OnButtonClick(engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(588, 405) : Pointi(613, 393),
+                {0, 0}, pPlayerCreationUI_BtnPlus, std::string(), false);
             pPlayer[uPlayerCreationUI_SelectedCharacter].IncreaseAttribute(
                 static_cast<Attribute>((pGUIWindow_CurrentMenu->pCurrentPosActiveItem - pGUIWindow_CurrentMenu->pStartingPosActiveItem) % 7));
             pAudioPlayer->playUISound(SOUND_ClickMinus);
             break;
         case UIMSG_PlayerCreationClickMinus:
-            new OnButtonClick({523, 393}, {0, 0}, pPlayerCreationUI_BtnMinus, std::string(), false);
+            new OnButtonClick(engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(485, 408) : Pointi(523, 393),
+                {0, 0}, pPlayerCreationUI_BtnMinus, std::string(), false);
             pPlayer[uPlayerCreationUI_SelectedCharacter].DecreaseAttribute(
                 static_cast<Attribute>((pGUIWindow_CurrentMenu->pCurrentPosActiveItem - pGUIWindow_CurrentMenu->pStartingPosActiveItem) % 7));
             pAudioPlayer->playUISound(SOUND_ClickPlus);
@@ -201,11 +211,11 @@ void CreateParty_EventLoop() {
             pAudioPlayer->playUISound(SOUND_SelectingANewCharacter);
             break;
         case UIMSG_PlayerCreationClickOK:
-            new OnButtonClick({580, 431}, {0, 0}, pPlayerCreationUI_BtnOK);
-            // The MM6 default party's stats don't add up under MM7's point-buy rules, and MM6 has
-            // no skill picks at creation - don't validate until there's an MM6 creation UI model.
-            if (engine->gameVersion() != GAME_VERSION_MM6 &&
-                (CharacterCreation_GetUnspentAttributePointCount() || !PlayerCreation_Choose4Skills())) {
+            new OnButtonClick(engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(511, 439) : Pointi(580, 431),
+                {0, 0}, pPlayerCreationUI_BtnOK);
+            // Both games gate OK on a fully spent bonus pool and four skills per character
+            // (MM6.EXE 0x42FF14; the version-aware point-buy math lives in Character.cpp).
+            if (CharacterCreation_GetUnspentAttributePointCount() || !PlayerCreation_Choose4Skills()) {
                 errorMessageExpireTime = pMiscTimer->time() + Duration::fromRealtimeSeconds(4); // show message for 4 seconds
             } else {
                 uGameState = GAME_STATE_STARTING_NEW_GAME;
@@ -279,9 +289,197 @@ bool PartyCreationUI_Loop() {
     return !PartyCreationUI_LoopInternal();
 }
 
+// The MM6 creation draw, layout verbatim from MM6.EXE 0x450DC0. Character columns: portrait
+// stills at (17/176/334/493, 35) with an animated aframe1 flame below the selected one, class
+// icon and BLACK class name / character name on the light marble plates, stats from y=160 and
+// the four skill slots from y=308 on the green marble. Bottom row: class list at x=60/140,
+// the nine pickable skills from x=230, and the bonus pool at the right.
+void GUIWindow_PartyCreation::updateMm6() {
+    render->BeginScene2D();
+
+    // The scrolling sky peeks through the MAKETOP band; makeme.pcx is the body below it.
+    int skyScrollX = static_cast<int>(std::fmod(pMiscTimer->time().realtimeMillisecondsFloat() * 640.0 / 20, 640.0));
+    render->DrawQuad2D(ui_partycreation_sky_scroller, {skyScrollX, 2});
+    render->DrawQuad2D(ui_partycreation_sky_scroller, {skyScrollX - 640, 2});
+    render->DrawQuad2D(ui_partycreation_top, {0, 0});
+    render->DrawQuad2D(main_menu_background, {0, 23});
+
+    uPlayerCreationUI_SelectedCharacter = (pCurrentPosActiveItem - pStartingPosActiveItem) / 7;
+
+    int pTextCenter = ui_partycreation_font->AlignText_Center(640, localization->str(LSTR_C_R_E_A_T_E_P_A_R_T_Y));
+    DrawText(ui_partycreation_font.get(), {pTextCenter + 1, 0}, colorTable.White, localization->str(LSTR_C_R_E_A_T_E_P_A_R_T_Y), frameRect);
+
+    static constexpr std::array<int, 4> kPortraitX = {17, 176, 334, 493};
+    for (int i = 0; i < 4; i++)
+        render->DrawQuad2D(creationMm6Portraits[pParty->pCharacters[i].uCurrentFace], {kPortraitX[i], 35});
+
+    // The flame burning below the selected character's portrait - an animated sprite frameset,
+    // anchored bottom-center like the screen overlays (MM6.EXE 0x450FF9-0x4510A0).
+    if (creationMm6FlameFramesetId > 0) {
+        Duration animTime = Duration::fromTicks(pMiscTimer->time().realtimeMilliseconds() * 128 / 1000);
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(creationMm6FlameFramesetId, animTime);
+        if (frame && frame->sprites[0] && frame->sprites[0]->texture) {
+            Sprite *sprite = frame->sprites[0];
+            render->DrawImage(sprite->texture,
+                              Recti(kMm6SelectedFlameX[uPlayerCreationUI_SelectedCharacter] - sprite->uWidth / 2,
+                                    119 - sprite->uHeight, sprite->uWidth, sprite->uHeight),
+                              frame->paletteId);
+        }
+    }
+
+    // Spinning arrows flank the keyboard-focused control (left arrow at x-14, right at x+w-5).
+    GUIButton *activeControl = GetControl(pCurrentPosActiveItem);
+    int arrowAnimTextureNum = ui_partycreation_arrow_l.size() - 1 - (pMiscTimer->time().realtimeMilliseconds() % ARROW_SPIN_PERIOD_MS) / (ARROW_SPIN_PERIOD_MS / ui_partycreation_arrow_l.size());
+    render->DrawQuad2D(ui_partycreation_arrow_l[arrowAnimTextureNum], {activeControl->rect.x - 14, activeControl->rect.y});
+    render->DrawQuad2D(ui_partycreation_arrow_r[arrowAnimTextureNum], {activeControl->rect.x + activeControl->rect.w - 5, activeControl->rect.y});
+
+    // The pillar torches at both screen edges.
+    int flameFrame = (pMiscTimer->time().realtimeMilliseconds() / 55) % creationMm6FlamesLeft.size();
+    render->DrawQuad2D(creationMm6FlamesLeft[flameFrame], {5, 379});
+    render->DrawQuad2D(creationMm6FlamesRight[flameFrame], {600, 379});
+
+    std::string skillsLabel = localization->str(LSTR_SKILLS);
+    for (int i = skillsLabel.size() - 1; i >= 0; i--)
+        skillsLabel[i] = toupper(skillsLabel[i]); // TODO(captainurist): #unicode this won't work with a Russian localization.
+
+    int v0 = assets->pFontCreate->GetHeight() - 2;
+    for (int i = 0; i < 4; ++i) {
+        Character &character = pParty->pCharacters[i];
+        int columnX = 158 * i;
+
+        // Class icon and BLACK class name on the marble plate right of the portrait.
+        if (GraphicsImage *classIcon = ui_partycreation_class_icons[std::to_underlying(character.classType) / 4])
+            render->DrawQuad2D(classIcon, {95 + 159 * i, 50});
+        DrawText(assets->pFontCreate.get(), {85 + 159 * i, 97}, colorTable.Black, localization->className(character.classType), frameRect);
+
+        // Character name on the plate strip, editable in place.
+        if (keyboard_input_status != WINDOW_INPUT_NONE && uPlayerCreationUI_NameEditCharacter == i) {
+            switch (keyboard_input_status) {
+            case WINDOW_INPUT_IN_PROGRESS: {
+                int cursorX = DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, keyboardInputHandler->GetTextInput(), 120, 1);
+                DrawFlashingInputCursor(159 * i + cursorX + 20, 124, assets->pFontCreate.get(), frameRect);
+                break;
+            }
+            case WINDOW_INPUT_CONFIRMED: {
+                keyboard_input_status = WINDOW_INPUT_NONE;
+                int spaces = 0;
+                for (char c : keyboardInputHandler->GetTextInput())
+                    spaces += c == ' ';
+                if (keyboardInputHandler->GetTextInput().size() > 0 && spaces != keyboardInputHandler->GetTextInput().size()) {
+                    character.name = keyboardInputHandler->GetTextInput();
+                    creationMm6NameTyped[i] = true; // Face changes no longer reroll it.
+                }
+                DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, character.name, 130, 0);
+                break;
+            }
+            default:
+                break;
+            }
+        } else {
+            DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, character.name, 130, 0);
+        }
+
+        // Seven stat rows from y=160 (MM7 uses 169), numbers right-aligned at the \r stop.
+        int statNameX = 32 + columnX;
+        int statNumbersX = 493 - columnX;
+        static constexpr std::array<LstrId, 7> kStatLabels = {
+            LSTR_MIGHT, LSTR_INTELLECT, LSTR_PERSONALITY, LSTR_ENDURANCE, LSTR_ACCURACY, LSTR_SPEED, LSTR_LUCK};
+        for (int stat = 0; stat < 7; stat++) {
+            Attribute attribute = static_cast<Attribute>(stat);
+            int actualValue = 0;
+            switch (attribute) {
+            case ATTRIBUTE_MIGHT:        actualValue = character.GetActualMight(); break;
+            case ATTRIBUTE_INTELLIGENCE: actualValue = character.GetActualIntelligence(); break;
+            case ATTRIBUTE_PERSONALITY:  actualValue = character.GetActualPersonality(); break;
+            case ATTRIBUTE_ENDURANCE:    actualValue = character.GetActualEndurance(); break;
+            case ATTRIBUTE_ACCURACY:     actualValue = character.GetActualAccuracy(); break;
+            case ATTRIBUTE_SPEED:        actualValue = character.GetActualSpeed(); break;
+            case ATTRIBUTE_LUCK:         actualValue = character.GetActualLuck(); break;
+            default: break;
+            }
+            std::string statLine = fmt::format("{}\r{:03}{}", localization->str(kStatLabels[stat]), statNumbersX, actualValue);
+            DrawText(assets->pFontCreate.get(), {statNameX, 160 + v0 * stat}, character.GetStatColor(attribute), statLine, frameRect);
+        }
+
+        // The per-column SKILLS header and the four skill slots (two fixed, two picked).
+        pTextCenter = assets->pFontCreate->AlignText_Center(150, skillsLabel);
+        DrawText(assets->pFontCreate.get(), {pTextCenter + statNameX - 24, 289}, colorTable.Tacha, skillsLabel, frameRect);
+        for (int slot = 0; slot < 4; slot++) {
+            Skill skill = character.GetSkillIdxByOrder(slot);
+            std::string skillName = localization->skillName(skill);
+            pTextCenter = assets->pFontCreate->AlignText_Center(150, skillName);
+            Color slotColor = colorTable.White;
+            if (slot >= 2)
+                slotColor = skill == SKILL_INVALID ? colorTable.Aqua : colorTable.Green;
+            DrawText(assets->pFontCreate.get(), {statNameX - 24, 308 + v0 * slot}, slotColor,
+                     fmt::format("\t{:03}{}", pTextCenter, skillName), frameRect);
+        }
+    }
+
+    // Bottom-left: the class list (label centered over 193px from x=37, names over 70px columns).
+    std::string classLabel = localization->str(LSTR_CLASS);
+    for (int i = classLabel.size() - 1; i >= 0; i--)
+        classLabel[i] = toupper(classLabel[i]); // TODO(captainurist): #unicode this won't work for Russian localization.
+    Class selectedClass = pParty->pCharacters[uPlayerCreationUI_SelectedCharacter].classType;
+    pTextCenter = assets->pFontCreate->AlignText_Center(193, classLabel);
+    DrawText(assets->pFontCreate.get(), {pTextCenter + 37, 398}, colorTable.Tacha, classLabel, frameRect);
+    static constexpr std::array<std::pair<Class, Pointi>, 6> kClassListSlots = {{
+        {CLASS_KNIGHT, {60, 0}}, {CLASS_CLERIC, {60, 1}}, {CLASS_SORCERER, {60, 2}},
+        {CLASS_PALADIN, {140, 0}}, {CLASS_ARCHER, {140, 1}}, {CLASS_DRUID, {140, 2}},
+    }};
+    for (const auto &[classType, slot] : kClassListSlots) {
+        Color classColor = classType == selectedClass ? colorTable.Aqua : colorTable.White;
+        pTextCenter = assets->pFontCreate->AlignText_Center(70, localization->className(classType));
+        DrawText(assets->pFontCreate.get(), {pTextCenter + slot.x, 417 + v0 * slot.y}, classColor, localization->className(classType), frameRect);
+    }
+
+    // Bottom-center: the nine skills the selected character may pick from, first word only
+    // ("Body Building" draws as "Body" - MM6.EXE truncates at the first space).
+    pTextCenter = assets->pFontCreate->AlignText_Center(236, localization->str(LSTR_AVAILABLE_SKILLS));
+    DrawText(assets->pFontCreate.get(), {pTextCenter + 238, 398}, colorTable.Tacha, localization->str(LSTR_AVAILABLE_SKILLS), frameRect);
+    for (int i = 0; i < 9; ++i) {
+        Skill skill = pParty->pCharacters[uPlayerCreationUI_SelectedCharacter].GetSkillIdxByOrder(i + 4);
+        std::string skillName = localization->skillName(skill);
+        if (size_t space = skillName.find(' '); space != std::string::npos)
+            skillName.resize(space);
+        Color skillColor = pParty->pCharacters[uPlayerCreationUI_SelectedCharacter].pActiveSkills[skill]
+            ? colorTable.Aqua : colorTable.White;
+        pTextCenter = assets->pFontCreate->AlignText_Center(80, skillName);
+        DrawText(assets->pFontCreate.get(), {230 + 80 * (i / 3) + pTextCenter, 417 + v0 * (i % 3)}, skillColor, skillName, frameRect);
+    }
+
+    // Bottom-right: the bonus-point pool.
+    pTextCenter = assets->pFontCreate->AlignText_Center(92, localization->str(LSTR_BONUS_1));
+    DrawText(assets->pFontCreate.get(), {pTextCenter + 498, 394}, colorTable.Tacha, localization->str(LSTR_BONUS_1), frameRect);
+
+    // force draw so overlays dont get muddled
+    render->DrawTwodVerts();
+    render->EndTextNew();
+
+    int pBonusNum = CharacterCreation_GetUnspentAttributePointCount();
+    std::string bonusLabel = fmt::format("{}", pBonusNum);
+    pTextCenter = assets->pFontCreate->AlignText_Center(84, bonusLabel);
+    DrawText(assets->pFontCreate.get(), {pTextCenter + 502, 410}, colorTable.White, bonusLabel, frameRect);
+
+    if (errorMessageExpireTime > pMiscTimer->time()) {
+        auto &sHint = pBonusNum < 0 ? localization->str(LSTR_YOU_CANT_SPEND_MORE_THAN_50_POINTS) : localization->str(LSTR_CREATE_PARTY_CANNOT_BE_COMPLETED_UNLESS);
+        Recti popupRect(170, 140, 300, 100);
+        DrawMessageBox(0, popupRect, sHint);
+    }
+
+    // force draw so overlays dont get muddled
+    render->DrawTwodVerts();
+    render->EndTextNew();
+}
+
 //----- (00495B39) --------------------------------------------------------
 // void PlayerCreationUI_Draw()
 void GUIWindow_PartyCreation::Update() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        updateMm6();
+        return;
+    }
+
     int pTextCenter;                // eax@3
     int pX;                         // ecx@7
     GUIButton *uPosActiveItem;      // edi@12
@@ -572,6 +770,105 @@ void GUIWindow_PartyCreation::Update() {
     render->EndTextNew();
 }
 
+// MM6's creation screen shares makeme.pcx/maketop/makesky/arrow asset names with MM7 but has its
+// own layout: 12 face stills on marble plates with baked-in 32x16 arrow buttons, an animated
+// aframe1 flame below the selected portrait, fl/fr pillar torches, six classes bottom-left, the
+// nine pickable skills bottom-center, and the 50-point bonus pool bottom-right with a lone
+// BUTTMAKE OK scroll (no Clear button, no voice arrows - the face fixes the voice and sex).
+void GUIWindow_PartyCreation::initializeMm6() {
+    int v0 = assets->pFontCreate->GetHeight() - 2;
+
+    // Class icons keyed by the engine's base-class index; only MM6's six classes exist
+    // (IC_KNIG etc. - shorter names than MM7's IC_KNIGHT).
+    ui_partycreation_class_icons.fill(nullptr);
+    ui_partycreation_class_icons[std::to_underlying(CLASS_KNIGHT) / 4] = assets->getImage_ColorKey("IC_KNIG");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_PALADIN) / 4] = assets->getImage_ColorKey("IC_PALAD");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_ARCHER) / 4] = assets->getImage_ColorKey("IC_ARCH");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_CLERIC) / 4] = assets->getImage_ColorKey("IC_CLER");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_DRUID) / 4] = assets->getImage_ColorKey("IC_DRUID");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_SORCERER) / 4] = assets->getImage_ColorKey("IC_SORC");
+
+    // MM6 loader convention: cut-outs load as Alpha (the palette-0-transparent header flag is
+    // rarely set and TealMask never matches MM6's VGA palettes), opaque plates as Solid.
+    ui_partycreation_top = assets->getImage_Alpha("maketop");
+    ui_partycreation_sky_scroller = assets->getImage_Solid("makesky");
+
+    for (int face = 0; face < 12; face++)
+        creationMm6Portraits[face] = assets->getImage_Solid(
+            face < 8 ? fmt::format("ccmale{:c}", 'a' + face) : fmt::format("ccgirl{:c}", 'a' + face - 8));
+
+    assert(ui_partycreation_arrow_l.size() == 19);
+    for (int i = 0; i < ui_partycreation_arrow_l.size(); ++i) {
+        ui_partycreation_arrow_l[i] = assets->getImage_Alpha(fmt::format("arrowl{}", i + 1));
+        ui_partycreation_arrow_r[i] = assets->getImage_Alpha(fmt::format("arrowr{}", i + 1));
+    }
+    for (int i = 0; i < creationMm6FlamesLeft.size(); ++i) {
+        creationMm6FlamesLeft[i] = assets->getImage_Alpha(fmt::format("fl{}", i + 1));
+        creationMm6FlamesRight[i] = assets->getImage_Alpha(fmt::format("fr{}", i + 1));
+    }
+
+    // The selected-character flame is a sprite frameset, like the turn-based indicator's
+    // newhand1/newglas1 (MM6.EXE loads it at 0x42A610 alongside them).
+    creationMm6FlameFramesetId = pSpriteFrameTable->FastFindSprite("aframe1");
+    if (creationMm6FlameFramesetId > 0)
+        pSpriteFrameTable->InitializeSprite(creationMm6FlameFramesetId);
+
+    ui_partycreation_minus = assets->getImage_Alpha("makeminu");
+    ui_partycreation_plus = assets->getImage_Alpha("makeplus");
+    ui_partycreation_buttmake = assets->getImage_Solid("BUTTMAKE");
+
+    creationMm6NameTyped.fill(false);
+
+    // Button layout from MM6.EXE 0x451FF4-0x452670. The face arrows are baked into the portrait
+    // plates in makeme.pcx, so the buttons carry no textures.
+    for (int i = 0; i < 4; i++)
+        CreateButton({8 + 158 * i, 120}, {145, 25}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationChangeName, i);
+    for (int i = 0; i < 4; i++)
+        pCreationUI_BtnPressLeft[i] = CreateButton({86 + 159 * i, 31}, {32, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_FacePrev, i);
+    for (int i = 0; i < 4; i++)
+        pCreationUI_BtnPressRight[i] = CreateButton({118 + 159 * i, 31}, {32, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_FaceNext, i);
+
+    for (int i = 0; i < 4; i++) {
+        int uX = 8 + 158 * i;
+        CreateButton({uX, 308}, {150, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_48, i);
+        CreateButton({uX, v0 + 308}, {150, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_49, i);
+        CreateButton(fmt::format("PartyCreation_RemoveSkill3_{}", i), {uX, 2 * v0 + 308}, {150, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationRemoveUpSkill, i);
+        CreateButton(fmt::format("PartyCreation_RemoveSkill4_{}", i), {uX, 3 * v0 + 308}, {150, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationRemoveDownSkill, i);
+    }
+
+    CreateButton({5, 21}, {153, 365}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_SelectAttribute, 0, INPUT_ACTION_SELECT_CHAR_1);
+    CreateButton({163, 21}, {153, 365}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_SelectAttribute, 1, INPUT_ACTION_SELECT_CHAR_2);
+    CreateButton({321, 21}, {153, 365}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_SelectAttribute, 2, INPUT_ACTION_SELECT_CHAR_3);
+    CreateButton({479, 21}, {153, 365}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreation_SelectAttribute, 3, INPUT_ACTION_SELECT_CHAR_4);
+
+    // Stat rows sit at y=162 in MM6 (169 in MM7).
+    for (int column = 0; column < 4; column++)
+        for (int row = 0; row < 7; row++)
+            CreateButton({23 + 158 * column, 162 + v0 * row}, {120, 20}, BUTTON_TYPE_NORMAL, 0, UIMSG_0, 7 * column + row);
+
+    setKeyboardControlGroup(28, true, 7, 32);
+
+    // Class picker bottom-LEFT: Knight/Cleric/Sorcerer down the first column at x=60,
+    // Paladin/Archer/Druid down the second at x=140.
+    CreateButton({60, 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_KNIGHT));
+    CreateButton({60, v0 + 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_CLERIC));
+    CreateButton({60, 2 * v0 + 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_SORCERER));
+    CreateButton({140, 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_PALADIN));
+    CreateButton({140, v0 + 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_ARCHER));
+    CreateButton({140, 2 * v0 + 417}, {70, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_DRUID));
+
+    // The nine available creation skills, bottom-center.
+    for (int i = 0; i < 9; i++)
+        CreateButton({230 + 80 * (i / 3), v0 * (i % 3) + 417}, {80, v0}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationSelectActiveSkill, i);
+
+    pPlayerCreationUI_BtnOK = CreateButton("PartyCreation_OK", {511, 438}, {63, 29}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationClickOK, 0, INPUT_ACTION_PARTY_CREATION_DONE, "", {ui_partycreation_buttmake});
+    pPlayerCreationUI_BtnReset = nullptr; // MM6 has no Clear button.
+    pPlayerCreationUI_BtnMinus = CreateButton({482, 392}, {20, 35}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationClickMinus, 0, INPUT_ACTION_PARTY_CREATION_DEC, "", {ui_partycreation_minus});
+    pPlayerCreationUI_BtnPlus = CreateButton({580, 392}, {22, 35}, BUTTON_TYPE_NORMAL, 0, UIMSG_PlayerCreationClickPlus, 1, INPUT_ACTION_PARTY_CREATION_INC, "", {ui_partycreation_plus});
+
+    ui_partycreation_font = GUIFont::LoadFont("cchar.fnt");
+}
+
 //----- (0049695A) --------------------------------------------------------
 GUIWindow_PartyCreation::GUIWindow_PartyCreation() :
     GUIWindow(WINDOW_CharacterCreation, {0, 0}, render->GetRenderDimensions()) {
@@ -582,6 +879,12 @@ GUIWindow_PartyCreation::GUIWindow_PartyCreation() :
 
     current_screen_type = SCREEN_PARTY_CREATION;
     uPlayerCreationUI_SelectedCharacter = 0;
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        initializeMm6();
+        return;
+    }
+
     int v0 = assets->pFontCreate->GetHeight() - 2;
 
     ui_partycreation_class_icons[0] = assets->getImage_ColorKey("IC_KNIGHT");
@@ -708,51 +1011,78 @@ GUIWindow_PartyCreation::~GUIWindow_PartyCreation() {
     main_menu_background = nullptr;
 }
 
-// Gives the four characters the MM6 starting gear from new.lod's party.bin template. Backpack
-// spell books are the second spell of each character's magic schools (the first is already known,
-// see Party::resetCharactersMm6()); the two enchanted rings carry the template's rolled bonuses.
-static void giveDefaultPartyItemsMm6() {
-    Character &roderick = pParty->pCharacters[0];
-    Item blessedRing = Item(static_cast<ItemId>(124)); // Blessed Ring "of Magic" +3.
-    blessedRing.standardEnchantment = ATTRIBUTE_MANA;
-    blessedRing.standardEnchantmentStrength = 3;
-    roderick.inventory.add(blessedRing);
-    roderick.inventory.add(Item(static_cast<ItemId>(345))); // Bless spell book.
-    roderick.inventory.add(Item(static_cast<ItemId>(505))); // The Letter - the opening delivery quest.
-    roderick.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(1))); // Longsword.
-    roderick.inventory.equip(ITEM_SLOT_OFF_HAND, Item(static_cast<ItemId>(84))); // Wooden Shield.
-    roderick.inventory.equip(ITEM_SLOT_ARMOUR, Item(static_cast<ItemId>(71))); // Chain Mail.
+// Grants the MM6 starting inventory the way MM6.EXE does on leaving party creation
+// (0x452820-0x452B2A): a random tier-2 ring rolled into the first slot, then one item per
+// active skill in id order - a weapon or armor piece per equipment skill, the book of each
+// granted school's SECOND spell with the FIRST spell learned, a potion bottle plus a random
+// herb per miscellaneous skill - The Letter for character 0, everything identified, a Knight's
+// 10 base magic resistance, and HP/SP topped up. The new.lod template party's gear is exactly
+// this grant's output for the default skill sets (its named rings are captured random rolls);
+// weapons and armor end up worn, matching the template's equipped state.
+static void givePartyItemsMm6() {
+    struct SkillEquipment {
+        Skill skill;
+        int itemId;
+        ItemSlot slot;
+    };
+    static constexpr std::array<SkillEquipment, 11> kSkillEquipment = {{
+        {SKILL_STAFF, 61, ITEM_SLOT_MAIN_HAND},  {SKILL_SWORD, 1, ITEM_SLOT_MAIN_HAND},
+        {SKILL_DAGGER, 15, ITEM_SLOT_MAIN_HAND}, {SKILL_AXE, 23, ITEM_SLOT_MAIN_HAND},
+        {SKILL_SPEAR, 31, ITEM_SLOT_MAIN_HAND},  {SKILL_BOW, 47, ITEM_SLOT_BOW},
+        {SKILL_MACE, 50, ITEM_SLOT_MAIN_HAND},   {SKILL_SHIELD, 84, ITEM_SLOT_OFF_HAND},
+        {SKILL_LEATHER, 66, ITEM_SLOT_ARMOUR},   {SKILL_CHAIN, 71, ITEM_SLOT_ARMOUR},
+        {SKILL_PLATE, 76, ITEM_SLOT_ARMOUR},
+    }};
+    static constexpr std::array<Skill, 7> kHerbSkills = {
+        SKILL_ITEM_ID, SKILL_REPAIR, SKILL_MEDITATION, SKILL_PERCEPTION,
+        SKILL_DIPLOMACY, SKILL_TRAP_DISARM, SKILL_LEARNING};
 
-    Character &alexis = pParty->pCharacters[1];
-    Item lunarRing = Item(static_cast<ItemId>(122)); // Lunar Ring "of Fire Resistance" +1.
-    lunarRing.standardEnchantment = ATTRIBUTE_RESIST_FIRE;
-    lunarRing.standardEnchantmentStrength = 1;
-    alexis.inventory.add(lunarRing);
-    alexis.inventory.add(Item(static_cast<ItemId>(312))); // Static Charge spell book.
-    alexis.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
-    alexis.inventory.add(Item(static_cast<ItemId>(160))); // Poppysnaps.
-    alexis.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(23))); // Hand Axe.
-    alexis.inventory.equip(ITEM_SLOT_BOW, Item(static_cast<ItemId>(47))); // Crossbow.
+    for (int i = 0; i < 4; i++) {
+        Character &character = pParty->pCharacters[i];
 
-    Character &serena = pParty->pCharacters[2];
-    serena.inventory.add(Item(static_cast<ItemId>(121))); // Sparkling Ring.
-    serena.inventory.add(Item(static_cast<ItemId>(356))); // Remove Fear spell book.
-    serena.inventory.add(Item(static_cast<ItemId>(367))); // First Aid spell book.
-    serena.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
-    serena.inventory.add(Item(static_cast<ItemId>(162))); // Widoweeps Berries.
-    serena.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(50))); // Mace.
+        if (character.classType == CLASS_KNIGHT)
+            character.sResMagicBase = 10;
 
-    Character &zoltan = pParty->pCharacters[3];
-    zoltan.inventory.add(Item(static_cast<ItemId>(122))); // Lunar Ring, unenchanted.
-    zoltan.inventory.add(Item(static_cast<ItemId>(301))); // Flame Arrow spell book.
-    zoltan.inventory.add(Item(static_cast<ItemId>(323))); // Cold Beam spell book.
-    zoltan.inventory.add(Item(static_cast<ItemId>(163))); // Potion Bottle.
-    zoltan.inventory.add(Item(static_cast<ItemId>(160))); // Poppysnaps.
-    zoltan.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(static_cast<ItemId>(15))); // Dagger.
+        Item ring;
+        pItemTable->generateItem(ITEM_TREASURE_LEVEL_2, RANDOM_ITEM_RING, &ring);
+        character.inventory.add(ring);
 
-    for (Character &character : pParty->pCharacters)
+        for (Skill skill : allVisibleSkills()) {
+            if (!character.pActiveSkills[skill])
+                continue;
+            if (auto equipment = std::ranges::find(kSkillEquipment, skill, &SkillEquipment::skill);
+                equipment != kSkillEquipment.end()) {
+                Item item = Item(static_cast<ItemId>(equipment->itemId));
+                if (!character.inventory.entry(equipment->slot))
+                    character.inventory.equip(equipment->slot, item);
+                else
+                    character.inventory.add(item);
+            } else if (skill >= SKILL_FIRE && skill <= SKILL_BODY) {
+                int school = std::to_underlying(skill) - std::to_underlying(SKILL_FIRE);
+                character.bHaveSpell[static_cast<SpellId>(1 + 11 * school)] = true;
+                character.inventory.add(Item(static_cast<ItemId>(301 + 11 * school)));
+            } else if (std::ranges::contains(kHerbSkills, skill)) {
+                character.inventory.add(Item(static_cast<ItemId>(163)));                     // Potion Bottle.
+                character.inventory.add(Item(static_cast<ItemId>(160 + grng->random(3))));   // A random herb.
+            }
+        }
+
+        if (i == 0)
+            character.inventory.add(Item(static_cast<ItemId>(505))); // The Letter - the opening delivery quest.
+
         for (InventoryEntry entry : character.inventory.entries())
             entry->SetIdentified();
+
+        for (MagicSchool page : allMagicSchools()) {
+            if (character.pActiveSkills[skillForMagicSchool(page)]) {
+                character.lastOpenedSpellbookPage = page;
+                break;
+            }
+        }
+
+        character.health = character.GetMaxHealth();
+        character.mana = character.GetMaxMana();
+    }
 }
 
 //----- (00497526) --------------------------------------------------------
@@ -793,9 +1123,7 @@ bool PartyCreationUI_LoopInternal() {
     pGUIWindow_CurrentMenu = nullptr;
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6 starting gear is fixed template data, not derived from picked skills - there are
-        // no skill picks at MM6 party creation.
-        giveDefaultPartyItemsMm6();
+        givePartyItemsMm6();
         pAudioPlayer->stopSounds();
         return party_not_creation_flag;
     }

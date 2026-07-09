@@ -419,8 +419,8 @@ void Party::resetCharactersMm6() {
         character.uVoiceID = def.face;
         for (int stat = 0; stat < 7; stat++)
             character._stats[static_cast<Attribute>(stat)] = def.stats[stat];
-        for (Skill skill : allSkills()) // MM6 skill sets don't follow the MM7 class table ChangeClass used.
-            character.setSkillValue(skill, CombinedSkillValue());
+        for (Skill skill : allSkills()) // ChangeClass set only the class's two starting skills; the
+            character.setSkillValue(skill, CombinedSkillValue()); // template also carries the two creation picks.
         for (Skill skill : def.skills)
             character.setSkillValue(skill, CombinedSkillValue::novice());
         character.bHaveSpell.fill(false);

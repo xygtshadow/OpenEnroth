@@ -17,6 +17,9 @@ class GUIWindow_PartyCreation : public GUIWindow {
     virtual void Update() override;
 
  protected:
+    void initializeMm6();
+    void updateMm6();
+
     GraphicsImage *main_menu_background = nullptr;
     std::unique_ptr<GUIFont> ui_partycreation_font;
 };
