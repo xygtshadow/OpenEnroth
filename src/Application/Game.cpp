@@ -433,6 +433,8 @@ void Game::processQueuedMessages() {
                 pGUIWindow_CurrentMenu = std::make_unique<GUIWindow_CalendarBook>();
                 continue;
             case UIMSG_OpenHistoryBook:
+                if (engine->gameVersion() == GAME_VERSION_MM6)
+                    continue;  // MM6 has no history/journal book (and pBtn_History is not created).
                 engine->_messageQueue->clear();
                 // toggle
                 if (current_screen_type == SCREEN_BOOKS && pGUIWindow_CurrentMenu->eWindowType == WindowType::WINDOW_JournalBook) {

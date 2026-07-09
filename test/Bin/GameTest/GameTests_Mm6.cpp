@@ -52,9 +52,13 @@
 #include "Engine/Tables/NPCTable.h"
 #include "Engine/Tables/TileTable.h"
 
+#include "Engine/AssetsManager.h"
+
 #include "GUI/GUIButton.h"
+#include "GUI/GUIMessageQueue.h"
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/UIDialogue.h"
+#include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UISpell.h"
@@ -3882,4 +3886,82 @@ GAME_TEST(Mm6, TownHallBountyHunt) {
         game.tick(2);
     }
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+// The MM6 in-game HUD draws from MM6's own skin assets (reversed from MM6.EXE: asset loader @0x418090,
+// HUD draw cluster @0x417dc0/0x417df0/0x486900): border3/border4 edges around the viewport, a
+// time-of-day tapestry (TAP1..4) over the top-right block with the wizard-eye minimap (MAPBACK) and the
+// scrolling compass ribbon showing through its color-keyed holes, the border1.pcx right panel (books /
+// medallions / hireling windows), the border2.pcx portrait strip with per-face frame sets
+// (malea..maleh / girla..girld, 53 frames each), bottom-anchored HP/SP pillar bars, ready-gems, and the
+// footer status bar.
+GAME_TEST(Mm6, GameHudSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(3); // DrawGUI runs every frame - the whole HUD draw path is exercised here.
+
+    // The skin globals hold the real MM6 assets, not the old 1x1 placeholder.
+    EXPECT_EQ(game_ui_topframe->size(), Sizei(468, 8));            // border3
+    EXPECT_EQ(game_ui_leftframe->size(), Sizei(8, 344));           // border4
+    EXPECT_EQ(game_ui_bottomframe->size(), Sizei(469, 109));       // border2.pcx portrait strip
+    EXPECT_EQ(game_ui_right_panel_frame->size(), Sizei(172, 339)); // border1.pcx right panel
+    EXPECT_EQ(game_ui_statusbar->size(), Sizei(483, 24));          // footer
+    EXPECT_EQ(game_ui_minimap_frame->size(), Sizei(151, 116));     // mapback
+    EXPECT_EQ(game_ui_minimap_compass->size(), Sizei(325, 9));     // compass ribbon
+    EXPECT_EQ(game_ui_mm6_facemask->size(), Sizei(63, 83));
+    EXPECT_EQ(game_ui_mm6_border5->size(), Sizei(8, 20));
+    EXPECT_EQ(game_ui_mm6_border6->size(), Sizei(7, 21));
+    for (GraphicsImage *tapestry : game_ui_mm6_tapestries)
+        EXPECT_EQ(tapestry->size(), Sizei(172, 142));
+
+    // Tapestry = the sky seen through the arch, picked by the in-game hour (MM6.EXE 0x417960).
+    EXPECT_EQ(mm6TapestryForHour(3), game_ui_mm6_tapestries[3]);   // Night.
+    EXPECT_EQ(mm6TapestryForHour(5), game_ui_mm6_tapestries[2]);   // Dawn.
+    EXPECT_EQ(mm6TapestryForHour(12), game_ui_mm6_tapestries[1]);  // Day.
+    EXPECT_EQ(mm6TapestryForHour(20), game_ui_mm6_tapestries[0]);  // Dusk.
+    EXPECT_EQ(mm6TapestryForHour(22), game_ui_mm6_tapestries[3]);  // Night again.
+
+    // Compass ribbon scroll: x = 528 - round((2048 - yaw) * 0.1171875).
+    EXPECT_EQ(mm6CompassRibbonX(0), 288);
+    EXPECT_EQ(mm6CompassRibbonX(1024), 408);
+    EXPECT_EQ(mm6CompassRibbonX(2047), 528);
+
+    // HP/SP bars: green/yellow/red per fill range plus the blue mana bar, 6px wide.
+    EXPECT_EQ(game_ui_bar_green->size(), Sizei(6, 78));   // hitsfull
+    EXPECT_EQ(game_ui_bar_yellow->size(), Sizei(6, 40));  // hitshalf
+    EXPECT_EQ(game_ui_bar_red->size(), Sizei(6, 19));     // hitsqtr
+    EXPECT_EQ(game_ui_bar_blue->size(), Sizei(6, 78));    // manafull
+
+    // Portraits: the default party is Roderick (face 0 = malea), Alexis (11 = girld), Serena (9 = girlb),
+    // Zoltan (7 = maleh) - every face frame resolves to a real 59x79 image, and the condition stand-ins
+    // (tombstone / eradicated smear) load from MM6's own entries.
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(game_ui_player_faces[i][0]->size(), Sizei(59, 79));
+    EXPECT_EQ(game_ui_player_faces[0][0], assets->getImage_ColorKey("malea01"));
+    EXPECT_EQ(game_ui_player_faces[1][0], assets->getImage_ColorKey("girld01"));
+    EXPECT_EQ(game_ui_player_faces[2][0], assets->getImage_ColorKey("girlb01"));
+    EXPECT_EQ(game_ui_player_faces[3][0], assets->getImage_ColorKey("maleh01"));
+    EXPECT_EQ(game_ui_player_face_dead->size(), Sizei(59, 79));
+
+    // MM6 button layout: the medallion row at y=399, the four books at y=263, no history book.
+    EXPECT_EQ(pBtn_CastSpell->rect.topLeft(), Pointi(491, 399));
+    EXPECT_EQ(pBtn_Rest->rect.topLeft(), Pointi(525, 399));
+    EXPECT_EQ(pBtn_QuickReference->rect.topLeft(), Pointi(560, 399));
+    EXPECT_EQ(pBtn_GameSettings->rect.topLeft(), Pointi(594, 399));
+    EXPECT_EQ(pBtn_Quests->rect.topLeft(), Pointi(495, 263));
+    EXPECT_EQ(pBtn_Calendar->rect.topLeft(), Pointi(588, 263));
+    EXPECT_EQ(pBtn_History, nullptr);
+
+    // The history-book message is a no-op in MM6 (there is no journal).
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenHistoryBook, 0, 0);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // The wizard-eye minimap path draws without crashing (MAPBACK + map content + tapestry overlay).
+    pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_MASTER, 5, 0, 0);
+    game.tick(3);
+    pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
+    game.tick(1);
 }

@@ -408,6 +408,21 @@ GUIButton *GUIWindow::CreateButton(std::string id, Pointi position, Sizei dimens
 }
 
 void GUIWindow::CreateCharacterButtons() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 portrait ovals at ({22,135,248,360}, 383) with the 6px HP/SP bars on the pillars at +71/+80,
+        // bottom-anchored at y=461 (MM6.EXE 0x486900 / 0x417c10).
+        CreateButton("Game_Character1", { 22, 383 }, { 63, 78 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 1, INPUT_ACTION_SELECT_CHAR_1);
+        CreateButton("Game_Character2", { 135, 383 }, { 63, 78 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 2, INPUT_ACTION_SELECT_CHAR_2);
+        CreateButton("Game_Character3", { 248, 383 }, { 63, 78 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 3, INPUT_ACTION_SELECT_CHAR_3);
+        CreateButton("Game_Character4", { 360, 383 }, { 63, 78 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 4, INPUT_ACTION_SELECT_CHAR_4);
+
+        for (int i = 0; i < 4; i++)
+            CreateButton({ 93 + 113 * i, 383 }, { 6, 78 }, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_ManaHP, UIMSG_0, i + 1);  // buttons for HP
+        for (int i = 0; i < 4; i++)
+            CreateButton({ 102 + 113 * i, 383 }, { 6, 78 }, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_ManaHP, UIMSG_0, i + 1);  // buttons for SP
+        return;
+    }
+
     CreateButton("Game_Character1", { 61, 424 }, { 31, 40 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 1, INPUT_ACTION_SELECT_CHAR_1);  // buttons for portraits
     CreateButton("Game_Character2", { 177, 424 }, { 31, 40 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 2, INPUT_ACTION_SELECT_CHAR_2);
     CreateButton("Game_Character3", { 292, 424 }, { 31, 40 }, BUTTON_TYPE_CHARACTER, 94, UIMSG_SelectCharacter, 3, INPUT_ACTION_SELECT_CHAR_3);
@@ -590,48 +605,61 @@ void SetUserInterface(PartyAlignment align) {
     }
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6's in-game HUD is a completely different skin (a single full-screen 'ibground' background
-        // instead of per-alignment 'ib-*' frame assets), and is not modelled yet. Assign a shared
-        // placeholder image so the MM7-shaped draw code doesn't crash - the HUD will draw as blanks.
-        logger->warning("MM6 in-game UI skin is not implemented yet - the HUD will not be drawn properly. "
-                        "MM6 uses a single 'ibground' background instead of MM7's per-alignment 'ib-*' assets and needs a dedicated UI skin.");
+        // The MM6 in-game HUD skin, reversed from MM6.EXE (asset loader @0x418090, HUD draw cluster
+        // @0x417dc0/0x417df0/0x486900). MM6 has a single skin - no per-alignment variants.
+        // Note on loaders: MM6's icon bitmaps almost never set the palette-0-transparent header flag -
+        // transparency is by the palette-0 CONVENTION, so cut-out images go through getImage_Alpha
+        // (unconditional palette-0 transparency); TealMask color-keying never matches MM6 palettes.
+        game_ui_topframe = assets->getImage_Solid("border3");            // 468x8 top edge at (0,0).
+        game_ui_leftframe = assets->getImage_Solid("border4");           // 8x344 left edge at (0,8).
+        game_ui_mm6_border5 = assets->getImage_Alpha("border5");         // Viewport corner patch at (7,8).
+        game_ui_mm6_border6 = assets->getImage_Alpha("border6");         // Viewport corner patch at (461,8).
+        game_ui_bottomframe = assets->getImage_PCXFromIconsLOD("border2.pcx");        // 469x109 portrait strip at (0,371).
+        game_ui_right_panel_frame = assets->getImage_PCXFromIconsLOD("border1.pcx");  // 172x339 right panel at (468,141).
+        game_ui_statusbar = assets->getImage_Solid("footer");            // 483x24 status bar at (0,352).
+        game_ui_mm6_tapestries[0] = assets->getImage_Alpha("tap1");      // Dusk sky through the arch.
+        game_ui_mm6_tapestries[1] = assets->getImage_Alpha("tap2");      // Day.
+        game_ui_mm6_tapestries[2] = assets->getImage_Alpha("tap3");      // Dawn.
+        game_ui_mm6_tapestries[3] = assets->getImage_Alpha("tap4");      // Night.
+        game_ui_rightframe = game_ui_mm6_tapestries[1];                  // Fallback for MM7-shaped consumers.
+        game_ui_minimap_frame = assets->getImage_Solid("mapback");       // Wizard-eye minimap parchment at (482,25).
+        game_ui_minimap_compass = assets->getImage_Solid("compass");     // 325x9 scrolling ribbon at y=10.
+        game_ui_mm6_facemask = assets->getImage_Alpha("facemask");       // Oval mask over each portrait.
+
+        game_ui_player_alert_green = assets->getImage_Alpha("buttgem");  // Ready-gems on the portrait pillars.
+        game_ui_player_alert_yellow = assets->getImage_Alpha("buttyel");
+        game_ui_player_alert_red = assets->getImage_Alpha("buttred");
+
+        ui_btn_npc_left = assets->getImage_Alpha("npc_ldn");
+        ui_btn_npc_right = assets->getImage_Alpha("npc_rdn");
+        game_ui_btn_zoomin = assets->getImage_Alpha("buttplus");
+        game_ui_btn_zoomout = assets->getImage_Alpha("buttminu");
+        game_ui_btn_cast = assets->getImage_Alpha("buttcast");           // Medallion row at y=399.
+        game_ui_btn_rest = assets->getImage_Alpha("buttcamp");
+        game_ui_btn_quickref = assets->getImage_Alpha("buttref");
+        game_ui_btn_settings = assets->getImage_Alpha("buttmenu");
+        ui_exit_cancel_button_background = assets->getImage_Alpha("buttesc1");
+
+        // The message-box parchment assets share MM7's names (MM6.EXE loads the same set @0x418225).
+        messagebox_corner_y = assets->getImage_Alpha("cornr_ll");
+        messagebox_corner_w = assets->getImage_Alpha("cornr_lr");
+        messagebox_corner_x = assets->getImage_Alpha("cornr_ul");
+        messagebox_corner_z = assets->getImage_Alpha("cornr_ur");
+        messagebox_border_bottom = assets->getImage_Alpha("edge_btm");
+        messagebox_border_left = assets->getImage_Alpha("edge_lf");
+        messagebox_border_right = assets->getImage_Alpha("edge_rt");
+        messagebox_border_top = assets->getImage_Alpha("edge_top");
+        _591428_endcap = assets->getImage_ColorKey("endcap");
+
+        // No MM6 equivalents (character-screen & dialogue skins are tracked separately) - keep placeholders.
         GraphicsImage *placeholder = GraphicsImage::Create(1, 1);
-        game_ui_rightframe = placeholder;
-        game_ui_bottomframe = placeholder;
-        game_ui_topframe = placeholder;
-        game_ui_leftframe = placeholder;
-        game_ui_statusbar = placeholder;
-        game_ui_right_panel_frame = placeholder;
-        game_ui_minimap_frame = placeholder;
-        game_ui_minimap_compass = placeholder;
-        game_ui_player_alert_green = placeholder;
-        game_ui_player_alert_yellow = placeholder;
-        game_ui_player_alert_red = placeholder;
-        ui_btn_npc_left = placeholder;
-        ui_btn_npc_right = placeholder;
-        game_ui_btn_zoomin = placeholder;
-        game_ui_btn_zoomout = placeholder;
         game_ui_player_selection_frame = placeholder;
-        game_ui_btn_cast = placeholder;
-        game_ui_btn_rest = placeholder;
-        game_ui_btn_quickref = placeholder;
-        game_ui_btn_settings = placeholder;
-        ui_exit_cancel_button_background = placeholder;
         game_ui_playerbuff_bless = placeholder;
         game_ui_playerbuff_preservation = placeholder;
         game_ui_playerbuff_hammerhands = placeholder;
         game_ui_playerbuff_pain_reflection = placeholder;
         game_ui_evtnpc = placeholder;
         ui_character_inventory_background = placeholder;
-        messagebox_corner_y = placeholder;
-        messagebox_corner_w = placeholder;
-        messagebox_corner_x = placeholder;
-        messagebox_corner_z = placeholder;
-        messagebox_border_bottom = placeholder;
-        messagebox_border_left = placeholder;
-        messagebox_border_right = placeholder;
-        messagebox_border_top = placeholder;
-        _591428_endcap = placeholder;
 
         game_ui_wizardEye = pIconsFrameTable->animationId("wizeye"); // -1, MM6 has no such animation.
         game_ui_torchLight = pIconsFrameTable->animationId("torch"); // Same.
@@ -1117,10 +1145,18 @@ void UI_Create() {
     game_ui_minimap_dirs[6] = assets->getImage_Alpha("MAPDIR7");
     game_ui_minimap_dirs[7] = assets->getImage_Alpha("MAPDIR8");
 
-    game_ui_bar_blue = assets->getImage_ColorKey("ib-statB");
-    game_ui_bar_green = assets->getImage_ColorKey("ib-statG");
-    game_ui_bar_yellow = assets->getImage_ColorKey("ib-statY");
-    game_ui_bar_red = assets->getImage_ColorKey("ib-statR");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 HP bars come as one texture per fill range - green 78, yellow 40, red 19 tall (MM6.EXE 0x41843f).
+        game_ui_bar_blue = assets->getImage_Solid("manafull");
+        game_ui_bar_green = assets->getImage_Solid("hitsfull");
+        game_ui_bar_yellow = assets->getImage_Solid("hitshalf");
+        game_ui_bar_red = assets->getImage_Solid("hitsqtr");
+    } else {
+        game_ui_bar_blue = assets->getImage_ColorKey("ib-statB");
+        game_ui_bar_green = assets->getImage_ColorKey("ib-statG");
+        game_ui_bar_yellow = assets->getImage_ColorKey("ib-statY");
+        game_ui_bar_red = assets->getImage_ColorKey("ib-statR");
+    }
     game_ui_monster_hp_background = assets->getImage_ColorKey("mhp_bg");
     game_ui_monster_hp_border_left = assets->getImage_ColorKey("mhp_capl");
     game_ui_monster_hp_border_right = assets->getImage_ColorKey("mhp_capr");
@@ -1139,66 +1175,97 @@ void UI_Create() {
 
     pPrimaryWindow->CreateCharacterButtons();
 
-    game_ui_tome_quests = assets->getImage_ColorKey("ib-td1-A");
-    pBtn_Quests = pPrimaryWindow->CreateButton({491, 353}, game_ui_tome_quests->size(), BUTTON_TYPE_NORMAL, 0,
-                                               UIMSG_OpenQuestBook, 0, INPUT_ACTION_OPEN_QUESTS,
-                                               localization->str(LSTR_CURRENT_QUESTS), { game_ui_tome_quests });
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    if (isMm6) {
+        // MM6's four book buttons at y=263 (Quest/Notes/Map/Calendar, MM6.EXE 0x4188d1) - there is no
+        // history/journal book in MM6. The pressed-state textures are buttbk1..4.
+        game_ui_tome_quests = assets->getImage_Alpha("buttbk1");
+        pBtn_Quests = pPrimaryWindow->CreateButton({495, 263}, game_ui_tome_quests->size(), BUTTON_TYPE_NORMAL, 0,
+                                                   UIMSG_OpenQuestBook, 0, INPUT_ACTION_OPEN_QUESTS,
+                                                   localization->str(LSTR_CURRENT_QUESTS), { game_ui_tome_quests });
+        game_ui_tome_autonotes = assets->getImage_Alpha("buttbk2");
+        pBtn_Autonotes = pPrimaryWindow->CreateButton({527, 263}, game_ui_tome_autonotes->size(), BUTTON_TYPE_NORMAL, 0,
+                                                      UIMSG_OpenAutonotes, 0, INPUT_ACTION_OPEN_AUTONOTES,
+                                                      localization->str(LSTR_AUTO_NOTES), { game_ui_tome_autonotes });
+        game_ui_tome_maps = assets->getImage_Alpha("buttbk3");
+        pBtn_Maps = pPrimaryWindow->CreateButton({558, 263}, game_ui_tome_maps->size(), BUTTON_TYPE_NORMAL, 0,
+                                                 UIMSG_OpenMapBook, 0, INPUT_ACTION_OPEN_MAP,
+                                                 localization->str(LSTR_MAPS), { game_ui_tome_maps });
+        game_ui_tome_calendar = assets->getImage_Alpha("buttbk4");
+        pBtn_Calendar = pPrimaryWindow->CreateButton({588, 263}, game_ui_tome_calendar->size(), BUTTON_TYPE_NORMAL, 0,
+                                                     UIMSG_OpenCalendar, 0, INPUT_ACTION_OPEN_CALENDAR,
+                                                     localization->str(LSTR_CALENDAR), { game_ui_tome_calendar });
+        game_ui_tome_storyline = game_ui_tome_quests;
+        pBtn_History = nullptr;  // The UIMSG_OpenHistoryBook handler is MM6-gated.
+    } else {
+        game_ui_tome_quests = assets->getImage_ColorKey("ib-td1-A");
+        pBtn_Quests = pPrimaryWindow->CreateButton({491, 353}, game_ui_tome_quests->size(), BUTTON_TYPE_NORMAL, 0,
+                                                   UIMSG_OpenQuestBook, 0, INPUT_ACTION_OPEN_QUESTS,
+                                                   localization->str(LSTR_CURRENT_QUESTS), { game_ui_tome_quests });
 
-    game_ui_tome_autonotes = assets->getImage_ColorKey("ib-td2-A");
-    pBtn_Autonotes = pPrimaryWindow->CreateButton({527, 353}, game_ui_tome_autonotes->size(), BUTTON_TYPE_NORMAL, 0,
-                                                  UIMSG_OpenAutonotes, 0, INPUT_ACTION_OPEN_AUTONOTES,
-                                                  localization->str(LSTR_AUTO_NOTES), { game_ui_tome_autonotes });
+        game_ui_tome_autonotes = assets->getImage_ColorKey("ib-td2-A");
+        pBtn_Autonotes = pPrimaryWindow->CreateButton({527, 353}, game_ui_tome_autonotes->size(), BUTTON_TYPE_NORMAL, 0,
+                                                      UIMSG_OpenAutonotes, 0, INPUT_ACTION_OPEN_AUTONOTES,
+                                                      localization->str(LSTR_AUTO_NOTES), { game_ui_tome_autonotes });
 
-    game_ui_tome_maps = assets->getImage_ColorKey("ib-td3-A");
-    pBtn_Maps = pPrimaryWindow->CreateButton({546, 353}, game_ui_tome_maps->size(), BUTTON_TYPE_NORMAL, 0,
-                                             UIMSG_OpenMapBook, 0, INPUT_ACTION_OPEN_MAP,
-                                             localization->str(LSTR_MAPS), { game_ui_tome_maps });
+        game_ui_tome_maps = assets->getImage_ColorKey("ib-td3-A");
+        pBtn_Maps = pPrimaryWindow->CreateButton({546, 353}, game_ui_tome_maps->size(), BUTTON_TYPE_NORMAL, 0,
+                                                 UIMSG_OpenMapBook, 0, INPUT_ACTION_OPEN_MAP,
+                                                 localization->str(LSTR_MAPS), { game_ui_tome_maps });
 
-    game_ui_tome_calendar = assets->getImage_ColorKey("ib-td4-A");
-    pBtn_Calendar = pPrimaryWindow->CreateButton({570, 353}, game_ui_tome_calendar->size(), BUTTON_TYPE_NORMAL, 0,
-                                                 UIMSG_OpenCalendar, 0, INPUT_ACTION_OPEN_CALENDAR,
-                                                 localization->str(LSTR_CALENDAR), { game_ui_tome_calendar });
+        game_ui_tome_calendar = assets->getImage_ColorKey("ib-td4-A");
+        pBtn_Calendar = pPrimaryWindow->CreateButton({570, 353}, game_ui_tome_calendar->size(), BUTTON_TYPE_NORMAL, 0,
+                                                     UIMSG_OpenCalendar, 0, INPUT_ACTION_OPEN_CALENDAR,
+                                                     localization->str(LSTR_CALENDAR), { game_ui_tome_calendar });
 
-    game_ui_tome_storyline = assets->getImage_ColorKey("ib-td5-A");
-    pBtn_History = pPrimaryWindow->CreateButton({600, 361}, game_ui_tome_storyline->size(), BUTTON_TYPE_NORMAL, 0,
-                                                UIMSG_OpenHistoryBook, 0, INPUT_ACTION_OPEN_HISTORY,
-                                                localization->str(LSTR_HISTORY), { game_ui_tome_storyline }
-    );
+        game_ui_tome_storyline = assets->getImage_ColorKey("ib-td5-A");
+        pBtn_History = pPrimaryWindow->CreateButton({600, 361}, game_ui_tome_storyline->size(), BUTTON_TYPE_NORMAL, 0,
+                                                    UIMSG_OpenHistoryBook, 0, INPUT_ACTION_OPEN_HISTORY,
+                                                    localization->str(LSTR_HISTORY), { game_ui_tome_storyline }
+        );
+    }
 
     bFlashAutonotesBook = false;
     bFlashQuestBook = false;
     bFlashHistoryBook = false;
 
-    pBtn_ZoomIn = pPrimaryWindow->CreateButton({519, 136}, game_ui_btn_zoomin->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_ZoomIn = pPrimaryWindow->CreateButton(isMm6 ? Pointi(502, 42) : Pointi(519, 136), game_ui_btn_zoomin->size(), BUTTON_TYPE_NORMAL, 0,
                                                UIMSG_ClickZoomInBtn, 0, INPUT_ACTION_ZOOM_IN,
                                                localization->str(LSTR_ZOOM_IN), { game_ui_btn_zoomin }
     );
 
-    pBtn_ZoomOut = pPrimaryWindow->CreateButton({574, 136}, game_ui_btn_zoomout->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_ZoomOut = pPrimaryWindow->CreateButton(isMm6 ? Pointi(595, 42) : Pointi(574, 136), game_ui_btn_zoomout->size(), BUTTON_TYPE_NORMAL, 0,
                                                 UIMSG_ClickZoomOutBtn, 0, INPUT_ACTION_ZOOM_OUT,
                                                 localization->str(LSTR_ZOOM_OUT), { game_ui_btn_zoomout });
 
     pPrimaryWindow->CreateButton({484, 15}, {138, 116}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_DateTime, UIMSG_0, 0);
     pPrimaryWindow->CreateButton({491, 149}, {64, 74}, BUTTON_TYPE_NORMAL, 0, UIMSG_StartHireling1Dialogue, 0, INPUT_ACTION_SELECT_NPC_1);
     pPrimaryWindow->CreateButton({561, 149}, {64, 74}, BUTTON_TYPE_NORMAL, 0, UIMSG_StartHireling2Dialogue, 0, INPUT_ACTION_SELECT_NPC_2);
-    pPrimaryWindow->CreateButton({476, 322}, {77, 17}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Food, UIMSG_0, 0);
-    pPrimaryWindow->CreateButton({555, 322}, {77, 17}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Funds, UIMSG_0, 0);
+    if (isMm6) {
+        // The food (apple) and gold (coins) shelf spots, MM6.EXE 0x418bf8/0x418c24.
+        pPrimaryWindow->CreateButton({484, 355}, {30, 38}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Food, UIMSG_0, 0);
+        pPrimaryWindow->CreateButton({603, 354}, {28, 32}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Funds, UIMSG_0, 0);
+    } else {
+        pPrimaryWindow->CreateButton({476, 322}, {77, 17}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Food, UIMSG_0, 0);
+        pPrimaryWindow->CreateButton({555, 322}, {77, 17}, BUTTON_TYPE_NORMAL, UIMSG_ShowStatus_Funds, UIMSG_0, 0);
+    }
 
-    pBtn_CastSpell = pPrimaryWindow->CreateButton("Game_CastSpell", {476, 450}, game_ui_btn_cast->size(), BUTTON_TYPE_NORMAL, 0,
+    // MM6's medallion button row sits at y=399 under the books (MM6.EXE 0x418c34..0x418d83).
+    pBtn_CastSpell = pPrimaryWindow->CreateButton("Game_CastSpell", isMm6 ? Pointi(491, 399) : Pointi(476, 450), game_ui_btn_cast->size(), BUTTON_TYPE_NORMAL, 0,
                                                   UIMSG_SpellBookWindow, 0, INPUT_ACTION_OPEN_SPELLBOOK,
                                                   localization->str(LSTR_CAST_SPELL), { game_ui_btn_cast });
-    pBtn_Rest = pPrimaryWindow->CreateButton("Game_Rest", {518, 450}, game_ui_btn_rest->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_Rest = pPrimaryWindow->CreateButton("Game_Rest", isMm6 ? Pointi(525, 399) : Pointi(518, 450), game_ui_btn_rest->size(), BUTTON_TYPE_NORMAL, 0,
                                              UIMSG_RestWindow, 0, INPUT_ACTION_REST,
                                              localization->str(LSTR_REST), { game_ui_btn_rest });
-    pBtn_QuickReference = pPrimaryWindow->CreateButton({560, 450}, game_ui_btn_quickref->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_QuickReference = pPrimaryWindow->CreateButton(isMm6 ? Pointi(560, 399) : Pointi(560, 450), game_ui_btn_quickref->size(), BUTTON_TYPE_NORMAL, 0,
                                                        UIMSG_QuickReference, 0, INPUT_ACTION_OPEN_QUICK_REFERENCE,
                                                        localization->str(LSTR_QUICK_REFERENCE), { game_ui_btn_quickref });
-    pBtn_GameSettings = pPrimaryWindow->CreateButton({602, 450}, game_ui_btn_settings->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_GameSettings = pPrimaryWindow->CreateButton(isMm6 ? Pointi(594, 399) : Pointi(602, 450), game_ui_btn_settings->size(), BUTTON_TYPE_NORMAL, 0,
                                                      UIMSG_GameMenuButton, 0, INPUT_ACTION_INVALID,
                                                      localization->str(LSTR_GAME_OPTIONS), { game_ui_btn_settings });
-    pBtn_NPCLeft = pPrimaryWindow->CreateButton({469, 178}, ui_btn_npc_left->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_NPCLeft = pPrimaryWindow->CreateButton(isMm6 ? Pointi(474, 174) : Pointi(469, 178), ui_btn_npc_left->size(), BUTTON_TYPE_NORMAL, 0,
                                                 UIMSG_ScrollNPCPanel, 0, INPUT_ACTION_INVALID, "", {ui_btn_npc_left });
-    pBtn_NPCRight = pPrimaryWindow->CreateButton({626, 178}, ui_btn_npc_right->size(), BUTTON_TYPE_NORMAL, 0,
+    pBtn_NPCRight = pPrimaryWindow->CreateButton(isMm6 ? Pointi(626, 174) : Pointi(626, 178), ui_btn_npc_right->size(), BUTTON_TYPE_NORMAL, 0,
                                                  UIMSG_ScrollNPCPanel, 1, INPUT_ACTION_INVALID, "", {ui_btn_npc_right });
 
     LoadPartyBuffIcons();

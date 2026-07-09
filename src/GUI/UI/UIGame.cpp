@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 #include <memory>
@@ -158,6 +159,46 @@ GraphicsImage *game_ui_bar_yellow = nullptr;
 GraphicsImage *game_ui_bar_green = nullptr;
 GraphicsImage *game_ui_bar_blue = nullptr;
 
+std::array<GraphicsImage *, 4> game_ui_mm6_tapestries = {};
+GraphicsImage *game_ui_mm6_border5 = nullptr;
+GraphicsImage *game_ui_mm6_border6 = nullptr;
+GraphicsImage *game_ui_mm6_facemask = nullptr;
+
+// MM6 HUD layout, reversed from MM6.EXE (game-screen setup @0x418090, HUD draw cluster @0x417dc0/0x417df0,
+// portrait/gem draw @0x486900, HP/SP bar loop @0x417c10 with the x table @0x4bd0fc).
+static const std::array<int, 4> kMm6PortraitX = {{22, 135, 248, 360}};  // @0x4c2628, y = 383.
+static const int kMm6PortraitY = 383;
+static const std::array<int, 4> kMm6HealthBarX = {{93, 206, 319, 431}};  // xtab @0x4bd0fc + 93.
+static const std::array<int, 4> kMm6ManaBarX = {{102, 215, 328, 440}};   // xtab @0x4bd0fc + 102.
+static const int kMm6BarBottomY = 461;  // Bars are bottom-anchored: rowTable[383] + 78.
+static const std::array<int, 4> kMm6AlertGemX = {{78, 191, 304, 416}};  // kMm6PortraitX + 56, y = 378.
+static const int kMm6AlertGemY = 378;
+
+// MM6 party face frame sets: 12 faces x 53 frames, "malea01".."maleh53" / "girla01".."girld53" in icons.lod.
+// Face ids 0-7 are the male faces a-h, 8-11 the female faces a-d (creation stills are ccmalea..h / ccgirla..d).
+static const std::array<const char *, 12> kMm6PortraitPrefixes = {{
+    "malea", "maleb", "malec", "maled", "malee", "malef", "maleg", "maleh",
+    "girla", "girlb", "girlc", "girld"}};
+static const int kMm6PortraitFrameCount = 53;
+
+GraphicsImage *mm6TapestryForHour(int hour) {
+    // MM6.EXE 0x417960: <5 night, 5 dawn, <20 day, 20 dusk, else night.
+    if (hour < 5)
+        return game_ui_mm6_tapestries[3];
+    if (hour < 6)
+        return game_ui_mm6_tapestries[2];
+    if (hour < 20)
+        return game_ui_mm6_tapestries[1];
+    if (hour < 21)
+        return game_ui_mm6_tapestries[0];
+    return game_ui_mm6_tapestries[3];
+}
+
+int mm6CompassRibbonX(int viewYaw) {
+    // MM6.EXE 0x417df0: x = 528 - round((2048 - yaw) * 0.1171875), the 325px ribbon scrolling with the yaw.
+    return 528 - static_cast<int>(std::floor((2048 - (viewYaw & 2047)) * 0.1171875 + 0.5));
+}
+
 GraphicsImage *game_ui_playerbuff_pain_reflection = nullptr;
 GraphicsImage *game_ui_playerbuff_hammerhands = nullptr;
 GraphicsImage *game_ui_playerbuff_preservation = nullptr;
@@ -213,6 +254,14 @@ void GUIWindow_GameMenu::Update() {
 //----- (00491CB5) --------------------------------------------------------
 void GameUI_LoadPlayerPortraitsAndVoices() {
     for (unsigned i = 0; i < 4; ++i) {
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            int face = std::clamp<int>(pParty->pCharacters[i].uCurrentFace, 0, kMm6PortraitPrefixes.size() - 1);
+            for (unsigned j = 0; j < game_ui_player_faces[i].size(); ++j) {
+                int frame = std::min<int>(j + 1, kMm6PortraitFrameCount);  // Repeat the last frame past MM6's 53.
+                game_ui_player_faces[i][j] = assets->getImage_ColorKey(fmt::format("{}{:02}", kMm6PortraitPrefixes[face], frame));
+            }
+            continue;
+        }
         for (unsigned j = 0; j < 56; ++j) {
             game_ui_player_faces[i][j] = assets->getImage_ColorKey(
                 fmt::format("{}{:02}", pPlayerPortraitsNames[pParty->pCharacters[i].uCurrentFace], j + 1));
@@ -237,6 +286,14 @@ void GameUI_LoadPlayerPortraitsAndVoices() {
 
 //----- (00491DE7) --------------------------------------------------------
 void GameUI_ReloadPlayerPortraits(int player_id, int face_id) {  // the transition from the zombies to the normal state
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        int face = std::clamp<int>(face_id, 0, kMm6PortraitPrefixes.size() - 1);
+        for (unsigned i = 0; i < game_ui_player_faces[player_id].size(); ++i) {
+            int frame = std::min<int>(i + 1, kMm6PortraitFrameCount);
+            game_ui_player_faces[player_id][i] = assets->getImage_ColorKey(fmt::format("{}{:02}", kMm6PortraitPrefixes[face], frame));
+        }
+        return;
+    }
     for (unsigned i = 0; i <= 55; ++i) {
         auto filename =
             fmt::format("{}{:02}", pPlayerPortraitsNames[face_id], i + 1);
@@ -717,6 +774,9 @@ std::string GameUI_GetMinimapHintText() {
 
 //----- (0041AD6E) --------------------------------------------------------
 void GameUI_DrawRightPanelItems() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return;  // The flashing MM7 tome icons don't exist in MM6 (its book "new info" tabs are a fidelity leftover).
+
     if (bookFlashTimer > pParty->GetPlayingTime()) {
         bookFlashTimer = {};
     }
@@ -768,10 +828,14 @@ void GameUI_DrawFoodAndGold() {
     int text_y;  // esi@2
 
     if (uGameState != GAME_STATE_FINAL_WINDOW) {
-        text_y = _44100D_should_alter_right_panel() != 0 ? 381 : 322;
+        // MM6 draws food/gold on the shelf under the book row: "\r086%lu" / "\r022%lu" at y=356 (MM6.EXE 0x417a32).
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        text_y = isMm6 ? 356 : (_44100D_should_alter_right_panel() != 0 ? 381 : 322);
+        const char *foodFormat = isMm6 ? "\r086{}" : "\r087{}";
+        const char *goldFormat = isMm6 ? "\r022{}" : "\r028{}";
 
-        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format("\r087{}", toCompactString(pParty->GetFood())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
-        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format("\r028{}", toCompactString(pParty->GetGold())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
+        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format(fmt::runtime(foodFormat), toCompactString(pParty->GetFood())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
+        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format(fmt::runtime(goldFormat), toCompactString(pParty->GetGold())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
         // force to render all queued text now so it wont be delayed and drawn over things it isn't supposed to, like item in hand or nuklear
         render->EndTextNew();
     }
@@ -779,6 +843,39 @@ void GameUI_DrawFoodAndGold() {
 
 //----- (0041B0C9) --------------------------------------------------------
 void GameUI_DrawLifeManaBars() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x417c10: 6px bars on the pillars between portraits, bottom-anchored at y=461, max 78 tall.
+        // The health texture is picked by fill ratio - hitsfull (green, 78), hitshalf (yellow, 40), hitsqtr (red, 19) -
+        // each tall enough for its ratio range; mana is always manafull (blue, 78).
+        for (int i = 0; i < pParty->pCharacters.size(); ++i) {
+            if (pParty->pCharacters[i].health > 0) {
+                double hpFillRatio = std::min(1.0, (double)pParty->pCharacters[i].health / (double)pParty->pCharacters[i].GetMaxHealth());
+                GraphicsImage *pTextureHealth = game_ui_bar_green;
+                if (hpFillRatio <= 0.25) {
+                    pTextureHealth = game_ui_bar_red;
+                } else if (hpFillRatio <= 0.5) {
+                    pTextureHealth = game_ui_bar_yellow;
+                }
+                int fill = std::min<int>(78 * hpFillRatio, pTextureHealth->height());
+                if (fill > 0) {
+                    render->SetUIClipRect(Recti(kMm6HealthBarX[i], kMm6BarBottomY - fill, pTextureHealth->width(), fill));
+                    render->DrawQuad2D(pTextureHealth, {kMm6HealthBarX[i], kMm6BarBottomY - pTextureHealth->height()});
+                    render->ResetUIClipRect();
+                }
+            }
+            if (pParty->pCharacters[i].mana > 0) {
+                double mpFillRatio = std::min(1.0, (double)pParty->pCharacters[i].mana / (double)pParty->pCharacters[i].GetMaxMana());
+                int fill = std::min<int>(78 * mpFillRatio, game_ui_bar_blue->height());
+                if (fill > 0) {
+                    render->SetUIClipRect(Recti(kMm6ManaBarX[i], kMm6BarBottomY - fill, game_ui_bar_blue->width(), fill));
+                    render->DrawQuad2D(game_ui_bar_blue, {kMm6ManaBarX[i], kMm6BarBottomY - game_ui_bar_blue->height()});
+                    render->ResetUIClipRect();
+                }
+            }
+        }
+        return;
+    }
+
     for (int i = 0; i < pParty->pCharacters.size(); ++i) {
         if (pParty->pCharacters[i].health > 0) {
             int v17 = 0;
@@ -826,11 +923,29 @@ void GameUI_DrawLifeManaBars() {
 
 //----- (0041B3B6) --------------------------------------------------------
 void GameUI_DrawRightPanel() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return;  // MM6 house/dialogue screens paint their own right panel; there is no ib-mb analog.
     render->DrawQuad2D(game_ui_right_panel_frame, {pViewport.x + pViewport.w - 1, 0});
 }
 
 //----- (0041B3E2) --------------------------------------------------------
 void GameUI_DrawRightPanelFrames() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x417dc0 + 0x417df0 + 0x417960: border3 top edge, border4 left edge, the time-of-day
+        // tapestry over the top-right block, border1.pcx right panel, border2.pcx portrait strip, and
+        // the two corner patches over the viewport. The minimap/compass show through the tapestry's
+        // color-keyed holes and are drawn by GameUI_DrawMinimap.
+        render->DrawQuad2D(game_ui_topframe, {0, 0});                     // BORDER3, 468x8.
+        render->DrawQuad2D(game_ui_leftframe, {0, 8});                    // BORDER4, 8x344.
+        render->FillRect(Recti(468, 0, 172, 142), colorTable.Black);  // Backing for the tapestry holes.
+        render->DrawQuad2D(mm6TapestryForHour(pParty->uCurrentHour), {468, 0});
+        render->DrawQuad2D(game_ui_right_panel_frame, {468, 141});        // border1.pcx, 172x339.
+        render->DrawQuad2D(game_ui_bottomframe, {0, 371});                // border2.pcx, 469x109.
+        render->DrawQuad2D(game_ui_mm6_border5, {7, 8});
+        render->DrawQuad2D(game_ui_mm6_border6, {461, 8});
+        return;
+    }
+
     render->DrawQuad2D(game_ui_topframe, {0, 0});
     render->DrawQuad2D(game_ui_leftframe, {0, 8});
     render->DrawQuad2D(game_ui_rightframe, {468, 0});
@@ -1223,6 +1338,8 @@ void GameUI_WritePointedObjectStatusString() {
 
 //----- (0044158F) --------------------------------------------------------
 void GameUI_DrawCharacterSelectionFrame() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return;  // MM6 has no IB-selec analog; the active-character highlight is a fidelity leftover.
     if (pParty->hasActiveCharacter())
         render->DrawQuad2D(game_ui_player_selection_frame,
             {pPlayerPortraitsXCoords_For_PlayerBuffAnimsDrawing[pParty->activeCharacterIndex() - 1] - 9, 380});
@@ -1230,6 +1347,8 @@ void GameUI_DrawCharacterSelectionFrame() {
 
 //----- (0044162D) --------------------------------------------------------
 void GameUI_DrawPartySpells() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return;  // MM6 draws its own party-buff status row at y=254, see drawMm6PartyBuffStatusOverlays().
     for (int i = 0; i < spellBuffsAtRightPanel.size(); ++i) {
         if (pParty->pPartyBuffs[spellBuffsAtRightPanel[i]].Active()) {
             GraphicsImage *icon = party_buff_icons[i];
@@ -1279,6 +1398,42 @@ void GameUI_DrawPortraits() {
     GraphicsImage *pPortrait;                 // [sp-4h] [bp-1Ch]@27
 
     pParty->updateDelayedReaction();
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x486900: faces at ({22,135,248,360}, 383), the facemask oval drawn over each at (-2, -2),
+        // and a per-character alert gem (green / yellow / red) at (+56, 378) while the character can act.
+        for (int i = 0; i < pParty->pCharacters.size(); ++i) {
+            Character *pPlayer = &pParty->pCharacters[i];
+            Color tint = pParty->pPartyBuffs[PARTY_BUFF_INVISIBILITY].Active() ? colorTable.MediumGrey : colorTable.White;
+            if (pPlayer->IsEradicated()) {
+                pPortrait = game_ui_player_face_eradicated;
+            } else if (pPlayer->IsDead()) {
+                pPortrait = game_ui_player_face_dead;
+            } else {
+                int faceTextureIndex;
+                if (pPlayer->portrait == PORTRAIT_TALK) {
+                    faceTextureIndex = pPlayer->talkAnimation.currentFrameIndex();
+                } else {
+                    faceTextureIndex = pPortraitFrameTable->animationFrameIndex(pPortraitFrameTable->animationId(pPlayer->portrait),
+                                                                                pPlayer->portraitTimePassed);
+                }
+                pPlayer->portraitImageIndex = std::clamp<int>(faceTextureIndex - 1, 0, game_ui_player_faces[i].size() - 1);
+                pPortrait = game_ui_player_faces[i][pPlayer->portraitImageIndex];
+            }
+            render->DrawQuad2D(pPortrait, {kMm6PortraitX[i], kMm6PortraitY}, tint);
+            render->DrawQuad2D(game_ui_mm6_facemask, {kMm6PortraitX[i] - 2, kMm6PortraitY - 2}, tint);
+
+            if (pPlayer->CanAct() && !pPlayer->timeToRecovery) {
+                GraphicsImage *gem = game_ui_player_alert_green;
+                if (pParty->GetRedAlert())
+                    gem = game_ui_player_alert_red;
+                else if (pParty->GetYellowAlert())
+                    gem = game_ui_player_alert_yellow;
+                render->DrawQuad2D(gem, {kMm6AlertGemX[i], kMm6AlertGemY});
+            }
+        }
+        return;
+    }
 
     for (int i = 0; i < pParty->pCharacters.size(); ++i) {
         Character *pPlayer = &pParty->pCharacters[i];
@@ -1369,7 +1524,7 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
     Color pColor;
 
     Pointi center = rect.center();
-    render->SetUIClipRect(rect);
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
     bool bWizardEyeActive = pParty->wizardEyeActive();
     Mastery uWizardEyeSkillLevel = pParty->wizardEyeSkillLevel();
@@ -1382,6 +1537,21 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
         bWizardEyeActive = true;
         uWizardEyeSkillLevel = MASTERY_MASTER;
     }
+
+    if (isMm6) {
+        // MM6.EXE 0x417df0: the top-right tapestry (drawn by GameUI_DrawRightPanelFrames) is the
+        // BACKGROUND here - the MAPBACK parchment (only under Wizard Eye), the map content and the
+        // scrolling compass ribbon all draw over it.
+        if (!bWizardEyeActive) {
+            render->SetUIClipRect(Recti(536, 10, 42, 9));
+            render->DrawQuad2D(game_ui_minimap_compass, {mm6CompassRibbonX(pParty->_viewYaw), 10});
+            render->ResetUIClipRect();
+            return;
+        }
+        render->DrawQuad2D(game_ui_minimap_frame, {482, 25});  // MAPBACK.
+    }
+
+    render->SetUIClipRect(rect);
 
     if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
         static GraphicsImage *minimaptemp = nullptr;
@@ -1593,6 +1763,13 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
     if (rotate < 128 || rotate > 1920) arrow_idx = 7;
     render->DrawQuad2D(game_ui_minimap_dirs[arrow_idx], {center.x - 3, center.y - 3});
 
+    if (isMm6) {
+        render->SetUIClipRect(Recti(536, 10, 42, 9));
+        render->DrawQuad2D(game_ui_minimap_compass, {mm6CompassRibbonX(pParty->_viewYaw), 10});
+        render->ResetUIClipRect();
+        return;
+    }
+
     render->SetUIClipRect(Recti(541, 0, 26, 480));
     render->DrawQuad2D(game_ui_minimap_compass, {static_cast<int>(floorf((pParty->_viewYaw * 0.1171875) + 0.5f) + 285), 136});
     render->ResetUIClipRect();
@@ -1637,10 +1814,12 @@ void GameUI_DrawHiredNPCs() {
         FlatHirelings buf;
         buf.Prepare();
 
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
         for (int i = pParty->hirelingScrollPosition, count = 0; i < buf.Size() && count < 2; i++, count++) {
             std::string pContainer = fmt::format("NPC{:03}", buf.Get(i)->portraitId);
-            int npcX = pHiredNPCsIconsOffsetsX[count];
-            int npcY = pHiredNPCsIconsOffsetsY[count];
+            // MM6 shows hirelings in the two stained-glass windows of the right panel (MM6.EXE buttons @0x418b9e).
+            int npcX = isMm6 ? (count == 0 ? 492 : 562) : pHiredNPCsIconsOffsetsX[count];
+            int npcY = isMm6 ? 150 : pHiredNPCsIconsOffsetsY[count];
             render->DrawQuad2D(assets->getImage_ColorKey(pContainer), {npcX, npcY});
 
             // Dark sacrifice animation.

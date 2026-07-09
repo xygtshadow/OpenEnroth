@@ -104,6 +104,24 @@ extern GraphicsImage *game_ui_bar_yellow;
 extern GraphicsImage *game_ui_bar_green;
 extern GraphicsImage *game_ui_bar_blue;
 
+// MM6 in-game HUD skin (see MM6.EXE HUD draw cluster @0x417dc0/0x417df0/0x486900).
+extern std::array<GraphicsImage *, 4> game_ui_mm6_tapestries;  // TAP1..TAP4, the top-right arch backgrounds.
+extern GraphicsImage *game_ui_mm6_border5;   // Viewport top-left corner patch.
+extern GraphicsImage *game_ui_mm6_border6;   // Viewport top-right corner patch.
+extern GraphicsImage *game_ui_mm6_facemask;  // Oval mask drawn over each portrait.
+
+/**
+ * @return The MM6 top-right tapestry (sky-through-the-arch) for an in-game hour, per MM6.EXE 0x417960:
+ *         night for [21, 5), dawn at 5, day for [6, 20), dusk at 20.
+ */
+GraphicsImage *mm6TapestryForHour(int hour);
+
+/**
+ * @return X position of the MM6 compass ribbon for a party view yaw in TrigLUT units, per MM6.EXE 0x417df0.
+ *         The ribbon is drawn at y=10 clipped to x [536, 578).
+ */
+int mm6CompassRibbonX(int viewYaw);
+
 extern GraphicsImage *game_ui_playerbuff_pain_reflection;
 extern GraphicsImage *game_ui_playerbuff_hammerhands;
 extern GraphicsImage *game_ui_playerbuff_preservation;
