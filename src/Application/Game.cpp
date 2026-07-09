@@ -714,14 +714,21 @@ void Game::processQueuedMessages() {
                         engine->_teleportPoint.doTeleport(true);
                         engine->_teleportPoint.invalidate();
                     }
+
+                    PlayButtonClickSound();
+                    DialogueEnding();
+                    back_to_game();
+                    onEscape();
                 } else {
+                    // Tear the prompt down before resuming the event: the next step may open a house
+                    // screen (MM6 castle doors chain into the throne room via SpeakInHouse), which
+                    // onEscape() would otherwise destroy.
+                    PlayButtonClickSound();
+                    DialogueEnding();
+                    back_to_game();
+                    onEscape();
                     eventProcessor(savedEventID, Pid(), 1, savedEventStep);
                 }
-
-                PlayButtonClickSound();
-                DialogueEnding();
-                back_to_game();
-                onEscape();
                 continue;
             case UIMSG_CancelIndoorEntryExit:
                 PlayButtonClickSound();

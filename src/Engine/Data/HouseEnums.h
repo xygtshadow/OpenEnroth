@@ -603,8 +603,10 @@ enum class HouseType : uint16_t {
     HOUSE_TYPE_ELEMENTAL_GUILD = 14, // In MM6 it was Element Guild
     HOUSE_TYPE_SELF_GUILD = 15, // Exist only in MM6 and MM8
     HOUSE_TYPE_MIRRORED_PATH_GUILD = 16, // Mirrored Path Guild of Light and Dark (not made it into any released game)
-    HOUSE_TYPE_TOWN_HALL = 17, // Thieves guild in MM6.
-    HOUSE_TYPE_MERCENARY_GUILD = 18, // TODO(captainurist): Somehow this is the type of almost all houses in the game. So, not a mercenary guild?
+    HOUSE_TYPE_TOWN_HALL = 17, // "Merc Guild" in MM6 (MM6.EXE 2dEvents parser maps "mer" to 17 at 0x439314).
+    HOUSE_TYPE_MERCENARY_GUILD = 18, // The catch-all "plain house" type: MM6.EXE's 2dEvents parser defaults every
+                                     // unrecognized Type string to 18 (0x4394b8), so residences, castle entrances,
+                                     // throne rooms, thieves guilds etc. all land here. Not actually a mercenary guild.
     HOUSE_TYPE_TOWN_HALL_MM6 = 19,
     HOUSE_TYPE_THRONE_ROOM = 20,
     HOUSE_TYPE_TAVERN = 21,

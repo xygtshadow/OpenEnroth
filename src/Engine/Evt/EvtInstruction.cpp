@@ -972,6 +972,12 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size, GameVersi
             ir.data.move_map_descr.house_id = static_cast<HouseId>(fromStream<uint8_t>(stream)); // TODO(captainurist): Is this correct? Houses can have ids > 255.
             ir.data.move_map_descr.exit_pic_id = fromStream<uint8_t>(stream);
             ir.str = fromStream<std::string>(stream, tags::nullTerminated);
+            // MM6 applies each teleport component only when it's nonzero (MM6.EXE 0x43de3d ORs all six
+            // components, 0x43df10 skips zero ones), so yaw 0 means "keep facing" - e.g. castle-door prompts
+            // (outd3 event 43) pass an all-zero target that must not move the party. MM7 records use -1 as
+            // the keep-facing sentinel; translate so downstream teleport logic sees one convention.
+            if (version == GAME_VERSION_MM6 && ir.data.move_map_descr.yaw == 0)
+                ir.data.move_map_descr.yaw = -1;
             break;
         case EVENT_OpenChest:
             requireSize(6);

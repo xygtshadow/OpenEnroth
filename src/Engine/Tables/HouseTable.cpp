@@ -70,7 +70,10 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         {"Element Guild", HOUSE_TYPE_ELEMENTAL_GUILD}, // This is MM6 only.
         {"Self Guild", HOUSE_TYPE_SELF_GUILD},
         {"Mirrored Path Guild", HOUSE_TYPE_MIRRORED_PATH_GUILD},
-        {"Mercenary Guild", HOUSE_TYPE_TOWN_HALL}, // This is MM6 only. TODO(captainurist): Is this right and not Merc Guild (18)?
+        {"Mercenary Guild", HOUSE_TYPE_TOWN_HALL}, // This is MM6 only. MM6.EXE maps "mer" to type 17 (0x439314) - but note
+                                                   // MM6's data spells it "Merc Guild", which this exact-string map misses,
+                                                   // so those rows currently fall through to the type-18 default
+                                                   // (docs/pending/mm6-house-types.md).
     };
 
     // MM6's 2dEvents.txt keeps the same 24-column layout as MM7, but stores free-form text in several
@@ -128,9 +131,11 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         houseTable[houseId].uExitPicID = parseNum(tokens[20], 0);
         if (version == GAME_VERSION_MM6) {
             // MM6's exit-map column stores a 1-based games.lod file index (like Lloyd's Beacon slots
-            // and the transport schedules), not a map id. Castle entrances store text here instead
-            // ("2D 154" chains to another 2dEvents row) - those parse to 0 and stay without an exit;
-            // the throne-room chain model is deferred (docs/pending/mm6-game-ui-skin.md).
+            // and the transport schedules), not a map id. Castle rows carry editor annotations here
+            // ("Throne" / "2D 154"): MM6.EXE atoi's them to junk and gates the exit on ExitPic == 0
+            // (parser cases 0x439596/0x4395a5) - the entrance-to-throne-room chain actually lives in
+            // the map scripts (a MoveToMap prompt step followed by SpeakInHouse, see
+            // Mm6.EnterCastleThroneRoom). Our tolerant parse leaves both fields 0, same gating.
             houseTable[houseId].uExitMapID = mm6MapIdFromGamesLodFileIndex(parseNum(tokens[21], 0));
         } else {
             houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));

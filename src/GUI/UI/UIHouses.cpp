@@ -601,8 +601,9 @@ void prepareHouse(HouseId house) {
         if (houseTable[house]._quest_bit == QBIT_INVALID || !pParty->_questBits[houseTable[house]._quest_bit]) {
             MapId id = houseTable[house].uExitMapID;
 
-            // MM6 castle entrances chain to a throne room via a "2D <event>" exit that parses to no
-            // map (deferred, see docs/pending/mm6-game-ui-skin.md) - don't offer a broken transition.
+            // MM6 castle rows put editor annotations in the exit columns ("2D <row>" parses to no
+            // map); their throne-room chain is driven by the map scripts instead - don't offer a
+            // broken transition here.
             if (id != MAP_INVALID) {
                 HouseNpcDesc desc;
                 desc.type = HOUSE_TRANSITION;

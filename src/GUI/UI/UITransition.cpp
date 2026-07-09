@@ -221,7 +221,10 @@ void GUIWindow_IndoorEntryExit::Update() {
 
     MapId map_id = engine->_currentLoadedMapId;
     // TODO(captainurist): mm7 map names never starts with ' ', what is this check?
-    if ((pMovie_Track || getSpecialTransferMessageIndex(_mapName)) && !engine->_teleportPoint.getTeleportMap().starts_with(' ')) {
+    // "0" is not a map - it marks a within-map prompt (MM6 castle doors play the entrance movie with it),
+    // so the title stays on the current map.
+    if ((pMovie_Track || getSpecialTransferMessageIndex(_mapName)) && !_mapName.starts_with('0') &&
+        !engine->_teleportPoint.getTeleportMap().starts_with(' ')) {
         map_id = pMapStats->GetMapInfo(_mapName);
     }
 

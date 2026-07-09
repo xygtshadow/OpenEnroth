@@ -214,7 +214,9 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
 
             if (ir.str[0] == '0') { // teleport within map
                 if (engine->_teleportPoint.isValid()) {
-                    engine->_teleportPoint.doTeleport(false);
+                    // MM6 keeps the current value for every zero teleport component (MM6.EXE 0x43df10:
+                    // each of x/y/z/yaw/pitch/zspeed is applied only when nonzero).
+                    engine->_teleportPoint.doTeleport(engine->gameVersion() == GAME_VERSION_MM6);
                     engine->_teleportPoint.invalidate();
                     pAudioPlayer->playUISound(SOUND_teleport);
                 }

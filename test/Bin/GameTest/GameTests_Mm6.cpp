@@ -52,6 +52,7 @@
 #include "Engine/Tables/MessageScrollTable.h"
 #include "Engine/Tables/NPCTable.h"
 #include "Engine/Tables/TileTable.h"
+#include "Engine/Tables/TransitionTable.h"
 
 #include "Engine/AssetsManager.h"
 
@@ -4407,4 +4408,69 @@ GAME_TEST(Mm6, MazeInfoPopup) {
     ASSERT_NE(caverns, MAP_INVALID);
     game.teleportTo(caverns, Vec3f(-3136, 2240, 224), 0); // A known-valid cd1 position.
     EXPECT_EQ(GameUI_GetMinimapHintText(), "Castle Alamos");
+}
+
+GAME_TEST(Mm6, EnterCastleThroneRoom) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Castle Ironfist's castle door (outd3 event 43): MoveToMap(house 153, exit pic 2, "0") shows the entry
+    // prompt named after the "Castle Entrance" 2dEvents row, and the follow-up step SpeakInHouse(154) opens
+    // the Throne Room house. The 2dEvents "Throne" / "2D 154" exit columns are editor annotations - MM6.EXE's
+    // parser atoi's them to junk (0x439596/0x4395a5) and the whole chain lives in the map script instead.
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == 43 && face.Clickable())
+                door = &face;
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(ironfist, pos, yawDegrees);
+    game.tick(1);
+    Vec3f posAtDoor = pParty->pos;
+
+    // Interacting with the door opens the entry prompt, skinned with MM6's "dungeon" exit picture and the
+    // trans.txt blurb keyed by the entrance-house id (row 153 mentions the castle's resident regent).
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_INPUT_BLV);
+    ASSERT_NE(transition_ui_icon, nullptr);
+    EXPECT_EQ(transition_ui_icon->name(), "dungeon"); // Event 43 passes exit-pic id 2 = MM6's "dungeon".
+    EXPECT_NE(pTransitionStrings[153].find("Wilbur Humphrey"), std::string::npos);
+
+    // Confirming must NOT move the party - the event's MoveToMap target is all-zero, which in MM6 means
+    // "stay put" (MM6.EXE 0x43de3d ORs all six components; zero = keep current). The event resumes at the
+    // next step, which opens the Throne Room house.
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(5);
+    EXPECT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(154));
+    EXPECT_EQ(engine->_currentLoadedMapId, ironfist);
+    EXPECT_EQ(pParty->pos.x, posAtDoor.x);
+    EXPECT_EQ(pParty->pos.y, posAtDoor.y);
+
+    // Wilbur Humphrey holds court in the throne room (npcdata "2D Location" = 154).
+    bool humphreyPresent = false;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_NPC && npc.npc && npc.npc->name == "Wilbur Humphrey")
+            humphreyPresent = true;
+    EXPECT_TRUE(humphreyPresent);
+
+    // Esc leaves the castle back into the game world, party still at the door.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(pParty->pos.x, posAtDoor.x);
+    EXPECT_EQ(pParty->pos.y, posAtDoor.y);
 }
