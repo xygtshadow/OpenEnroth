@@ -438,7 +438,9 @@ class GameConfig : public Config {
         Int MaxVisibleSectors = {this, "maxvisiblesectors", 10, &ValidateMaxSectors, "Max number of BSP sectors to display."};
 
         Bool SeasonsChange = {this, "seasons_change", true,
-                              "Allow changing trees/ground depending on current season (originally was only used in MM6)."};
+                              "Allow changing trees/ground depending on current season. A fan enhancement built on seasonal "
+                              "sprites that ship unused in MM7 - neither original engine changed visuals with the seasons, "
+                              "so this has no effect in an MM6 session."};
 
         Bool Snow = {this, "snow", false,
                      "Snow effect from MM6 (where it was activated by events). Currently it shows every third day in winter."};

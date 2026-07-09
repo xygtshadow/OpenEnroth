@@ -595,7 +595,10 @@ void OutdoorLocation::Load(std::string_view filename, int days_played, int respa
 
     this->sky_texture = assets->getBitmap(loc_time.skyTextureName);
 
-    if (engine->config->graphics.SeasonsChange.value())
+    // The seasonal tileset swap is a fan MM7 enhancement - neither original engine changes
+    // terrain with the seasons, and MM6.EXE has no seasonal rendering at all (its Month global
+    // is only consumed by date strings, the calendar UI, the circus schedule and bounty regen).
+    if (engine->config->graphics.SeasonsChange.value() && engine->gameVersion() != GAME_VERSION_MM6)
         pOutdoor->pTerrain.changeSeason(pParty->uCurrentMonth);
 }
 
@@ -980,7 +983,10 @@ OutdoorLocation::OutdoorLocation() {
     uLastSunlightUpdateMinute = 0;
 
     engine->config->graphics.SeasonsChange.addListener(this, [this](bool seasonsChange) {
-        pTerrain.changeSeason(seasonsChange ? pParty->uCurrentMonth : 6);
+        // Month 6 is summer = the identity swap. MM6 sessions always take it - original MM6 has
+        // no seasonal terrain, see the matching check in OutdoorLocation::Load.
+        bool swapSeasons = seasonsChange && engine->gameVersion() != GAME_VERSION_MM6;
+        pTerrain.changeSeason(swapSeasons ? pParty->uCurrentMonth : 6);
         render->ReleaseTerrain();
     });
 }

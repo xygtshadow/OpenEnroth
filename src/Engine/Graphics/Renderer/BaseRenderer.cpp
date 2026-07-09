@@ -173,8 +173,10 @@ void BaseRenderer::PrepareDecorationsRenderList_ODM() {
                     frame = pSpriteFrameTable->GetFrame(decor_desc->uSpriteID,
                         v6 + Duration::fromTicks(v7));
 
-                    // The seasonal decoration swap table is keyed by MM7 sprite ids - in MM6 those ids
-                    // point at unrelated sprites, so only the terrain tileset swap runs there.
+                    // The seasonal decoration swap is a fan enhancement keyed by MM7 sprite ids (which in
+                    // MM6 point at unrelated sprites). Original MM6 has no seasonal decorations and ships
+                    // no seasonal tree/flower art - snowy maps have snow-tree decorations placed in the
+                    // map data itself - so an MM6 session skips the swap entirely.
                     if (config->graphics.SeasonsChange.value() && engine->gameVersion() != GAME_VERSION_MM6) {
                         frame = LevelDecorationChangeSeason(decor_desc, v6 + Duration::fromTicks(v7), pParty->uCurrentMonth);
                     }

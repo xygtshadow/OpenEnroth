@@ -2294,7 +2294,7 @@ GAME_TEST(Mm6, SnowFromMapEvents) {
     EXPECT_FALSE(pWeather->bRenderSnow);
 }
 
-GAME_TEST(Mm6, SeasonsChangeTerrain) {
+GAME_TEST(Mm6, TerrainUnchangedBySeasons) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
@@ -2306,7 +2306,7 @@ GAME_TEST(Mm6, SeasonsChangeTerrain) {
     ASSERT_NE(goblinwatch, MAP_INVALID);
 
     // Reloads New Sorpigal (bouncing through Goblinwatch) so OutdoorLocation::Initialize
-    // re-runs the seasonal tileset swap for the current month, then counts terrain tilesets.
+    // re-runs with the current month, then counts terrain tilesets.
     auto tilesetCountsAfterReload = [&](int monthIndex) {
         advanceToMonth(game, monthIndex);
         game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
@@ -2319,18 +2319,27 @@ GAME_TEST(Mm6, SeasonsChangeTerrain) {
         return counts;
     };
 
-    // Seasons originate in MM6: grass in summer, dirt in autumn, snow in winter.
+    // MM6.EXE has no seasonal rendering at all: the Month global's only consumers are date
+    // strings, the calendar UI, the circus schedule and bounty regen, and the game ships no
+    // seasonal tile or sprite art (permanently snowy maps have snow tiles and snow-tree
+    // decorations painted into the map data itself). OpenEnroth's seasons_change terrain swap
+    // is a fan MM7 enhancement and must not run in an MM6 session even though it defaults to
+    // on - New Sorpigal looks the same in January as in June.
+    // map::operator[] inserts, which would break the whole-map equality checks below.
+    auto countOf = [](const std::map<Tileset, int> &counts, Tileset tileset) {
+        auto pos = counts.find(tileset);
+        return pos == counts.end() ? 0 : pos->second;
+    };
+
     std::map<Tileset, int> summer = tilesetCountsAfterReload(5); // June.
-    EXPECT_GT(summer[TILESET_GRASS], 0);
-    EXPECT_EQ(summer[TILESET_SNOW], 0);
+    EXPECT_GT(countOf(summer, TILESET_GRASS), 0);
+    EXPECT_EQ(countOf(summer, TILESET_SNOW), 0);
 
     std::map<Tileset, int> autumn = tilesetCountsAfterReload(9); // October.
-    EXPECT_EQ(autumn[TILESET_GRASS], 0);
-    EXPECT_GT(autumn[TILESET_DIRT], summer[TILESET_DIRT]);
+    EXPECT_EQ(autumn, summer);
 
     std::map<Tileset, int> winter = tilesetCountsAfterReload(0); // January.
-    EXPECT_EQ(winter[TILESET_GRASS], 0);
-    EXPECT_GT(winter[TILESET_SNOW], 0);
+    EXPECT_EQ(winter, summer);
 }
 
 GAME_TEST(Mm6, SaveLoadRoundtrip) {
