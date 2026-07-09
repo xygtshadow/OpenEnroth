@@ -2211,6 +2211,25 @@ MonsterHostility Actor::GetActorsRelation(Actor *otherActPtr) {
         return HOSTILITY_FRIENDLY;
     if (!this->buffs[ACTOR_BUFF_ENSLAVED].Active() && this->ActorEnemy() && otherGroup == MONSTER_TYPE_INVALID)
         return HOSTILITY_LONG;
+
+    // MM6 has no hostile.txt and no monster factions: a monster's relation to the party is its own
+    // monsters.txt hostility type (0 for the true Peasant rows, 4 for every other monster - including the
+    // peasant-sprited Cutpurses and Followers of Baa, MM6's disguised town hostiles), and monsters are
+    // always friendly to each other (MM6.EXE's AI only ever targets the party - the engage path @0x40203A
+    // reads the actor's own hostility byte, and no relation lookup exists in the executable). The base
+    // monsters.txt value is used rather than the actor's mutable copy: UpdateActorAI resets the copy
+    // whenever the monster has no target, so reading it back here would keep every monster pacified.
+    // Berserk/charm/enslavement/aggression are already resolved above, exactly as in MM7.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (thisGroup == MONSTER_TYPE_INVALID) // Party-side actor (enslaved/summoned/resurrected).
+            return otherGroup == MONSTER_TYPE_INVALID
+                ? HOSTILITY_FRIENDLY
+                : pMonsterStats->infos[otherActPtr->monsterInfo.id].hostilityType;
+        if (otherGroup == MONSTER_TYPE_INVALID) // Versus the party.
+            return pMonsterStats->infos[this->monsterInfo.id].hostilityType;
+        return HOSTILITY_FRIENDLY; // Monster versus monster: MM6 has no infighting.
+    }
+
     if (thisGroup == MONSTER_TYPE_INVALID) {
         if ((!otherActPtr || this->buffs[ACTOR_BUFF_ENSLAVED].Active() &&
                              otherActPtr->ActorFriend()) &&

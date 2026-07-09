@@ -3559,8 +3559,14 @@ GAME_TEST(Mm6, MassCurse) {
     game.tick(1);
 
     // Mass Curse only reaches monsters in the caster's line of sight, so work with whatever is actually in the
-    // viewport at the spawn rather than teleporting a monster around (indoor rendering culls by sector).
+    // viewport rather than teleporting a monster around (indoor rendering culls by sector). Respawn placement
+    // is RNG-dependent, so the spawn view can start empty - but with MM6 hostility live the dungeon's monsters
+    // pursue the party on sight, so ticking a little always brings some into view.
     std::vector<Actor *> inView = render->getActorsInViewport(4096);
+    for (int i = 0; i < 300 && inView.empty(); i++) {
+        game.tick(1);
+        inView = render->getActorsInViewport(4096);
+    }
     ASSERT_FALSE(inView.empty());
     Actor *mon = inView[0];
     Character &target = pParty->pCharacters[0];
@@ -3598,6 +3604,86 @@ GAME_TEST(Mm6, MassCurse) {
     }
     ASSERT_NE(cursedMon, nullptr) << "Mass Curse should have cursed at least one monster in view";
     EXPECT_FALSE(cursedMon->ActorHitOrMiss(&target)); // End to end: the cast cursed it, so it now misses.
+}
+
+// MM6 has no hostile.txt and no monster factions (MMExtension defines HostileTxt and the IsAgainst relation
+// method for MM7+ only): a monster's aggression toward the party is its own monsters.txt "Hst" column - 4 for
+// every regular monster, 0 for the true Peasant rows - kept as mutable per-actor state (Charm zeroes it,
+// damage escalates it), and monsters NEVER fight each other (MM6 has no Berserk/Enslave spells and no
+// infighting; MM6.EXE's AI target is always the party, Pid 4 verbatim in the engage path @0x40203A). With
+// hostile.txt absent the relations table is all-friendly, which used to pacify every MM6 monster permanently:
+// _SelectTarget never picked the party, and UpdateActorAI then reset the actor's hostility every frame.
+GAME_TEST(Mm6, MonsterHostility) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Street peasants (New Sorpigal's oute3 is full of them) are harmless: monsters.txt hostility 0.
+    auto peasant = std::ranges::find_if(pActors, [](Actor &actor) { return actor.IsPeasant(); });
+    ASSERT_NE(peasant, pActors.end());
+    EXPECT_EQ(peasant->GetActorsRelation(nullptr), HOSTILITY_FRIENDLY);
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv, a goblin in view.
+    game.tick(1);
+
+    // Pick the nearest live monster with line of sight to the party. Respawn placement is RNG-dependent
+    // (and the RNG stream now differs run-to-run with street hostiles fighting on oute3), so don't
+    // depend on any specific spawn layout or on the rendered viewport.
+    Actor *mon = nullptr;
+    int monId = -1;
+    float bestDist = 5120; // _SelectTarget targets the party inside ranges[HOSTILITY_LONG] = 5120.
+    for (size_t i = 0; i < pActors.size(); i++) {
+        Actor &actor = pActors[i];
+        if (actor.aiState == Dead || actor.aiState == Removed)
+            continue;
+        float dist = (actor.pos - pParty->pos).length();
+        if (dist < bestDist && Detect_Between_Objects(Pid(OBJECT_Actor, i), Pid(OBJECT_Character, 0))) {
+            bestDist = dist;
+            mon = &actor;
+            monId = i;
+        }
+    }
+    ASSERT_NE(mon, nullptr);
+
+    // Every regular MM6 monster is Hst 4 in monsters.txt, so its relation to the party is hostile...
+    EXPECT_EQ(mon->GetActorsRelation(nullptr), HOSTILITY_LONG);
+
+    // ...but monsters are always friendly to each other, even across families (rats vs goblins here).
+    Actor *otherFamily = nullptr;
+    for (Actor &actor : pActors) {
+        if (monsterTypeForMonsterId(actor.monsterInfo.id) != monsterTypeForMonsterId(mon->monsterInfo.id)) {
+            otherFamily = &actor;
+            break;
+        }
+    }
+    ASSERT_NE(otherFamily, nullptr);
+    EXPECT_EQ(mon->GetActorsRelation(otherFamily), HOSTILITY_FRIENDLY);
+    EXPECT_EQ(otherFamily->GetActorsRelation(mon), HOSTILITY_FRIENDLY);
+
+    // Target selection picks the party for the monster in sight.
+    Pid target;
+    Actor::_SelectTarget(monId, &target, true);
+    EXPECT_EQ(target, Pid(OBJECT_Character, 0));
+
+    // And the live AI actually engages: the goblin (or a cave-mate) pursues or attacks within a few
+    // seconds, without the party having thrown a single punch.
+    bool aggro = false;
+    for (int i = 0; i < 150 && !aggro; i++) {
+        game.tick(1);
+        for (const Actor &actor : pActors) {
+            if (actor.aiState == Pursuing || actor.aiState == AttackingMelee ||
+                    actor.aiState == AttackingRanged1 || actor.aiState == AttackingRanged2 ||
+                    actor.aiState == AttackingRanged3 || actor.aiState == AttackingRanged4) {
+                aggro = true;
+                break;
+            }
+        }
+    }
+    EXPECT_TRUE(aggro);
 }
 
 // MM6 Guardian Angel (native id 50) has no MM7 counterpart, so translateForCast runs it as Preservation
