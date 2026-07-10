@@ -775,6 +775,11 @@ void Actor::AggroSurroundingPeasants(unsigned int uActorID, int a2) {
     }
 }
 
+// MM6 monsters.txt rows 148-150 (RobotA/B/C - the VARN Patrol/Enforcer/Terminator Units): their
+// "Ener" ranged attack fires the laser bolt object, not the energy bolt (MM6.EXE @0x404f84).
+static constexpr MonsterId MONSTER_MM6_ROBOT_FIRST = static_cast<MonsterId>(148);
+static constexpr MonsterId MONSTER_MM6_ROBOT_LAST = static_cast<MonsterId>(150);
+
 //----- (00404874) --------------------------------------------------------
 void Actor::AI_RangedAttack(unsigned int uActorID, AIDirection *pDir,
                             MonsterProjectile type, ActorAbility a4) {
@@ -785,7 +790,11 @@ void Actor::AI_RangedAttack(unsigned int uActorID, AIDirection *pDir,
     int v13;      // edx@28
 
     SpriteObject a1;  // [sp+Ch] [bp-74h]@1
-    a1.spriteId = spriteForMonsterProjectile(type);
+    a1.spriteId = spriteForMonsterProjectile(type, engine->gameVersion());
+    if (engine->gameVersion() == GAME_VERSION_MM6 && type == MONSTER_PROJECTILE_ENERGY_BOLT &&
+        pActors[uActorID].monsterInfo.id >= MONSTER_MM6_ROBOT_FIRST &&
+        pActors[uActorID].monsterInfo.id <= MONSTER_MM6_ROBOT_LAST)
+        a1.spriteId = SPRITE_MM6_PROJECTILE_LASER;
 
     a1.uObjectDescID = pObjectList->ObjectIDByItemID(a1.spriteId);
     if (a1.uObjectDescID == 0) {

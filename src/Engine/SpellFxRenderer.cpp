@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "Engine/Engine.h"
 #include "Engine/OurMath.h"
 #include "Engine/Time/Timer.h"
 #include "Engine/Party.h"
@@ -587,6 +588,14 @@ bool SpellFxRenderer::RenderAsSprite(SpriteObject *a2) {
     // assert(false); // need to refactor carefully & collect data
     // v2 = this;
     result = a2->spriteId;
+
+    // MM6's projectile bank (ids 500-590, with the "explosion" impact objects at +1) is drawn as
+    // plain animated sprites. The ids collide with MM7's monster-bolt values below, which would
+    // replace them with wrong-element particles - and the SPRITE_546..599 filler cases would
+    // swallow the energy/magic/rock bolts and the laser as a single orange particle.
+    if (engine->gameVersion() == GAME_VERSION_MM6 &&
+        a2->spriteId >= SPRITE_PROJECTILE_AIR_BOLT && a2->spriteId < SPRITE_OBJECT_EXPLODE)
+        return true;
 
     switch (a2->spriteId) {
         case SPRITE_PROJECTILE_AIR_BOLT:

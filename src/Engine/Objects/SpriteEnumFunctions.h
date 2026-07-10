@@ -31,6 +31,12 @@ inline bool isMonsterProjectileSprite(SpriteId sprite) {
     case SPRITE_PROJECTILE_LIGHT_BOLT:
     case SPRITE_PROJECTILE_DARK_BOLT:
     case SPRITE_PROJECTILE_BLASTER:
+    // MM6's projectile bank: ids 500-550 are already covered by the colliding MM7 names above,
+    // these are the four values MM7 doesn't use.
+    case SPRITE_MM6_PROJECTILE_ENERGY:
+    case SPRITE_MM6_PROJECTILE_MAGIC:
+    case SPRITE_MM6_PROJECTILE_ROCK:
+    case SPRITE_MM6_PROJECTILE_LASER:
         return true;
     default:
         return false;

@@ -44,6 +44,7 @@
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/NPC.h"
 #include "Engine/Objects/ObjectList.h"
+#include "Engine/Objects/SpriteEnumFunctions.h"
 #include "Engine/Objects/SpriteObject.h"
 #include "Engine/Spells/CastSpellInfo.h"
 #include "Engine/Spells/SpellEnums.h"
@@ -2401,9 +2402,9 @@ GAME_TEST(Mm6, MonsterModel) {
     EXPECT_EQ(pMonsterStats->infos[MonsterId(73)].attack1Type, DAMAGE_MAGIC);  // GhostA, "Magic".
     EXPECT_EQ(pMonsterStats->infos[MonsterId(36)].attack1Type, DAMAGE_ENERGY); // DragonFlyC, "Ener".
 
-    // Ranged attackers keep their elemental bolt projectiles; Ghosts strike in melee. MM6-only
-    // projectiles with no MM7 sprite (Magic/Rock/Dagger/FireAr) drop to NONE, mirroring the
-    // ddm-embedded stats path.
+    // Ranged attackers keep their elemental bolt projectiles; Ghosts strike in melee (their
+    // "Magic" is the attack TYPE - GhostA's missile column is empty). The full projectile bank,
+    // including the MM6-only Magic/Rock missiles, is covered by Mm6.MonsterProjectiles.
     EXPECT_EQ(pMonsterStats->infos[MonsterId(12)].attack1MissileType, MONSTER_PROJECTILE_AIR_BOLT);
     EXPECT_EQ(pMonsterStats->infos[MonsterId(10)].attack1MissileType, MONSTER_PROJECTILE_WATER_BOLT);
     EXPECT_EQ(pMonsterStats->infos[MonsterId(37)].attack1MissileType, MONSTER_PROJECTILE_EARTH_BOLT);
@@ -6494,4 +6495,92 @@ GAME_TEST(Mm6, MainQuestEndToEnd) {
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
     EXPECT_EQ(engine->_currentLoadedMapId, hive);
     game.tick(5);
+}
+
+// Milestone 58: MM6 monster projectiles come from MM6's own dobjlist bank - object id =
+// 490 + 10 * the monsters.txt missile code (arrow 500, fire arrow 510, fire 520, electric 530,
+// cold 540, poison 550, energy 560, magic 570, rock 580, laser 590; MM6.EXE ranged-attack
+// dispatch @0x404f59) - not MM7's SpriteId values, half of which don't exist in MM6 data at all
+// (arrows resolved to the missing object 545 and despawned with "Item not found").
+GAME_TEST(Mm6, MonsterProjectiles) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // monsters.txt missile columns parse with MM6.EXE's per-column keyword sets (attack1
+    // @0x447afa, attack2 @0x447e34, both exact stricmp): flaming arrow is spelled "FireAr" in
+    // the attack2 set only, Magic/Rock are real MM6-only projectiles, "Pois" does NOT match the
+    // attack2 set's "POISON" keyword, and "Dagger" matches nothing in either set.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(2)].attack1MissileType, MONSTER_PROJECTILE_ARROW);          // Master Archer.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(2)].attack2MissileType, MONSTER_PROJECTILE_FLAMING_ARROW);  // "FireAr".
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(45)].attack1MissileType, MONSTER_PROJECTILE_MM6_MAGIC);     // Grand Druid.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(52)].attack2MissileType, MONSTER_PROJECTILE_MM6_ROCK);      // Rock Beast.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(148)].attack1MissileType, MONSTER_PROJECTILE_ENERGY_BOLT);  // Patrol Unit.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(37)].attack1MissileType, MONSTER_PROJECTILE_EARTH_BOLT);    // Land Dragon, "Pois" attack1.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(86)].attack2MissileType, MONSTER_PROJECTILE_NONE);          // Venomous Hydra, "Pois" attack2.
+    EXPECT_EQ(pMonsterStats->infos[MonsterId(163)].attack2MissileType, MONSTER_PROJECTILE_NONE);         // Thief, "Dagger".
+
+    // The MM6-only bank members count as monster projectiles for the hit-or-miss / shield handling.
+    EXPECT_TRUE(isMonsterProjectileSprite(SPRITE_MM6_PROJECTILE_ENERGY));
+    EXPECT_TRUE(isMonsterProjectileSprite(SPRITE_MM6_PROJECTILE_MAGIC));
+    EXPECT_TRUE(isMonsterProjectileSprite(SPRITE_MM6_PROJECTILE_ROCK));
+    EXPECT_TRUE(isMonsterProjectileSprite(SPRITE_MM6_PROJECTILE_LASER));
+
+    // Actor::AI_RangedAttack resolves every missile type onto a live dobjlist object.
+    ASSERT_FALSE(pActors.empty()); // New Sorpigal street peasants.
+    auto countProjectiles = [](SpriteId sprite) {
+        int result = 0;
+        for (const SpriteObject &object : pSpriteObjects)
+            if (object.spriteId == sprite && object.uObjectDescID != 0)
+                result++;
+        return result;
+    };
+    auto shoot = [](MonsterProjectile type) {
+        AIDirection dir;
+        dir.uDistance = 1000;
+        Actor::AI_RangedAttack(0, &dir, type, ABILITY_ATTACK1);
+    };
+    std::initializer_list<std::pair<MonsterProjectile, SpriteId>> bank = {
+        {MONSTER_PROJECTILE_ARROW, SPRITE_MM6_PROJECTILE_ARROW},
+        {MONSTER_PROJECTILE_FLAMING_ARROW, SPRITE_MM6_PROJECTILE_FIRE_ARROW},
+        {MONSTER_PROJECTILE_FIRE_BOLT, SPRITE_MM6_PROJECTILE_FIRE},
+        {MONSTER_PROJECTILE_AIR_BOLT, SPRITE_MM6_PROJECTILE_ELECTRIC},
+        {MONSTER_PROJECTILE_WATER_BOLT, SPRITE_MM6_PROJECTILE_COLD},
+        {MONSTER_PROJECTILE_EARTH_BOLT, SPRITE_MM6_PROJECTILE_POISON},
+        {MONSTER_PROJECTILE_ENERGY_BOLT, SPRITE_MM6_PROJECTILE_ENERGY},
+        {MONSTER_PROJECTILE_MM6_MAGIC, SPRITE_MM6_PROJECTILE_MAGIC},
+        {MONSTER_PROJECTILE_MM6_ROCK, SPRITE_MM6_PROJECTILE_ROCK},
+    };
+    for (const auto &[missile, sprite] : bank) {
+        int before = countProjectiles(sprite);
+        shoot(missile);
+        EXPECT_EQ(countProjectiles(sprite), before + 1) << "missile type " << std::to_underlying(missile);
+    }
+
+    // The VARN robots' energy shots are laser bolts (MM6.EXE @0x404f84).
+    MonsterId monsterBefore = pActors[0].monsterInfo.id;
+    pActors[0].monsterInfo.id = MonsterId(150); // Terminator Unit.
+    int lasersBefore = countProjectiles(SPRITE_MM6_PROJECTILE_LASER);
+    shoot(MONSTER_PROJECTILE_ENERGY_BOLT);
+    EXPECT_EQ(countProjectiles(SPRITE_MM6_PROJECTILE_LASER), lasersBefore + 1);
+    pActors[0].monsterInfo.id = monsterBefore;
+
+    // Impact: a bolt that hits the party turns into its "explosion" impact object (id + 1). The
+    // poison bolt matters most - its value collides with MM7's flaming arrow, whose impact
+    // treatment just despawns without an impact animation.
+    auto impactTurnsInto = [&](SpriteId sprite) {
+        int index = -1;
+        for (size_t i = 0; i < pSpriteObjects.size(); i++)
+            if (pSpriteObjects[i].spriteId == sprite && pSpriteObjects[i].uObjectDescID != 0)
+                index = i;
+        EXPECT_NE(index, -1);
+        if (index == -1)
+            return SPRITE_NULL;
+        processSpellImpact(index, Pid(OBJECT_Character, 0));
+        return pSpriteObjects[index].uObjectDescID != 0 ? pSpriteObjects[index].spriteId : SPRITE_NULL;
+    };
+    EXPECT_EQ(impactTurnsInto(SPRITE_MM6_PROJECTILE_ENERGY), impactSprite(SPRITE_MM6_PROJECTILE_ENERGY));
+    EXPECT_EQ(impactTurnsInto(SPRITE_MM6_PROJECTILE_POISON), impactSprite(SPRITE_MM6_PROJECTILE_POISON));
 }

@@ -372,7 +372,26 @@ std::span<const MonsterAttackPreference> allMonsterAttackPreferences() {
     return result;
 }
 
-SpriteId spriteForMonsterProjectile(MonsterProjectile projectile) {
+SpriteId spriteForMonsterProjectile(MonsterProjectile projectile, GameVersion version) {
+    if (version == GAME_VERSION_MM6) {
+        // MM6's own projectile bank, object id = 490 + 10 * missile code (MM6.EXE @0x404f59).
+        // The robots' energy shots upgrade to the laser at the call site - that needs the
+        // monster id, which this function doesn't have.
+        switch (projectile) {
+        default:                                assert(false); [[fallthrough]];
+        case MONSTER_PROJECTILE_NONE:           return SPRITE_NULL;
+        case MONSTER_PROJECTILE_ARROW:          return SPRITE_MM6_PROJECTILE_ARROW;
+        case MONSTER_PROJECTILE_FLAMING_ARROW:  return SPRITE_MM6_PROJECTILE_FIRE_ARROW;
+        case MONSTER_PROJECTILE_FIRE_BOLT:      return SPRITE_MM6_PROJECTILE_FIRE;
+        case MONSTER_PROJECTILE_AIR_BOLT:       return SPRITE_MM6_PROJECTILE_ELECTRIC;
+        case MONSTER_PROJECTILE_WATER_BOLT:     return SPRITE_MM6_PROJECTILE_COLD;
+        case MONSTER_PROJECTILE_EARTH_BOLT:     return SPRITE_MM6_PROJECTILE_POISON;
+        case MONSTER_PROJECTILE_ENERGY_BOLT:    return SPRITE_MM6_PROJECTILE_ENERGY;
+        case MONSTER_PROJECTILE_MM6_MAGIC:      return SPRITE_MM6_PROJECTILE_MAGIC;
+        case MONSTER_PROJECTILE_MM6_ROCK:       return SPRITE_MM6_PROJECTILE_ROCK;
+        }
+    }
+
     switch (projectile) {
     default:                                assert(false); [[fallthrough]];
     case MONSTER_PROJECTILE_NONE:           return SPRITE_NULL;

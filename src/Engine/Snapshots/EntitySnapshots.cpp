@@ -1387,17 +1387,21 @@ static uint8_t reconstructMm6DamageType(uint8_t type) {
     }
 }
 
-// MM6 missile coding is None=0, Arrow=1, then elemental bolts at damage type + 1. MM6 Magic missiles (2) and
-// codes past Energy (Rock/Dagger/FireAr in the txt) have no MM7 equivalent and are dropped, mirroring what
-// the monsters.txt parser does with them.
+// MM6 missile coding (the monsters.txt keyword order, MM6.EXE parsers @0x447afa/@0x447e34) is None=0,
+// Arrow=1, FlamingArrow=2 ("ArrowF"/"FireAr"), Fire=3, Elec=4, Cold=5, Poison=6, Energy=7, and the
+// MM6-only Magic=8 / Rock=9. The dobjlist projectile object is 490 + 10 * code (spawn dispatch
+// @0x404f59), which spriteForMonsterProjectile reproduces from these enum values.
 static uint8_t reconstructMm6MissileType(uint8_t missile) {
     switch (missile) {
     case 1: return std::to_underlying(MONSTER_PROJECTILE_ARROW);
+    case 2: return std::to_underlying(MONSTER_PROJECTILE_FLAMING_ARROW);
     case 3: return std::to_underlying(MONSTER_PROJECTILE_FIRE_BOLT);
     case 4: return std::to_underlying(MONSTER_PROJECTILE_AIR_BOLT);
     case 5: return std::to_underlying(MONSTER_PROJECTILE_WATER_BOLT);
     case 6: return std::to_underlying(MONSTER_PROJECTILE_EARTH_BOLT);
     case 7: return std::to_underlying(MONSTER_PROJECTILE_ENERGY_BOLT);
+    case 8: return std::to_underlying(MONSTER_PROJECTILE_MM6_MAGIC);
+    case 9: return std::to_underlying(MONSTER_PROJECTILE_MM6_ROCK);
     default: return std::to_underlying(MONSTER_PROJECTILE_NONE);
     }
 }

@@ -24,7 +24,7 @@ MonsterList *pMonsterList;
 
 void ParseDamage(std::string_view damage_str, uint8_t *dice_rolls,
                  uint8_t *dice_sides, uint8_t *dmg_bonus);
-MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version);
+MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version, bool secondAttack);
 MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str);
 
 //----- (004548E2) --------------------------------------------------------
@@ -180,23 +180,33 @@ void ParseDamage(std::string_view damage_str, uint8_t *dice_rolls,
 }
 
 //----- (00454E3A) --------------------------------------------------------
-MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version) {
+MonsterProjectile ParseMissleAttackType(std::string_view missle_attack_str, GameVersion version, bool secondAttack) {
     if (version == GAME_VERSION_MM6) {
-        // MM6 projectiles follow the attack-type names. Magic/Rock/Dagger/FireAr have no MM7
-        // sprite and drop to NONE, mirroring the ddm-embedded stats path
-        // (see reconstructMm6MissileType).
+        // MM6.EXE parses the two missile columns with DIFFERENT keyword sets (attack1 @0x447afa,
+        // attack2 @0x447e34, both exact _stricmp): flaming arrow is "ArrowF" in the attack1 set
+        // but "FireAr" in the attack2 set, and poison is "Pois" in attack1 but "POISON" in
+        // attack2 - so the shipped data's attack2 "Pois" entries (Venomous Hydra, the big
+        // spiders) genuinely have NO second missile. "Dagger" (the Thief rows) matches nothing
+        // in either set. Codes map onto the dobjlist projectile bank at 490 + 10 * code; Magic
+        // and Rock are MM6-only projectiles with no MM7 counterpart.
         if (ascii::noCaseEquals(missle_attack_str, "ARROW"))
             return MONSTER_PROJECTILE_ARROW;
+        if (ascii::noCaseEquals(missle_attack_str, secondAttack ? "FIREAR" : "ARROWF"))
+            return MONSTER_PROJECTILE_FLAMING_ARROW;
         if (ascii::noCaseEquals(missle_attack_str, "FIRE"))
             return MONSTER_PROJECTILE_FIRE_BOLT;
         if (ascii::noCaseEquals(missle_attack_str, "ELEC"))
             return MONSTER_PROJECTILE_AIR_BOLT;
         if (ascii::noCaseEquals(missle_attack_str, "COLD"))
             return MONSTER_PROJECTILE_WATER_BOLT;
-        if (ascii::noCaseEquals(missle_attack_str, "POIS"))
+        if (ascii::noCaseEquals(missle_attack_str, secondAttack ? "POISON" : "POIS"))
             return MONSTER_PROJECTILE_EARTH_BOLT;
         if (ascii::noCaseEquals(missle_attack_str, "ENER"))
             return MONSTER_PROJECTILE_ENERGY_BOLT;
+        if (ascii::noCaseEquals(missle_attack_str, "MAGIC"))
+            return MONSTER_PROJECTILE_MM6_MAGIC;
+        if (ascii::noCaseEquals(missle_attack_str, "ROCK"))
+            return MONSTER_PROJECTILE_MM6_ROCK;
         return MONSTER_PROJECTILE_NONE;
     }
 
@@ -592,11 +602,11 @@ void MonsterStats::Initialize(const Blob &monsters, GameVersion version) {
 
         info.attack1Type = ParseAttackType(tokens[17], version);
         ParseDamage(tokens[18], &info.attack1DamageDiceRolls, &info.attack1DamageDiceSides, &info.attack1DamageBonus);
-        info.attack1MissileType = ParseMissleAttackType(tokens[19], version);
+        info.attack1MissileType = ParseMissleAttackType(tokens[19], version, /*secondAttack=*/false);
         info.attack2Chance = fromString<int>(tokens[20]);
         info.attack2Type = ParseAttackType(tokens[21], version);
         ParseDamage(tokens[22], &info.attack2DamageDiceRolls, &info.attack2DamageDiceSides, &info.attack2DamageBonus);
-        info.attack2MissileType = ParseMissleAttackType(tokens[23], version);
+        info.attack2MissileType = ParseMissleAttackType(tokens[23], version, /*secondAttack=*/true);
         info.spell1UseChance = fromString<int>(tokens[24]);
         parseSpellEntry(tokens[25], info.spell1Id, info.spell1SkillMastery);
 

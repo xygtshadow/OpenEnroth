@@ -148,7 +148,9 @@ std::span<const MonsterAttackPreference> allMonsterAttackPreferences();
 
 /**
  * @param projectile                    Monster projectile to get a sprite id for.
+ * @param version                       Game version whose projectile object bank to use. MM6's
+ *                                      dobjlist bank diverges from MM7's wholesale.
  * @return                              Sprite id to use for the given monster projectile.
  * @see isMonsterProjectileSprite
  */
-SpriteId spriteForMonsterProjectile(MonsterProjectile projectile);
+SpriteId spriteForMonsterProjectile(MonsterProjectile projectile, GameVersion version);

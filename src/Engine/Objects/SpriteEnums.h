@@ -31,7 +31,22 @@ enum class SpriteId : uint16_t {
     SPRITE_PROJECTILE_FLAMING_ARROW = 550, // Also explosive arrows.
     SPRITE_PROJECTILE_BLASTER = 555, // Also energy projectiles from Hydras.
     SPRITE_PROJECTILE_BLASTER_IMPACT = 556,
-    SPRITE_MM6_PROJECTILE_LASER = 590, // MM6's dobjlist "laser bolt" - its projectile bank diverges from MM7's.
+
+    // MM6's dobjlist projectile bank diverges from MM7's wholesale: object id = 490 + 10 * the
+    // monsters.txt missile code (MM6.EXE ranged-attack dispatch @0x404f59). The bolt family
+    // (fire..rock) has "explosion" impact objects at +1; arrow / fire arrow / laser have none and
+    // just despawn on impact. The values collide with the MM7 monster-bolt ids above by design -
+    // in an MM6 session the meaning loaded from dobjlist.bin is the MM6 one.
+    SPRITE_MM6_PROJECTILE_ARROW = 500,
+    SPRITE_MM6_PROJECTILE_FIRE_ARROW = 510,
+    SPRITE_MM6_PROJECTILE_FIRE = 520,
+    SPRITE_MM6_PROJECTILE_ELECTRIC = 530,
+    SPRITE_MM6_PROJECTILE_COLD = 540,
+    SPRITE_MM6_PROJECTILE_POISON = 550,
+    SPRITE_MM6_PROJECTILE_ENERGY = 560,
+    SPRITE_MM6_PROJECTILE_MAGIC = 570,
+    SPRITE_MM6_PROJECTILE_ROCK = 580,
+    SPRITE_MM6_PROJECTILE_LASER = 590, // Fired by the party's laser spell and the VARN robots (monsters 148-150).
 
     SPRITE_546 = 546,
     SPRITE_547 = 547,

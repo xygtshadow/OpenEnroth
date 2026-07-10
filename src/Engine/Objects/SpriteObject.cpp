@@ -770,6 +770,11 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
             return 0;
         }
 
+        // In an MM6 session ids 500-540 also land here through the value collisions with MM6's
+        // own projectile bank (arrow 500 / fire arrow 510 / fire 520 / electric 530 / cold 540),
+        // which is the desired treatment: damage, then the "explosion" impact object at +1 (the
+        // arrows have none and just despawn). Poison (550) collides with the flaming arrow case
+        // below and is version-gated there; energy/magic/rock have no MM7 case and get their own.
         case SPRITE_PROJECTILE_AIR_BOLT:
         case SPRITE_PROJECTILE_EARTH_BOLT:
         case SPRITE_PROJECTILE_FIRE_BOLT:
@@ -778,7 +783,10 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
         case SPRITE_PROJECTILE_MIND_BOLT:
         case SPRITE_PROJECTILE_SPIRIT_BOLT:
         case SPRITE_PROJECTILE_LIGHT_BOLT:
-        case SPRITE_PROJECTILE_DARK_BOLT: {
+        case SPRITE_PROJECTILE_DARK_BOLT:
+        case SPRITE_MM6_PROJECTILE_ENERGY:
+        case SPRITE_MM6_PROJECTILE_MAGIC:
+        case SPRITE_MM6_PROJECTILE_ROCK: {
             applySpellSpriteDamage(uLayingItemID, pid);
             updateSpriteOnImpact(object);
             if (object->uObjectDescID == 0) {
@@ -794,6 +802,18 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
 
         case SPRITE_PROJECTILE_ARROW:
         case SPRITE_PROJECTILE_FLAMING_ARROW: {
+            // In an MM6 session sprite 550 is the poison bolt, not the flaming arrow - give it
+            // the bolt treatment so its "explosion" impact object (551) plays instead of the
+            // arrow despawn below.
+            if (engine->gameVersion() == GAME_VERSION_MM6 && object->spriteId == SPRITE_MM6_PROJECTILE_POISON) {
+                applySpellSpriteDamage(uLayingItemID, pid);
+                updateSpriteOnImpact(object);
+                if (object->uObjectDescID == 0) {
+                    SpriteObject::OnInteraction(uLayingItemID);
+                }
+                object->spellSpriteStop();
+                return 0;
+            }
             // Note that ITEM_SPELLBOOK_FIREBALL is an MM6 remnant here,
             // in MM6 it was Percival artifact (id 405) which has swiftness and carnage enchantments -
             // grantsCarnage() handles the real thing in MM6 sessions.

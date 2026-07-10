@@ -233,7 +233,7 @@ GAME_TEST(Issues, Issue2104) {
         monster->monsterInfo.level = 10; // Make all monsters the same level so that we don't have to tweak AC.
         game.tick(300);
 
-        int projectileCount = spritesTape.count([&](auto sprites) { return sprites.contains(spriteForMonsterProjectile(monster->monsterInfo.attack1MissileType)); });
+        int projectileCount = spritesTape.count([&](auto sprites) { return sprites.contains(spriteForMonsterProjectile(monster->monsterInfo.attack1MissileType, engine->gameVersion())); });
         int hitCount = hpTape.size() - 1;
 
         ASSERT_GT(hitCount, 0); // Should have hit some.

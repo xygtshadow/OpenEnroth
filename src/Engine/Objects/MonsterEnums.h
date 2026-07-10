@@ -547,5 +547,10 @@ enum class MonsterProjectile {
     MONSTER_PROJECTILE_LIGHT_BOLT = 10,
     MONSTER_PROJECTILE_DARK_BOLT = 11,
     MONSTER_PROJECTILE_ENERGY_BOLT = 13,
+
+    // Engine-internal ids for the MM6-only projectiles (MM6 monsters.txt missile codes 8 and 9);
+    // MM7 data never produces these.
+    MONSTER_PROJECTILE_MM6_MAGIC = 14,
+    MONSTER_PROJECTILE_MM6_ROCK = 15,
 };
 using enum MonsterProjectile;
