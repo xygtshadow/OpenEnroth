@@ -54,6 +54,10 @@ void createHouseUI(HouseId houseId);
  */
 bool enterHouse(HouseId uHouseID);
 
+// House id the last successful enterHouse() actually opened - differs from the requested id when
+// the entry is redirected (throne room -> jail, MM6's King's Library Tanir's-Bell chain).
+extern HouseId enteredHouseId;
+
 bool houseDialogPressEscape();
 
 /**

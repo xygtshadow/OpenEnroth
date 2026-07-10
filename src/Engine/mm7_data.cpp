@@ -149,10 +149,14 @@ float flt_4D84E8 = 0.0f;
 
 unsigned int uGammaPos = 0;
 
-std::array<int, 6> teleportX;
-std::array<int, 6> teleportY;
-std::array<int, 6> teleportZ;
-std::array<int, 6> teleportYaw;
+// Arrival poses for house exit doors whose 2dEvents quest-bit column is negative (|value| is a
+// 1-based index here). Only MM6 data uses them: the six Free Haven houses with a sewer entrance
+// (2dEvents rows 323/286/528/331/290/316, quest-bit -1..-6) drop the party into Sewer.Blv at
+// these spots. Values from MM6.EXE 0x4BE3B8/0x4BE3D0/0x4BE3E8/0x4BE400 (x/y/z/yaw, TrigLUT yaw).
+std::array<int, 6> teleportX = {{-6575, 4234, 8316, 8853, 7557, -8171}};
+std::array<int, 6> teleportY = {{13740, 13224, 5128, 764, -4224, -7633}};
+std::array<int, 6> teleportZ = {{177, -767, 273, 1, 257, 17}};
+std::array<int, 6> teleportYaw = {{1536, 512, 512, 1024, 1536, 512}};
 
 std::array<float, 10> flt_4E4A80 = {{
     0.050000001f, 0.1f,  0.30000001f, 0.5f,

@@ -859,18 +859,19 @@ void Game::processQueuedMessages() {
                 continue;
 
             case UIMSG_HouseTransitionConfirmation: {
-                assert(false);
                 playButtonSoundOnEscape = false;
                 pAudioPlayer->playUISound(SOUND_StartMainChoice02);
                 autoSave();
                 engine->_transitionMapId = houseNpcs[currentHouseNpc].targetMapID;
                 dword_6BE364_game_settings_1 |= GAME_SETTINGS_SKIP_WORLD_UPDATE;
                 uGameState = GAME_STATE_CHANGE_LOCATION;
-                // v53 = buildingTable_minus1_::30[26 * (unsigned
-                // int)ptr_507BC0->ptr_1C];
-                uint16_t v53 = std::to_underlying(houseTable[window_SpeakInHouse->houseId()]._quest_bit); // TODO(captainurist): what's going on here?
-                if (v53 < 0) {
-                    int v54 = std::abs(v53) - 1;
+                // Negative values in the 2dEvents quest-bit column are teleport-pose indices for
+                // MM6's Free Haven sewer-entrance doors (MM6.EXE 0x42f094); without one the party
+                // arrives at the target map's start point (the council -> Oracle and Oracle ->
+                // Control Center doors).
+                int poseIndex = houseTable[window_SpeakInHouse->houseId()].mm6ExitPoseIndex;
+                if (poseIndex > 0) {
+                    int v54 = poseIndex - 1;
                     engine->_teleportPoint.setTeleportTarget(Vec3f(teleportX[v54], teleportY[v54], teleportZ[v54]), teleportYaw[v54], 0, 0);
                 }
                 houseDialogPressEscape();

@@ -28,5 +28,9 @@ struct HouseData {
     int16_t uExitPicID = 0;
     MapId uExitMapID = MAP_INVALID;
     QuestBit _quest_bit = QBIT_INVALID;
+    // MM6 stores negative values in the quest-bit column for the always-open Free Haven
+    // sewer-entrance doors; |value| indexes the fixed teleport-pose tables (teleportX/Y/Z/Yaw,
+    // MM6.EXE 0x42f094). 0 = a plain exit.
+    int16_t mm6ExitPoseIndex = 0;
     int16_t field_32 = 0;
 };

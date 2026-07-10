@@ -170,11 +170,9 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         case EVENT_SpeakInHouse:
             if (enterHouse(ir.data.house_id)) {
                 pAudioPlayer->playHouseSound(SOUND_enter, false);
-                HouseId houseId = HOUSE_JAIL;
-                if (uCurrentHouse_Animation != 167) { // TODO: magic number
-                    houseId = ir.data.house_id;
-                }
-                createHouseUI(houseId);
+                // enterHouse may redirect the entry (throne room -> jail for a party in trouble,
+                // MM6's King's Library bell chain) - open the house it actually resolved to.
+                createHouseUI(enteredHouseId);
             }
             break;
         case EVENT_PlaySound:

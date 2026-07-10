@@ -111,11 +111,11 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         //                     enums will be handled by the engine. Also apply to other table parsers.
         int rawHouseId = fromString<int>(tokens[0]);
 
-        // MM6 defines 557 houses (ids 1-557) where the engine's HouseId enum / houseTable is MM7-shaped
-        // (HOUSE_FIRST..HOUSE_LAST = 1..525). MM6 ids 1-525 line up positionally with MM7's building slots
-        // (both tables start with the weapon shops and follow the same shop/guild structure), but MM6's
-        // trailing 32 entries (526-557: extra residences, tents, wagons) have no MM7 slot and would index
-        // out of range. Skip them for MM6 so bring-up proceeds; the full MM6 house set is deferred.
+        // MM6 defines 557 houses (ids 1-557); ids 1-525 line up positionally with MM7's building slots
+        // (both tables start with the weapon shops and follow the same shop/guild structure), and the
+        // houseTable now extends to HOUSE_MM6_LAST so MM6's trailing entries (526-557: Hermit's Hut,
+        // the King's Library stages 553/554, tents, extra residences) get real slots too. MM7 data
+        // never uses them.
         if (version == GAME_VERSION_MM6 &&
             (rawHouseId < static_cast<int>(HOUSE_FIRST) || rawHouseId > static_cast<int>(HOUSE_LAST))) {
             ++skippedMm6Houses;
@@ -138,18 +138,27 @@ void initializeHouses(const Blob &houses, GameVersion version) {
         houseTable[houseId].uOpenTime = parseNum(tokens[18], 0);
         houseTable[houseId].uCloseTime = parseNum(tokens[19], 0);
         houseTable[houseId].uExitPicID = parseNum(tokens[20], 0);
-        if (version == GAME_VERSION_MM6) {
-            // MM6's exit-map column stores a 1-based games.lod file index (like Lloyd's Beacon slots
-            // and the transport schedules), not a map id. Castle rows carry editor annotations here
-            // ("Throne" / "2D 154"): MM6.EXE atoi's them to junk and gates the exit on ExitPic == 0
-            // (parser cases 0x439596/0x4395a5) - the entrance-to-throne-room chain actually lives in
-            // the map scripts (a MoveToMap prompt step followed by SpeakInHouse, see
-            // Mm6.EnterCastleThroneRoom). Our tolerant parse leaves both fields 0, same gating.
-            houseTable[houseId].uExitMapID = mm6MapIdFromGamesLodFileIndex(parseNum(tokens[21], 0));
+        // The exit-map column is a plain mapstats id in BOTH games: MM6's six Free Haven
+        // sewer-entrance houses (286/290/316/323/331/528) all say 47 = Free Haven Sewer, the
+        // High Council (165) says 49 = Oracle of Enroth and the Oracle (170) says 50 = Control
+        // Center - each matching its quest-bit gate and trans.txt blurb. (An earlier session
+        // guessed "1-based games.lod file index" from the transport-schedule convention; that
+        // read gives t3.blv for the sewer doors, refuted.) MM6 castle rows carry editor
+        // annotations ("Throne" / "2D 154"): MM6.EXE atoi's them to junk and gates the exit on
+        // ExitPic == 0 (parser cases 0x439596/0x4395a5) - the entrance-to-throne-room chain lives
+        // in the map scripts instead (see Mm6.EnterCastleThroneRoom).
+        houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));
+        // The quest-bit column gates the extra exit. MM6 additionally uses NEGATIVE values as
+        // teleport-pose indices for the always-open sewer entrances (MM6.EXE 0x42f094 indexes the
+        // pose tables with |QBit|); store those separately and keep _quest_bit for real bits.
+        int exitQuestBit = parseNum(tokens[22], 0);
+        if (version == GAME_VERSION_MM6 && exitQuestBit < 0) {
+            houseTable[houseId].mm6ExitPoseIndex = -exitQuestBit;
+            houseTable[houseId]._quest_bit = QBIT_INVALID;
         } else {
-            houseTable[houseId].uExitMapID = static_cast<MapId>(parseNum(tokens[21], 0));
+            houseTable[houseId].mm6ExitPoseIndex = 0;
+            houseTable[houseId]._quest_bit = static_cast<QuestBit>(exitQuestBit);
         }
-        houseTable[houseId]._quest_bit = static_cast<QuestBit>(parseNum(tokens[22], 0));
         houseTable[houseId].pEnterText = removeQuotes(tokens[23]);
     }
 

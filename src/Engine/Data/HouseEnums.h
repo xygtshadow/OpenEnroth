@@ -536,6 +536,13 @@ enum class HouseId {
     HOUSE_523 = 523, // Unused.
     HOUSE_524 = 524, // Unused.
     HOUSE_525 = 525, // Unused.
+    // MM6's 2dEvents runs to row 557; rows past MM7's 525 are only filled in MM6 sessions.
+    // Notable ones: 552 = Hermit's Hut, 553/554 = the King's Library stages with/after
+    // Archibald (168 is the pre-Bell stage), 555/556 = Dragonsand tents.
+    HOUSE_MM6_HERMIT = 552,
+    HOUSE_MM6_LIBRARY_ARCHIBALD = 553,
+    HOUSE_MM6_LIBRARY_EMPTY = 554,
+    HOUSE_MM6_LAST = 557,
 
     // These two are "pseudo" houses, they do not have entries in the building table.
     HOUSE_THRONEROOM_WIN_GOOD = 600, // Final task completion for good side
@@ -581,7 +588,7 @@ enum class HouseId {
     HOUSE_LAST_ARCOMAGE_TAVERN = HOUSE_TAVERN_STONE_CITY,
 
     HOUSE_FIRST = HOUSE_WEAPON_SHOP_EMERALD_ISLAND,
-    HOUSE_LAST = HOUSE_525
+    HOUSE_LAST = HOUSE_MM6_LAST
 };
 using enum HouseId;
 

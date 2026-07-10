@@ -873,12 +873,15 @@ GAME_TEST(Mm6, DialogueSkin) {
     EXPECT_EQ(houseTable[HouseId(89)].pProprieterName, "Janice");
 
     // MM6's 2dEvents exit columns: the pic id indexes MM6's own picture table and the map is a
-    // 1-based games.lod file index. The City Council (house 165) exits down a staircase; indexing
+    // plain mapstats id - the City Council's exit leads to the Oracle of Enroth (map 49), gated
+    // on quest bit 167 (all six council quests done; see Mm6.CouncilQuestsAndTraitor). Indexing
     // MM7's 11-entry picture list with the raw map value used to run out of bounds.
     EXPECT_EQ(houseTable[HouseId(165)].uExitPicID, 5);
-    ASSERT_NE(houseTable[HouseId(165)].uExitMapID, MAP_INVALID);
-    EXPECT_EQ(houseTable[HouseId(165)].uExitMapID, mm6MapIdFromGamesLodFileIndex(49));
+    EXPECT_EQ(houseTable[HouseId(165)].uExitMapID, pMapStats->GetMapInfo("oracle.blv"));
+    EXPECT_EQ(houseTable[HouseId(165)]._quest_bit, static_cast<QuestBit>(167));
+    pParty->_questBits[static_cast<QuestBit>(167)] = true;
     prepareHouse(HouseId(165));
+    pParty->_questBits[static_cast<QuestBit>(167)] = false;
     ASSERT_FALSE(houseNpcs.empty());
     EXPECT_EQ(houseNpcs.back().type, HOUSE_TRANSITION);
     ASSERT_NE(houseNpcs.back().icon, nullptr);
@@ -5428,4 +5431,536 @@ GAME_TEST(Mm6, ArenaFightAndPrize) {
     game.tick(2);
     EXPECT_EQ(pParty->arenaState, ARENA_STATE_INITIAL);
     game.tick(2);
+}
+
+// Stashes the item the last event grant left on the cursor (AddVariable(VAR_PlayerItemInHands)
+// puts it into pParty->pPickedItem) and returns its id.
+static ItemId stashPickedItem() {
+    ItemId id = pParty->pPickedItem.itemId;
+    if (id != ITEM_NULL) {
+        pParty->pCharacters[0].inventory.add(pParty->pPickedItem);
+        pParty->takeHoldingItem();
+    }
+    return id;
+}
+
+// MM6's traveling circus (2dEvents house 166) is pure event data: the door events on
+// outb2/outc3/outd2 gate entry to one 28-day month per site via Cmp(DayOfYear, d) chains
+// (Bootleg Bay = days 308-335), outd1's site is ungated; the game tents (houses 532-537,
+// same DayOfYear gates) charge 50 gold and roll a stat-tiered RandomGoTo prize - Lodestone
+// 470, Harpy Feather 471, Four Leaf Clover 477 (ev107 = the Might game, all six branches
+// pay out at Might >= 200); Blaze the Circus Master (npc 392, topic 105) redeems the
+// prizes via VAR_CircusPrises - a computed variable counting Lodestones x1 + Feathers x3 +
+// Clovers x5 that MM7's engine inherited from MM6 verbatim - at >= 30 points for the
+// Golden Pyramid 472 (an Oracle quest item) and >= 10 for a Keg of Wine 473, then burns
+// every prize item in the party.
+GAME_TEST(Mm6, CircusGamesAndPrizes) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    // The Mire of the Damned (outc3) hosts the circus in month 7 (door event 14 gates on days
+    // 196-223); its game tents are events 15-20.
+    MapId mire = pMapStats->GetMapInfo("outc3.odm");
+    ASSERT_NE(mire, MAP_INVALID);
+    game.teleportTo(mire, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+
+    // Out of season the circus door (event 14) just prints "come back later" and stays closed.
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == 14 && face.Clickable())
+                door = &face;
+    ASSERT_NE(door, nullptr);
+    ASSERT_NE(pParty->GetPlayingTime().toCivilTime().month - 1, 7); // A new game starts outside the window.
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(mire, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // In month 7 the same door opens the circus.
+    advanceToMonth(game, 7);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(166));
+
+    NPCData *blaze = &pNPCStats->pNPCData[392];
+    ASSERT_EQ(blaze->name, "Blaze the Circus Master");
+    ASSERT_EQ(blaze->dialogue_2_evt_id, 105u);
+
+    // No prizes: the redemption topic refuses.
+    clickHouseNpcPortrait(game, blaze);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(current_npc_text.contains("you don't have 10 points"));
+    EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Two Four Leaf Clovers = 10 points: a Keg of Wine, and the clovers are gone.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(477))));
+    ASSERT_TRUE(pParty->pCharacters[1].inventory.add(Item(ItemId(477))));
+    clickHouseNpcPortrait(game, blaze);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(current_npc_text.contains("keg of wine"));
+    EXPECT_EQ(stashPickedItem(), ItemId(473));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(477)));
+    EXPECT_FALSE(pParty->pCharacters[1].inventory.find(ItemId(477)));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // A 30-point haul (4 clovers + 3 feathers + a lodestone = 32) earns the Golden Pyramid.
+    for (int i = 0; i < 4; i++)
+        ASSERT_TRUE(pParty->pCharacters[i].inventory.add(Item(ItemId(477))));
+    for (int i = 0; i < 3; i++)
+        ASSERT_TRUE(pParty->pCharacters[i].inventory.add(Item(ItemId(471))));
+    ASSERT_TRUE(pParty->pCharacters[3].inventory.add(Item(ItemId(470))));
+    clickHouseNpcPortrait(game, blaze);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(current_npc_text.contains("golden pyramid"));
+    EXPECT_EQ(stashPickedItem(), ItemId(472));
+    for (int i = 0; i < 4; i++) {
+        EXPECT_FALSE(pParty->pCharacters[i].inventory.find(ItemId(470)));
+        EXPECT_FALSE(pParty->pCharacters[i].inventory.find(ItemId(471)));
+        EXPECT_FALSE(pParty->pCharacters[i].inventory.find(ItemId(477)));
+    }
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // The strongman tent (event 15, house 532): 50 gold a game; at Might >= 200 every
+    // RandomGoTo branch pays out a prize item. Tent entries can hang off either a model face or
+    // a billboard decoration.
+    for (Character &character : pParty->pCharacters)
+        character._statBonuses[ATTRIBUTE_MIGHT] = 500;
+    pParty->SetGold(1000);
+    Vec3f tentStand;
+    Vec3f tentCenter;
+    bool tentFound = false;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == 15 && face.Clickable()) {
+                tentCenter = face.boundingBox.center();
+                tentStand = tentCenter + face.facePlane.normal * 130;
+                tentStand.z = face.boundingBox.z1;
+                tentFound = true;
+            }
+    if (!tentFound) {
+        for (const LevelDecoration &decoration : pLevelDecorations)
+            if (decoration.uEventID == 15) {
+                tentCenter = decoration.vPosition;
+                tentStand = tentCenter + Vec3f(0, -120, 0);
+                tentFound = true;
+            }
+    }
+    ASSERT_TRUE(tentFound);
+    int tentYaw = TrigLUT.atan2(tentCenter.x - tentStand.x, tentCenter.y - tentStand.y) * 90 / 512;
+    game.teleportTo(mire, tentStand, tentYaw);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(532));
+    NPCData *tarquin = &pNPCStats->pNPCData[393];
+    ASSERT_EQ(tarquin->name, "Sir William Tarquin");
+    ASSERT_EQ(tarquin->dialogue_2_evt_id, 107u);
+    clickHouseNpcPortrait(game, tarquin);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_EQ(pParty->GetGold(), 950);
+    ItemId prize = stashPickedItem();
+    EXPECT_TRUE(prize == ItemId(470) || prize == ItemId(471) || prize == ItemId(477));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// The Free Haven High Council (2dEvents house 165) is a plain house with six councilman
+// NPCs (299-304, topics 375-380). Five of them run Cmp(Award, N) quest offers; Slicker
+// Silvertongue the traitor (npc 304, topic 380 = global event 380) refuses his vote until
+// the party presents the Letter from Zenofex (item 502), which convicts him: the letter is
+// taken, the whole party gets award 32, quest bit 168 is set, reputation rises by 200 and
+// MoveNPC(304, 0) removes him from the council for good.
+GAME_TEST(Mm6, CouncilQuestsAndTraitor) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId freeHaven = pMapStats->GetMapInfo("outc2.odm");
+    ASSERT_NE(freeHaven, MAP_INVALID);
+    game.teleportTo(freeHaven, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    enterHouseThroughDoor(game, 49);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(165));
+
+    // All six councilmen hold session.
+    int councilmen = 0;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_NPC)
+            councilmen++;
+    EXPECT_EQ(councilmen, 6);
+
+    // Preston Steel's topic is a quest offer until Lord Temper's award (4) is earned.
+    NPCData *preston = &pNPCStats->pNPCData[299];
+    ASSERT_EQ(preston->name, "Preston Steel");
+    clickHouseNpcPortrait(game, preston);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("Lord Temper"));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Slicker without the letter: a refusal, nothing changes.
+    NPCData *slicker = &pNPCStats->pNPCData[304];
+    ASSERT_EQ(slicker->name, "Slicker Silvertongue");
+    ASSERT_EQ(slicker->dialogue_1_evt_id, 380u);
+    clickHouseNpcPortrait(game, slicker);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("cannot give you my vote"));
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(168)]);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // With the Letter from Zenofex the traitor is convicted and jailed.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(502))));
+    int reputationBefore = pParty->GetPartyReputation();
+    clickHouseNpcPortrait(game, slicker);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("lose its grip"));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(502))); // Letter taken as evidence.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(168)]);
+    for (const Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(32)]);
+    // The script's Add(Reputation, 200) sits under ForPartyMember(all), and variable ops run once
+    // per member - reputation moves by 4 x 200, faithfully to the original interpreters.
+    EXPECT_EQ(pParty->GetPartyReputation(), reputationBefore + 800);
+    EXPECT_EQ(slicker->house, HouseId(0)); // MoveNPC(304, 0) - gone from the council.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Re-entering finds only five councilmen.
+    enterHouseThroughDoor(game, 49);
+    councilmen = 0;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_NPC)
+            councilmen++;
+    EXPECT_EQ(councilmen, 5);
+    // No Oracle door yet: MM6 shows the extra exit only once its quest bit is EARNED
+    // (2dEvents row 165: ExitPic 5, map 49 = Oracle of Enroth, quest bit 167).
+    for (const HouseNpcDesc &npc : houseNpcs)
+        EXPECT_NE(npc.type, HOUSE_TRANSITION);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Once all six council quests are done (quest bit 167), the council chamber grows a door
+    // leading straight to the Oracle.
+    pParty->_questBits[static_cast<QuestBit>(167)] = true;
+    enterHouseThroughDoor(game, 49);
+    const HouseNpcDesc *oracleDoor = nullptr;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_TRANSITION)
+            oracleDoor = &npc;
+    ASSERT_NE(oracleDoor, nullptr);
+    EXPECT_EQ(oracleDoor->targetMapID, pMapStats->GetMapInfo("oracle.blv"));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.tick(5);
+}
+
+// The Hermit on the Mountain (2dEvents house 552, Kriegspire) is a plain single-occupant
+// house; his one topic (95) is a flavor monologue.
+GAME_TEST(Mm6, HermitHouse) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId kriegspire = pMapStats->GetMapInfo("outb1.odm");
+    ASSERT_NE(kriegspire, MAP_INVALID);
+    game.teleportTo(kriegspire, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    enterHouseThroughDoor(game, 14);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(552));
+
+    NPCData *hermit = &pNPCStats->pNPCData[19];
+    ASSERT_EQ(hermit->name, "The Hermit on the Mountain");
+    clickHouseNpcPortrait(game, hermit);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("watch the world turn"));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// The Oracle of Enroth (2dEvents house 170, inside Oracle.Blv). The ONLY working entrance is
+// the High Council's quest-bit-167 exit door (2dEvents row 165: map 49 = Oracle of Enroth) -
+// outc2's face events stop at 152, so the .evt's MoveToMap event 153 is an unwired dev
+// leftover, and the 2dEvents "Access denied / Control Cube" text is a col-24 editor
+// annotation the EXE never parses (its 2devents parser stops at col 23). Slicker's refusal
+// line ("as long as I am a member of this council, you will not be permitted to visit the
+// Oracle") describes exactly this gate. The Control Cube (456) is a fetch-quest hand-in:
+// Oracle topic 76 first sends the party after it (award 33, quest bit 166), then trades it
+// for 500k exp and award 34 and retires the Oracle's topics to 77/78. Topic 73 kicks off
+// the Memory Crystal hunt (quest bits 162-165).
+GAME_TEST(Mm6, OracleCrystalsAndCube) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId freeHaven = pMapStats->GetMapInfo("outc2.odm");
+    ASSERT_NE(freeHaven, MAP_INVALID);
+    game.teleportTo(freeHaven, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+
+    // With the council quests done, the council chamber's Oracle door is open.
+    pParty->_questBits[static_cast<QuestBit>(167)] = true;
+    enterHouseThroughDoor(game, 49);
+    const HouseNpcDesc *oracleDoor = nullptr;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_TRANSITION)
+            oracleDoor = &npc;
+    ASSERT_NE(oracleDoor, nullptr);
+    ASSERT_NE(oracleDoor->button, nullptr);
+    Recti doorRect = oracleDoor->button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, doorRect.x + doorRect.w / 2, doorRect.y + doorRect.h / 2);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(10);
+    ASSERT_EQ(engine->_currentLoadedMapId, pMapStats->GetMapInfo("oracle.blv"));
+
+    // The Oracle herself is house 170, opened from a face inside (event 3, ev3 st0 =
+    // SpeakInHouse(170) with no gate); open the house the way the face script would.
+    const BLVFace *console = nullptr;
+    for (const BLVFace &face : pIndoor->faces)
+        if (face.eventId == 3 && face.Clickable())
+            console = &face;
+    EXPECT_NE(console, nullptr);
+    ASSERT_TRUE(enterHouse(HouseId(170)));
+    createHouseUI(HouseId(170));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(170));
+
+    NPCData *oracle = &pNPCStats->pNPCData[8];
+    ASSERT_EQ(oracle->name, "Oracle");
+    ASSERT_EQ(oracle->dialogue_1_evt_id, 73u);
+
+    // Topic 73 hands out the Memory Crystal hunt.
+    clickHouseNpcPortrait(game, oracle);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    for (int bit : {162, 163, 164, 165})
+        EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(bit)]);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Placing all four crystals rewires topic slot 1 to event 76 (oracle.blv events 5/15/16/17);
+    // install it directly and run both of its stages.
+    oracle->dialogue_1_evt_id = 76;
+    clickHouseNpcPortrait(game, oracle);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("Melian"));
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(166)]);
+    for (const Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(33)]);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Returning with the Control Cube: 500k exp a head, award 34, topics retire to 77/78.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(456))));
+    uint64_t expBefore = pParty->pCharacters[0].experience;
+    clickHouseNpcPortrait(game, oracle);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_TRUE(current_npc_text.contains("transported"));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(456)));
+    EXPECT_EQ(pParty->pCharacters[0].experience, expBefore + 500000);
+    for (const Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(34)]);
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(166)]);
+    EXPECT_EQ(oracle->dialogue_1_evt_id, 77u);
+    EXPECT_EQ(oracle->dialogue_2_evt_id, 78u);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// The King's Library (Castle Ironfist region, outd3 door event 42) is a three-stage house:
+// the door opens house 168 (empty reading room) until quest bit 177; MM6.EXE's enterHouse
+// additionally scans the party for Tanir's Bell (item 461) and with it chains the entry to
+// house 553 - Archibald Ironfist's library, where his topic 30 hands over the Ritual of the
+// Void (item 544, +50000 exp each, quest bit 177) and MoveNPC(12, 0) retires him. With the
+// bit set the door script itself opens house 554 (the post-Ritual empty stage).
+GAME_TEST(Mm6, LibraryArchibaldRitual) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+
+    // Without Tanir's Bell the library is the empty house 168.
+    enterHouseThroughDoor(game, 42);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(168));
+    for (const HouseNpcDesc &npc : houseNpcs)
+        EXPECT_NE(npc.type, HOUSE_NPC);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // With the bell aboard the same door leads to Archibald.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(461))));
+    enterHouseThroughDoor(game, 42);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_ARCHIBALD);
+    NPCData *archibald = &pNPCStats->pNPCData[12];
+    ASSERT_EQ(archibald->name, "Archibald Ironfist");
+    uint64_t expBefore = pParty->pCharacters[0].experience;
+    clickHouseNpcPortrait(game, archibald);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(stashPickedItem(), ItemId(544)); // The Ritual of the Void.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(177)]);
+    EXPECT_EQ(pParty->pCharacters[0].experience, expBefore + 50000);
+    EXPECT_EQ(archibald->house, HOUSE_INVALID); // MoveNPC(12, 0) - he has left the library.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Post-Ritual the door script reroutes to the empty stage 554 (bell or not).
+    enterHouseThroughDoor(game, 42);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_EMPTY);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.tick(5);
+}
+
+// MM6's jail (2dEvents row 167 "Prison", reachable from no door): calling on any castle
+// throne room with party reputation at -1000 or below gets the party arrested (MM6.EXE
+// 0x43c58c) - the house screen becomes the Prison, a year passes without rest, reputation
+// resets, the prison-term counter ticks and everyone earns award 83.
+GAME_TEST(Mm6, JailForNotoriety) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    currentLocationInfo().reputation = -1500;
+    int yearBefore = pParty->GetPlayingTime().toCivilTime().year;
+
+    // The Castle Ironfist door chain (event 43): prompt, confirm, throne room... which for a
+    // notorious party opens as the Prison instead.
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == 43 && face.Clickable())
+                door = &face;
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(ironfist, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_INPUT_BLV);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(5);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(167));
+    EXPECT_EQ(pParty->GetPlayingTime().toCivilTime().year, yearBefore + 1);
+    EXPECT_EQ(currentLocationInfo().reputation, 0);
+    EXPECT_EQ(pParty->uNumPrisonTerms, 1);
+    for (const Character &character : pParty->pCharacters) {
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(83)]);
+        EXPECT_EQ(character.timeToRecovery, 0_ticks);
+    }
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // With a clean record the same door reaches Wilbur Humphrey's throne room again.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_INPUT_BLV);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(5);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(154));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.tick(5);
+}
+
+// Six ordinary-looking Free Haven houses (2dEvents rows 286/290/316/323/331/528) hide the only
+// entrances to the Free Haven Sewer: their exit column says map 47 = Sewer.Blv with a NEGATIVE
+// quest-bit value selecting a fixed arrival pose (MM6.EXE tables @0x4BE3B8..0x4BE400). The door
+// is always available; sewer.evt events 20-25 are the ladders back up.
+GAME_TEST(Mm6, SewerEntranceTeleport) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId freeHaven = pMapStats->GetMapInfo("outc2.odm");
+    ASSERT_NE(freeHaven, MAP_INVALID);
+    game.teleportTo(freeHaven, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+
+    // House 286 (door event 59) carries pose index 2.
+    ASSERT_EQ(houseTable[HouseId(286)].mm6ExitPoseIndex, 2);
+    ASSERT_EQ(houseTable[HouseId(286)].uExitMapID, pMapStats->GetMapInfo("sewer.blv"));
+    enterHouseThroughDoor(game, 59);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HouseId(286));
+
+    const HouseNpcDesc *hatch = nullptr;
+    int hatchIndex = -1;
+    for (int i = 0; i < houseNpcs.size(); i++) {
+        if (houseNpcs[i].type == HOUSE_TRANSITION) {
+            hatch = &houseNpcs[i];
+            hatchIndex = i;
+        }
+    }
+    ASSERT_NE(hatch, nullptr);
+    ASSERT_NE(hatch->button, nullptr);
+
+    // Click the hatch, then confirm the transition - down into the sewer at the fixed pose.
+    Recti hatchRect = hatch->button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, hatchRect.x + hatchRect.w / 2, hatchRect.y + hatchRect.h / 2);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(10);
+    EXPECT_EQ(engine->_currentLoadedMapId, pMapStats->GetMapInfo("sewer.blv"));
+    EXPECT_NEAR(pParty->pos.x, 4234, 128); // Pose 2 from the EXE tables; physics may nudge the party.
+    EXPECT_NEAR(pParty->pos.y, 13224, 128);
+    game.tick(5);
 }

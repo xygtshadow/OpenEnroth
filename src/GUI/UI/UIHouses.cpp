@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <memory>
 #include <vector>
+#include <algorithm>
 #include <utility>
 #include <string>
 
@@ -452,7 +453,10 @@ static constexpr IndexedArray<const char *, HOUSE_TYPE_WEAPON_SHOP, HOUSE_TYPE_M
     {HOUSE_TYPE_MIRRORED_PATH_GUILD,   "MAGSHELF"}
 }};
 
+HouseId enteredHouseId = HOUSE_INVALID;
+
 bool enterHouse(HouseId uHouseID) {
+    enteredHouseId = HOUSE_INVALID;
     engine->_statusBar->clearAll();
     engine->_messageQueue->clear();
     keyboardInputHandler->EndTextInput();
@@ -508,20 +512,54 @@ bool enterHouse(HouseId uHouseID) {
         }
     }
 
-    uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
-    if (houseAnimDescr(uCurrentHouse_Animation).uBuildingType == HOUSE_TYPE_THRONE_ROOM && pParty->uFine) {  // going to jail
-        uHouseID = HOUSE_JAIL;
-        uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
-        restAndHeal(Duration::fromYears(1));
-        ++pParty->uNumPrisonTerms;
-        pParty->uFine = 0;
-        for (Character &player : pParty->pCharacters) {
-            player.timeToRecovery = 0_ticks;
-            player.uNumDivineInterventionCastsThisDay = 0;
-            player.SetVariable(VAR_Award, std::to_underlying(AWARD_PRISON_TERMS));
+    if (engine->gameVersion() == GAME_VERSION_MM6 && uHouseID == HouseId(168)) {
+        // The King's Library chain (MM6.EXE 0x43c3ad + 0x4a617f): with Tanir's Bell (item 461) in
+        // anyone's pack, entering house 168 plays the "archie" cutscene and re-enters as house 553 -
+        // Archibald's library, the only source of the Ritual of the Void. Without the bell the
+        // library stays the empty house 168; once the Ritual is taken (qbit 177) the door script
+        // itself reroutes to house 554. (We open 553 directly; the one-shot "archie" clip and the
+        // 553-to-554 advance after it ends are movie-flow fidelity, tracked in the ui-skin doc.)
+        for (const Character &character : pParty->pCharacters) {
+            if (character.inventory.find(ItemId(461))) {
+                uHouseID = HOUSE_MM6_LIBRARY_ARCHIBALD;
+                break;
+            }
         }
     }
 
+    uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
+    if (houseAnimDescr(uCurrentHouse_Animation).uBuildingType == HOUSE_TYPE_THRONE_ROOM) {  // going to jail
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            // MM6.EXE 0x43c58c: a party whose reputation has sunk to -1000 gets arrested when it
+            // calls on a throne room - the screen swaps to the Prison (2dEvents row 167), a year
+            // passes (no rest: conditions stay), reputation resets and everyone serves a term.
+            if (currentLocationInfo().reputation <= -1000) {
+                uHouseID = HouseId(167);
+                uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
+                pParty->GetPlayingTime() += Duration::fromYears(1);
+                ++pParty->uNumPrisonTerms;
+                currentLocationInfo().reputation = 0;
+                for (Character &player : pParty->pCharacters) {
+                    player.timeToRecovery = 0_ticks;
+                    player.uNumDivineInterventionCastsThisDay = 0;
+                    player.SetVariable(VAR_Award, 83); // awards.txt 83 "Served %u Prison Terms".
+                }
+            }
+        } else if (pParty->uFine) {
+            uHouseID = HOUSE_JAIL;
+            uCurrentHouse_Animation = houseTable[uHouseID].uAnimationID;
+            restAndHeal(Duration::fromYears(1));
+            ++pParty->uNumPrisonTerms;
+            pParty->uFine = 0;
+            for (Character &player : pParty->pCharacters) {
+                player.timeToRecovery = 0_ticks;
+                player.uNumDivineInterventionCastsThisDay = 0;
+                player.SetVariable(VAR_Award, std::to_underlying(AWARD_PRISON_TERMS));
+            }
+        }
+    }
+
+    enteredHouseId = uHouseID; // What the entry resolved to after the jail / library redirects.
     currentHouseNpc = -1;
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6.EXE 0x43c66a: each house type carries its own marble dialogue panel, drawn over the
@@ -559,6 +597,18 @@ bool enterHouse(HouseId uHouseID) {
     }
     playHouseSound(uHouseID, HOUSE_SOUND_GENERAL_GREETING);
     return true;
+}
+
+// Portrait-strip slot for house occupant `index` of `count`. MM7's pNPCPortraits tables only go up
+// to six occupants; MM6's High Council seats seven (six councilmen plus its Oracle door once quest
+// bit 167 is up - the original shows a paged name list instead, see docs/pending/mm6-game-ui-skin.md),
+// so past six we pack the same two-column strip with a tighter row pitch instead of overflowing.
+static Pointi houseNpcPortraitPos(int index, int count) {
+    if (count <= 6)
+        return {pNPCPortraits_x[count - 1][index], pNPCPortraits_y[count - 1][index]};
+    int rows = (count + 1) / 2;
+    int pitch = std::min(95, (445 - 73 - 38) / (rows - 1)); // Keep the last row above the exit button.
+    return {index % 2 ? 564 : 486, 38 + (index / 2) * pitch};
 }
 
 void prepareHouse(HouseId house) {
@@ -602,9 +652,22 @@ void prepareHouse(HouseId house) {
         }
     }
 
-    // Dungeon entry (not present in MM7)
+    // Extra exit door (dungeon entry). The quest-bit gate is INVERTED between the games:
+    // MM7 hides the exit once the bit is set; MM6 (MM6.EXE 0x43c17d) shows it only AFTER the
+    // party earns the bit - the High Council's Oracle door appears at qbit 167 (all council
+    // quests) and the Oracle's Control Center door at qbit 169 (Oracle restored). MM6's
+    // negative-column sewer entrances (mm6ExitPoseIndex) are always open.
     if (houseTable[house].uExitPicID) {
-        if (houseTable[house]._quest_bit == QBIT_INVALID || !pParty->_questBits[houseTable[house]._quest_bit]) {
+        bool exitAvailable;
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            exitAvailable = houseTable[house].mm6ExitPoseIndex > 0 ||
+                            houseTable[house]._quest_bit == QBIT_INVALID ||
+                            pParty->_questBits[houseTable[house]._quest_bit];
+        } else {
+            exitAvailable = houseTable[house]._quest_bit == QBIT_INVALID ||
+                            !pParty->_questBits[houseTable[house]._quest_bit];
+        }
+        if (exitAvailable) {
             MapId id = houseTable[house].uExitMapID;
 
             // MM6 castle rows put editor annotations in the exit columns ("2D <row>" parses to no
@@ -786,7 +849,7 @@ bool houseDialogPressEscape() {
 
         pBtn_ExitCancel = window_SpeakInHouse->vButtons.front();
         for (int i = 0; i < houseNpcs.size(); ++i) {
-            Pointi pos = {pNPCPortraits_x[houseNpcs.size() - 1][i], pNPCPortraits_y[houseNpcs.size() - 1][i]};
+            Pointi pos = houseNpcPortraitPos(i, houseNpcs.size());
             houseNpcs[i].button = window_SpeakInHouse->CreateButton(pos, {63, 73}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickHouseNPCPortrait, i,
                                                                     INPUT_ACTION_INVALID, houseNpcs[i].label);
         }
@@ -1100,8 +1163,9 @@ void GUIWindow_House::houseDialogManager() {
         DrawDialoguePanel(current_npc_text);
 
         for (int i = 0; i < houseNpcs.size(); ++i) {
-            int portraitX = pNPCPortraits_x[houseNpcs.size() - 1][i];
-            int portraitY = pNPCPortraits_y[houseNpcs.size() - 1][i];
+            Pointi portraitPos = houseNpcPortraitPos(i, houseNpcs.size());
+            int portraitX = portraitPos.x;
+            int portraitY = portraitPos.y;
             if (!isMm6) // MM6 has no evtnpc portrait frame - portraits sit directly on the panel.
                 render->DrawQuad2D(game_ui_evtnpc, {portraitX - 4, portraitY - 4});
             if (houseNpcs[i].icon) // MM6 town-hall proprietors have no portrait.
@@ -1120,7 +1184,7 @@ void GUIWindow_House::houseDialogManager() {
                     break;
                   case HOUSE_NPC:
                     pTitleText = houseNpcs[i].npc->name;
-                    yPos = pNPCPortraits_y[houseNpcs.size() - 1][i] + houseNpcs[i].icon->height() + 2;
+                    yPos = houseNpcPortraitPos(i, houseNpcs.size()).y + houseNpcs[i].icon->height() + 2;
                     break;
                 }
                 DrawTitleText(assets->pFontCreate.get(), SIDE_TEXT_BOX_POS_X, yPos, colorTable.EasternBlue, pTitleText, 3, pWindow);
@@ -1272,7 +1336,7 @@ GUIWindow_House::GUIWindow_House(HouseId houseId) : GUIWindow(WINDOW_HouseInteri
     }
 
     for (int i = 0; i < houseNpcs.size(); ++i) {
-        Pointi pos = {pNPCPortraits_x[houseNpcs.size() - 1][i], pNPCPortraits_y[houseNpcs.size() - 1][i]};
+        Pointi pos = houseNpcPortraitPos(i, houseNpcs.size());
         houseNpcs[i].button = CreateButton(pos, {63, 73}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickHouseNPCPortrait, i,
                                                       INPUT_ACTION_INVALID, houseNpcs[i].label);
     }
