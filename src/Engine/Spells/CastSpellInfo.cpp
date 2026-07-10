@@ -395,6 +395,11 @@ void CastSpellInfoHelpers::castSpell() {
         }
 
         pSpellSprite.spriteId = SpellSpriteMapping[pCastSpell->uSpellID];
+        // MM6's projectile bank diverges from MM7's here: its dobjlist has the blaster bolt at
+        // id 590 ("laser bolt"), not 555 - with the MM7 id the object never resolves and the
+        // shot despawns on the spot.
+        if (engine->gameVersion() == GAME_VERSION_MM6 && pCastSpell->uSpellID == SPELL_LASER_PROJECTILE)
+            pSpellSprite.spriteId = SPRITE_MM6_PROJECTILE_LASER;
 
         if (pSpellSprite.spriteId != SPRITE_NULL) {
             if (spell_targeted_at.type() == OBJECT_Actor) {

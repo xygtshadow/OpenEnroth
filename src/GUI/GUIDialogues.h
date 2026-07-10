@@ -111,6 +111,9 @@ enum class DialogueId : int32_t {
     DIALOGUE_TRANSPORT_SCHEDULE_2 = 106,
     DIALOGUE_TRANSPORT_SCHEDULE_3 = 107,
     DIALOGUE_TRANSPORT_SCHEDULE_4 = 108,
+    // MM6-only stable option for Loretta Fleise's Price Fixing council quest (MM6.EXE dialogue
+    // kind 74 - that value is taken by the skill-learning band here, so it gets its own id).
+    DIALOGUE_TRANSPORT_MM6_PRICE_FIXING = 109,
 
     DIALOGUE_OTHER = -1,
 

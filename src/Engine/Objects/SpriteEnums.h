@@ -31,6 +31,7 @@ enum class SpriteId : uint16_t {
     SPRITE_PROJECTILE_FLAMING_ARROW = 550, // Also explosive arrows.
     SPRITE_PROJECTILE_BLASTER = 555, // Also energy projectiles from Hydras.
     SPRITE_PROJECTILE_BLASTER_IMPACT = 556,
+    SPRITE_MM6_PROJECTILE_LASER = 590, // MM6's dobjlist "laser bolt" - its projectile bank diverges from MM7's.
 
     SPRITE_546 = 546,
     SPRITE_547 = 547,

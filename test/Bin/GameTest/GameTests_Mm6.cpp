@@ -5964,3 +5964,534 @@ GAME_TEST(Mm6, SewerEntranceTeleport) {
     EXPECT_NEAR(pParty->pos.y, 13224, 128);
     game.tick(5);
 }
+
+// Kills a quest monster through the real damage pipeline (hp whittled to 1, then party melee)
+// so that Actor::Die - and MM6's hardcoded death behavior - runs the way real combat reaches it.
+static void killQuestMonster(EngineController &game, int actorId) {
+    Actor &actor = pActors[actorId];
+    for (int i = 0; i < 64 && actor.aiState != Dying && actor.aiState != Dead; i++) {
+        actor.hp = 1;
+        Actor::DamageMonsterFromParty(Pid(OBJECT_Character, 0), actorId, Vec3f());
+    }
+    ASSERT_TRUE(actor.aiState == Dying || actor.aiState == Dead)
+        << "aiState=" << std::to_underlying(actor.aiState) << " hp=" << actor.hp
+        << " attributes=" << std::hex << std::to_underlying(actor.attributes);
+    game.tick(2);
+}
+
+static int findActorByMonsterId(int monsterId) {
+    for (int i = 0; i < pActors.size(); i++)
+        if (std::to_underlying(pActors[i].monsterInfo.id) == monsterId && pActors[i].aiState != Removed)
+            return i;
+    return -1;
+}
+
+// Clears the map of every actor except the given one, so a scripted showdown can run without
+// the local wildlife mauling the party mid-assert.
+static void removeAllActorsExcept(int actorId) {
+    for (int i = 0; i < pActors.size(); i++)
+        if (i != actorId)
+            pActors[i].aiState = Removed;
+}
+
+// The reactor is immune to everything except Energy (its monsters.txt row is Imm across the
+// board) - MM6 blasters are the one thing that hurts it. Fires real blaster shots until it dies.
+static void blastReactor(EngineController &game, int reactorId) {
+    Character &gunner = pParty->pCharacters[0];
+    if (InventoryEntry oldWeapon = gunner.inventory.entry(ITEM_SLOT_MAIN_HAND))
+        gunner.inventory.take(oldWeapon);
+    ASSERT_TRUE(gunner.inventory.equip(ITEM_SLOT_MAIN_HAND, Item(ItemId(64)))); // A Blaster.
+    gunner.setSkillValue(SKILL_BLASTER, CombinedSkillValue::novice());
+    Actor &reactor = pActors[reactorId];
+    // Test scaffolding: the reactor answers with 20D5+20 Energy shots that would flatten a
+    // level-1 party long before its 11k HP ran out - hold it still while we whittle.
+    reactor.buffs[ACTOR_BUFF_PARALYZED].Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 0, 0, 0);
+    int lasersSeen = 0;
+    for (int i = 0; i < 32 && reactor.aiState != Dying && reactor.aiState != Dead; i++) {
+        reactor.hp = 1;
+        gunner.timeToRecovery = 0_ticks;
+        pParty->setActiveCharacterIndex(1); // The gunner shoots; heals/reloads may have unset the active slot.
+        Vec3f pos = reactor.pos + Vec3f(-400, 0, 0);
+        int yawDegrees = TrigLUT.atan2(reactor.pos.x - pos.x, reactor.pos.y - pos.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+        game.tick(1);
+        game.pressAndReleaseKey(PlatformKey::KEY_A);
+        for (int j = 0; j < 4; j++) {
+            game.tick(1);
+            for (const SpriteObject &sprite : pSpriteObjects)
+                if (sprite.uSpellID == SPELL_LASER_PROJECTILE)
+                    lasersSeen++;
+        }
+    }
+    ASSERT_TRUE(reactor.aiState == Dying || reactor.aiState == Dead)
+        << "aiState=" << std::to_underlying(reactor.aiState) << " hp=" << reactor.hp
+        << " gunnerHp=" << gunner.health << " canAct=" << gunner.CanAct()
+        << " active=" << pParty->activeCharacterIndex() << " lasersSeen=" << lasersSeen;
+    game.tick(2);
+}
+
+// MM6's Hive reactor (monsters.txt row 173 "zReactor") is a killable monster with a hardcoded
+// ending in the EXE's actor-death handler (@0x4031f1): destroying it without the Ritual of the
+// Void (544) anywhere in the party is the Lose ending; with it, the party survives the blast -
+// quest bit 180 goes up, sixteen tier-3 monsters pour out of the walls, the escape doors flip
+// (the set hive.evt event 100 re-applies on reload), the party is thrown to (3328, 25920) facing
+// east, and comes to rested and healed. Once bit 180 is up the reactor stays gone on map reload.
+GAME_TEST(Mm6, ReactorMeltdown) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId hive = pMapStats->GetMapInfo("hive.blv");
+    ASSERT_NE(hive, MAP_INVALID);
+    game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+
+    // Survival leg: the Ritual is aboard, a character is wounded and blessed. The rest of the
+    // hive is cleared out so the showdown runs undisturbed.
+    int reactorId = findActorByMonsterId(173);
+    ASSERT_NE(reactorId, -1);
+    removeAllActorsExcept(reactorId);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ITEM_MM6_RITUAL_OF_THE_VOID)));
+    pParty->pCharacters[0].health = 1;
+    pParty->pCharacters[0].pCharacterBuffs[CHARACTER_BUFF_BLESS].Apply(
+        pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 5, 0, 0);
+
+    blastReactor(game, reactorId);
+
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(180)]);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME); // No game over - the party lives.
+    EXPECT_NEAR(pParty->pos.x, 3328, 128); // Blown clear to the exit passage; physics may nudge.
+    EXPECT_NEAR(pParty->pos.y, 25920, 128);
+    EXPECT_EQ(pParty->_viewYaw, 512);
+    int blastSpawns = 0; // The blast wave: sixteen tier-3 spawns pour out of the walls.
+    for (const Actor &actor : pActors)
+        if (actor.CanAct())
+            blastSpawns++;
+    EXPECT_GE(blastSpawns, 8);
+    EXPECT_FALSE(pParty->pCharacters[0].pCharacterBuffs[CHARACTER_BUFF_BLESS].Active());
+    EXPECT_EQ(pParty->pCharacters[0].health, pParty->pCharacters[0].GetMaxHealth()); // RestAndHeal.
+    EXPECT_TRUE(pParty->pCharacters[0].inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID)); // Not consumed.
+
+    // Reloading the map leaves the reactor gone for good (map-load despawn on quest bit 180).
+    // A same-map teleport doesn't reload - bounce through New Sorpigal for a real map load.
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+    game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    EXPECT_EQ(findActorByMonsterId(173), -1);
+
+    // Lose leg: reset the quest state, drop the Ritual, and blow the reactor up again on a
+    // freshly respawned map.
+    pParty->_questBits[static_cast<QuestBit>(180)] = false;
+    InventoryEntry ritual = pParty->pCharacters[0].inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID);
+    ASSERT_TRUE(ritual);
+    pParty->pCharacters[0].inventory.take(ritual);
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+    game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    reactorId = findActorByMonsterId(173);
+    ASSERT_NE(reactorId, -1);
+    removeAllActorsExcept(reactorId);
+    blastReactor(game, reactorId);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAMEOVER_WINDOW); // The blast consumes the world.
+    ASSERT_TRUE(pGameOverWindow);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    for (int i = 0; i < 50 && GetCurrentMenuID() != MENU_MAIN; i++)
+        game.tick(1);
+    EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
+}
+
+// Enters a castle through its real outdoor door face, answering the entry prompt if one comes up.
+static void enterCastleThroughDoor(EngineController &game, int eventId) {
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == eventId && face.Clickable())
+                door = &face;
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    if (current_screen_type == SCREEN_INPUT_BLV) {
+        game.pressAndReleaseKey(PlatformKey::KEY_Y);
+        game.tick(5);
+    }
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+}
+
+// Opens a quest giver's house screen directly (the stable idiom for face-scripted houses).
+static void visitQuestGiver(EngineController &game, const NPCData *npc) {
+    ASSERT_NE(npc->house, HOUSE_INVALID);
+    ASSERT_TRUE(enterHouse(npc->house));
+    createHouseUI(npc->house);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+}
+
+// Clicks the NPC's portrait, runs their scripted topic, and escapes back to the portraits.
+static void runNpcTopic(EngineController &game, NPCData *npc, DialogueId topicLine = DIALOGUE_SCRIPTED_LINE_1) {
+    clickHouseNpcPortrait(game, npc);
+    selectScriptedTopic(game, topicLine);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+}
+
+static bool everyoneHasAward(int awardId) {
+    return std::ranges::all_of(pParty->pCharacters, [&](const Character &character) {
+        return character._achievedAwardsBits[static_cast<AwardId>(awardId)];
+    });
+}
+
+// The whole MM6 main quest, driven end-to-end through the real event chains - the only elisions
+// are dungeon chest/drop loot (Kilburn's Shield 499, the Hourglass 433, the Devil Plans 506, the
+// Letter from Zenofex 502, the Control Cube 456), granted straight to the inventory, and the
+// Prince of Thieves joining as a hireling directly (his capture topic is a plain message; the
+// join is the standard hire flow). Everything else - every offer, hand-in, quest bit, topic
+// rewire, door gate and ending - runs the same scripts and hardcoded EXE behavior a player hits.
+GAME_TEST(Mm6, MainQuestEndToEnd) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // --- The Letter: Andover Potbello points the party at Castle Ironfist (global event 1).
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.find(ItemId(505)));
+    int gold = pParty->GetGold();
+    enterLonelyKnightTavern(game);
+    NPCData *andover = &pNPCStats->pNPCData[1];
+    runNpcTopic(game, andover);
+    EXPECT_EQ(pParty->GetGold(), gold + 1000);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(82)]);
+    EXPECT_TRUE(pParty->pCharacters[0].inventory.find(ItemId(505))); // Andover reads it, keeps nothing.
+    leaveHouse(game);
+
+    // --- Wilbur Humphrey, Castle Ironfist: letter delivery (event 9), then Lord Kilburn's
+    // Shield - offer (10, quest bit 86) and hand-in (11, award 2).
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    enterCastleThroughDoor(game, 43);
+    NPCData *humphrey = &pNPCStats->pNPCData[4];
+    ASSERT_EQ(humphrey->name, "Wilbur Humphrey");
+    ASSERT_EQ(humphrey->dialogue_1_evt_id, 9u);
+    gold = pParty->GetGold();
+    runNpcTopic(game, humphrey);
+    EXPECT_EQ(pParty->GetGold(), gold + 5000);
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(505))); // The Letter reaches its addressee.
+    EXPECT_TRUE(everyoneHasAward(58));
+    EXPECT_EQ(humphrey->dialogue_1_evt_id, 10u);
+    runNpcTopic(game, humphrey); // The shield offer.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(86)]);
+    EXPECT_EQ(humphrey->dialogue_1_evt_id, 11u);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(499)))); // Dungeon loot, elided.
+    runNpcTopic(game, humphrey);
+    EXPECT_TRUE(everyoneHasAward(2));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(499)));
+    leaveHouse(game);
+
+    // --- Albert Newton: the Hourglass of Time (offer 51, hand-in 52 with a fake-item branch -
+    // Gharik's laboratory key 487 is mistaken loot the script calls out and refuses).
+    NPCData *newton = &pNPCStats->pNPCData[5];
+    ASSERT_EQ(newton->name, "Albert Newton");
+    visitQuestGiver(game, newton);
+    runNpcTopic(game, newton);
+    EXPECT_EQ(newton->dialogue_1_evt_id, 52u);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(487))));
+    runNpcTopic(game, newton);
+    EXPECT_FALSE(everyoneHasAward(3)); // The wrong item entirely - the script refuses it.
+    InventoryEntry fake = pParty->pCharacters[0].inventory.find(ItemId(487));
+    ASSERT_TRUE(fake);
+    pParty->pCharacters[0].inventory.take(fake);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(433))));
+    runNpcTopic(game, newton);
+    EXPECT_TRUE(everyoneHasAward(3));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(433)));
+    leaveHouse(game);
+
+    // --- Osric Temper: the Devil Plans (offer 61, hand-in 62, award 4).
+    NPCData *temper = &pNPCStats->pNPCData[6];
+    ASSERT_EQ(temper->name, "Osric Temper");
+    visitQuestGiver(game, temper);
+    runNpcTopic(game, temper);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(506)))); // Dungeon loot, elided.
+    runNpcTopic(game, temper);
+    EXPECT_TRUE(everyoneHasAward(4));
+    leaveHouse(game);
+
+    // --- Anthony Stone: bring him the Prince of Thieves (offer 32, hand-in 33 checks the
+    // hireling roster and takes the Prince off it).
+    NPCData *stone = &pNPCStats->pNPCData[16];
+    ASSERT_EQ(stone->name, "Anthony Stone");
+    NPCData *prince = &pNPCStats->pNPCData[17];
+    ASSERT_EQ(prince->name, "The Prince of Thieves");
+    visitQuestGiver(game, stone);
+    runNpcTopic(game, stone);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(98)]);
+    runNpcTopic(game, stone); // Empty-handed: a hint about Free Haven, nothing changes.
+    EXPECT_FALSE(everyoneHasAward(5));
+    prince->flags |= NPC_HIRED; // The capture itself is the standard hire flow, elided.
+    pParty->CountHirelings();
+    ASSERT_TRUE(prince->Hired());
+    runNpcTopic(game, stone);
+    EXPECT_TRUE(everyoneHasAward(5));
+    EXPECT_FALSE(prince->Hired()); // "The package" is delivered.
+    leaveHouse(game);
+
+    // --- Loretta Fleise: Price Fixing (offer 79 sets quest bit 116; all nine coach companies
+    // must sign up - MM6.EXE grows a "Price Fixing" option in every stable's menu, each sets
+    // quest bit houseId+99, the ninth arms bit 117; hand-in 80 pays by local reputation).
+    ASSERT_TRUE(enterHouse(HouseId(48)));
+    createHouseUI(HouseId(48));
+    game.tick(2);
+    openProprietorDialogue(game);
+    EXPECT_EQ(findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING), nullptr); // Not before the quest.
+    leaveHouse(game);
+    NPCData *loretta = &pNPCStats->pNPCData[14];
+    ASSERT_EQ(loretta->name, "Loretta Fleise");
+    visitQuestGiver(game, loretta);
+    runNpcTopic(game, loretta);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(116)]);
+    leaveHouse(game);
+    for (int house = 48; house <= 56; house++) {
+        EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(117)]);
+        ASSERT_TRUE(enterHouse(HouseId(house)));
+        createHouseUI(HouseId(house));
+        game.tick(2);
+        openProprietorDialogue(game);
+        ASSERT_NE(findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING), nullptr);
+        clickProprietorOption(game, DIALOGUE_TRANSPORT_MM6_PRICE_FIXING);
+        EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(house + 99)]);
+        EXPECT_EQ(findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING), nullptr); // Already signed up.
+        leaveHouse(game);
+    }
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(117)]);
+    visitQuestGiver(game, loretta);
+    gold = pParty->GetGold();
+    runNpcTopic(game, loretta);
+    EXPECT_TRUE(everyoneHasAward(6));
+    EXPECT_EQ(pParty->GetGold(), gold + 25000); // Local reputation below 31 pays the full purse.
+    leaveHouse(game);
+
+    // --- Erik Von Stromgard: end the eternal winter (offer 87 arms the Hermit on the Mountain,
+    // whose topic 96 breaks the weather and arms the hand-in 89).
+    NPCData *stromgard = &pNPCStats->pNPCData[15];
+    ASSERT_EQ(stromgard->name, "Erik Von Stromgard");
+    NPCData *hermit = &pNPCStats->pNPCData[19];
+    visitQuestGiver(game, stromgard);
+    runNpcTopic(game, stromgard);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(120)]);
+    EXPECT_EQ(hermit->dialogue_1_evt_id, 96u);
+    leaveHouse(game);
+    visitQuestGiver(game, hermit);
+    runNpcTopic(game, hermit);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(228)]);
+    EXPECT_EQ(stromgard->dialogue_1_evt_id, 89u);
+    leaveHouse(game);
+    visitQuestGiver(game, stromgard);
+    runNpcTopic(game, stromgard);
+    EXPECT_TRUE(everyoneHasAward(7));
+    leaveHouse(game);
+
+    // All six council quests are in - but the Oracle door stays shut until the traitor falls:
+    // every hand-in's quest-bit-167 chain checks award 32 first.
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(167)]);
+
+    // --- Slicker Silvertongue's conviction (event 380): the Letter from Zenofex convicts him,
+    // and with awards 2-7 all present ITS award chain finally raises quest bit 167.
+    MapId freeHaven = pMapStats->GetMapInfo("outc2.odm");
+    ASSERT_NE(freeHaven, MAP_INVALID);
+    game.teleportTo(freeHaven, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    enterHouseThroughDoor(game, 49);
+    NPCData *slicker = &pNPCStats->pNPCData[304];
+    ASSERT_EQ(slicker->name, "Slicker Silvertongue");
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(502)))); // Dungeon drop, elided.
+    runNpcTopic(game, slicker);
+    EXPECT_TRUE(everyoneHasAward(32));
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(168)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(167)]); // The Oracle door arms - for real.
+    leaveHouse(game);
+
+    // --- Mid-quest save/load roundtrip: the whole quest state survives.
+    Blob save = game.saveGame();
+    game.loadGame(save);
+    game.tick(1);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(167)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(117)]);
+    for (int award : {2, 3, 4, 5, 6, 7, 32, 58})
+        EXPECT_TRUE(everyoneHasAward(award));
+
+    // --- The Oracle, reached through the council's newly-armed exit door. Topic 73 starts the
+    // Memory Crystal hunt.
+    enterHouseThroughDoor(game, 49);
+    const HouseNpcDesc *oracleDoor = nullptr;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_TRANSITION)
+            oracleDoor = &npc;
+    ASSERT_NE(oracleDoor, nullptr);
+    ASSERT_NE(oracleDoor->button, nullptr);
+    Recti doorRect = oracleDoor->button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, doorRect.x + doorRect.w / 2, doorRect.y + doorRect.h / 2);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(10);
+    ASSERT_EQ(engine->_currentLoadedMapId, pMapStats->GetMapInfo("oracle.blv"));
+    NPCData *oracle = &pNPCStats->pNPCData[8];
+    ASSERT_EQ(oracle->dialogue_1_evt_id, 73u);
+    ASSERT_TRUE(enterHouse(HouseId(170)));
+    createHouseUI(HouseId(170));
+    game.tick(2);
+    runNpcTopic(game, oracle);
+    for (int bit : {162, 163, 164, 165})
+        EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(bit)]);
+    leaveHouse(game);
+
+    // --- The four Memory Crystals come from their real granting events: the Superior Temple
+    // of Baa and the castles Alamos, Darkmoor and Kriegspire.
+    struct CrystalSource {
+        const char *map;
+        int eventId;
+        int itemId;
+    };
+    for (const CrystalSource &source : {CrystalSource{"t6.blv", 32, 550}, CrystalSource{"cd1.blv", 59, 551},
+                                        CrystalSource{"cd2.blv", 57, 552}, CrystalSource{"cd3.blv", 62, 553}}) {
+        MapId map = pMapStats->GetMapInfo(source.map);
+        ASSERT_NE(map, MAP_INVALID);
+        game.teleportTo(map, Vec3f(0, 0, 0), 0);
+        ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+        game.teleportTo(map, pIndoor->pSpawnPoints[0].position, 0);
+        game.tick(1);
+        eventProcessor(source.eventId, Pid(), 1);
+        EXPECT_EQ(stashPickedItem(), ItemId(source.itemId));
+    }
+
+    // --- Back through the council door; power up the Oracle (event 14 - the pedestals gate on
+    // MapVar6) and place all four crystals. The fourth placement rewires the Oracle's topics to
+    // the Control Cube stage 76 - for real, through oracle.evt's own chain.
+    game.teleportTo(freeHaven, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    enterHouseThroughDoor(game, 49);
+    oracleDoor = nullptr;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_TRANSITION)
+            oracleDoor = &npc;
+    ASSERT_NE(oracleDoor, nullptr);
+    doorRect = oracleDoor->button->rect;
+    game.pressAndReleaseButton(BUTTON_LEFT, doorRect.x + doorRect.w / 2, doorRect.y + doorRect.h / 2);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_Y);
+    game.tick(10);
+    ASSERT_EQ(engine->_currentLoadedMapId, pMapStats->GetMapInfo("oracle.blv"));
+    eventProcessor(14, Pid(), 1); // The power switch.
+    for (int pedestal : {5, 15, 16, 17})
+        eventProcessor(pedestal, Pid(), 1);
+    for (int item : {550, 551, 552, 553})
+        EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(item)));
+    for (int bit : {100, 101, 102, 103})
+        EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(bit)]);
+    EXPECT_EQ(oracle->dialogue_1_evt_id, 76u);
+    EXPECT_EQ(oracle->dialogue_2_evt_id, 0u);
+
+    // --- The Control Cube: stage 1 sends the party after it (award 33), the hand-in pays
+    // 500k exp and retires the topics to 77/78; topic 77 opens the Control Center door and
+    // arms Nicolai's Tanir's-Bell chain.
+    ASSERT_TRUE(enterHouse(HouseId(170)));
+    createHouseUI(HouseId(170));
+    game.tick(2);
+    runNpcTopic(game, oracle);
+    EXPECT_TRUE(everyoneHasAward(33));
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(166)]);
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(456)))); // Dungeon loot, elided.
+    uint64_t expBefore = pParty->pCharacters[0].experience;
+    runNpcTopic(game, oracle);
+    EXPECT_EQ(pParty->pCharacters[0].experience, expBefore + 500000);
+    EXPECT_TRUE(everyoneHasAward(34));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(456)));
+    ASSERT_EQ(oracle->dialogue_1_evt_id, 77u);
+    NPCData *nicolai = &pNPCStats->pNPCData[13];
+    ASSERT_EQ(nicolai->name, "Nicolai Ironfist");
+    runNpcTopic(game, oracle); // Topic 77.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(169)]); // The Control Center door arms.
+    EXPECT_EQ(nicolai->dialogue_2_evt_id, 26u);
+    leaveHouse(game);
+
+    // --- Nicolai trades Tanir's Bell for The Third Eye, which sits behind its own real map
+    // event on outd3 - gated on quest bit 96, which only Nicolai's topic 26 raises.
+    visitQuestGiver(game, nicolai);
+    runNpcTopic(game, nicolai, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(96)]);
+    EXPECT_EQ(nicolai->dialogue_2_evt_id, 27u);
+    leaveHouse(game);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    eventProcessor(231, Pid(), 1);
+    EXPECT_EQ(stashPickedItem(), ItemId(446)); // The Third Eye.
+    visitQuestGiver(game, nicolai);
+    clickHouseNpcPortrait(game, nicolai);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(446)));
+    EXPECT_EQ(stashPickedItem(), ItemId(461)); // Tanir's Bell - stash before Escape parks the cursor.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(197)]);
+    leaveHouse(game);
+
+    // --- The King's Library: with the bell aboard the door chains to Archibald Ironfist,
+    // whose topic 30 hands over the Ritual of the Void.
+    enterHouseThroughDoor(game, 42);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    ASSERT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_ARCHIBALD);
+    NPCData *archibald = &pNPCStats->pNPCData[12];
+    clickHouseNpcPortrait(game, archibald);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(stashPickedItem(), ITEM_MM6_RITUAL_OF_THE_VOID); // Stash before Escape parks the cursor.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(177)]);
+    leaveHouse(game);
+
+    // --- The Hive. The reactor refuses the Ritual while the Demon Queen lives (quest bit 202
+    // comes only from her death - the hardcoded EXE special); with her dead, the Ritual wins
+    // the game, and MM6 lets the party play on afterwards.
+    MapId hive = pMapStats->GetMapInfo("hive.blv");
+    ASSERT_NE(hive, MAP_INVALID);
+    game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    eventProcessor(60, Pid(), 1); // "The Queen's psychic energies protect the reactor."
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(237)]);
+    int queenId = findActorByMonsterId(172);
+    ASSERT_NE(queenId, -1);
+    removeAllActorsExcept(queenId);
+    killQuestMonster(game, queenId);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(202)]);
+    eventProcessor(60, Pid(), 1);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAMEOVER_WINDOW); // The Win certificate.
+    EXPECT_EQ(uGameState, GAME_STATE_FINAL_WINDOW);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(237)]);
+    EXPECT_TRUE(everyoneHasAward(36));
+    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID)); // Consumed by the win.
+    ASSERT_TRUE(pGameOverWindow);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+    EXPECT_EQ(uGameState, GAME_STATE_PLAYING); // MM6 plays on after the ending.
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(engine->_currentLoadedMapId, hive);
+    game.tick(5);
+}

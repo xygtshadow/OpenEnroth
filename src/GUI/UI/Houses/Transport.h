@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "GUI/UI/UIHouses.h"
@@ -17,8 +18,11 @@ class GUIWindow_Transport : public GUIWindow_House {
  protected:
     void mainDialogue();
     void transportDialogue();
+    void mm6PriceFixingDialogue();
 
  private:
+    // MM6 stables' agreement line (npctext row 136), drawn in the dialogue panel once given.
+    std::string _mm6PriceFixingText;
     /**
      * @brief                               New function.
      *

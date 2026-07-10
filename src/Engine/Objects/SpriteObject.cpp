@@ -887,7 +887,8 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
             return 0;
         }
 
-        case SPRITE_PROJECTILE_BLASTER: {
+        case SPRITE_PROJECTILE_BLASTER:
+        case SPRITE_MM6_PROJECTILE_LASER: {
             applySpellSpriteDamage(uLayingItemID, pid);
             updateSpriteOnImpact(object);
             if (object->uObjectDescID == 0) {

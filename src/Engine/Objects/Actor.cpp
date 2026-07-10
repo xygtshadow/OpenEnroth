@@ -30,6 +30,7 @@
 #include "Engine/Spells/CastSpellInfo.h"
 #include "Engine/Spells/Spells.h"
 #include "Engine/AttackList.h"
+#include "Engine/Evt/EvtInterpreter.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/HostilityTable.h"
 #include "Engine/Time/Timer.h"
@@ -37,6 +38,7 @@
 #include "Engine/MapInfo.h"
 
 #include "GUI/UI/UIGame.h"
+#include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIStatusBar.h"
 
 #include "Media/Audio/AudioPlayer.h"
@@ -1807,6 +1809,64 @@ void Actor::resurrect(unsigned int uActorID) {
     pActor->buffs[ACTOR_BUFF_ENSLAVED].Reset();
 }
 
+// MM6 endgame monsters with hardcoded death behavior (MM6.EXE actor-death handler @0x403199).
+static constexpr MonsterId MONSTER_MM6_DEMON_QUEEN = static_cast<MonsterId>(172);  // monsters.txt "zDemonqueen".
+static constexpr MonsterId MONSTER_MM6_REACTOR = static_cast<MonsterId>(173);      // monsters.txt "zReactor".
+
+// Killing the Demon Queen unlocks the Hive reactor (its face event 60 refuses to interact until
+// quest bit 202 is up); killing the Reactor ends the game - a blast that consumes the world unless
+// someone carries the Ritual of the Void, in which case the party is blown clear: monsters pour in,
+// the escape doors flip, and the party lands near the Hive exit, healed. MM6.EXE @0x4031b3/0x4031f1.
+static void mm6QuestMonsterDied(const Actor *actor) {
+    if (actor->monsterInfo.id == MONSTER_MM6_DEMON_QUEEN) {
+        pParty->_questBits.set(static_cast<QuestBit>(202));
+        pAudioPlayer->playSound(static_cast<SoundId>(997), SOUND_MODE_UI);
+        return;
+    }
+
+    if (actor->monsterInfo.id != MONSTER_MM6_REACTOR)
+        return;
+
+    bool hasRitual = pParty->pPickedItem.itemId == ITEM_MM6_RITUAL_OF_THE_VOID;
+    for (const Character &character : pParty->pCharacters)
+        hasRitual = hasRitual || character.inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID);
+    if (!hasRitual) {
+        enterHouse(HOUSE_THRONEROOM_WIN_EVIL); // MM6 house 601 = Lose; queues the game-over window.
+        return;
+    }
+
+    pParty->_questBits.set(static_cast<QuestBit>(180)); // Reactor destroyed - hive.evt 100 & the despawn key on it.
+
+    // The blast wave: sixteen tier-3 spawns from the map's encounter types at fixed positions
+    // (same monsterIndex encoding as the SummonMonsters event - spawnMonsters mirrors it).
+    static constexpr std::array<std::pair<int16_t, Vec3f>, 16> blastSpawns = {{
+        {2, {4352, 20096, -2256}}, {2, {6016, 21504, -2256}}, {2, {2816, 22016, -2256}},
+        {1, {4352, 24704, -2256}}, {1, {2944, 23552, -2256}}, {1, {6144, 23424, -2256}},
+        {2, {2688, 19840, -2256}}, {2, {1920, 21760, -2256}}, {2, {6144, 19840, -2256}},
+        {2, {7168, 21760, -2256}}, {1, {2584, 25728, -2256}}, {1, {5248, 25728, -2256}},
+        {1, {1792, 23168, -2256}}, {1, {2688, 25216, -2256}}, {1, {7296, 23040, -2256}},
+        {1, {6144, 25088, -2256}}
+    }};
+    for (const auto &[type, pos] : blastSpawns)
+        spawnMonsters(type, 3, 1, pos, 0, 0);
+
+    // The escape route flips open - the same door set hive.evt event 100 re-applies on map reload.
+    switchDoorAnimation(28, DOOR_ACTION_OPEN);
+    switchDoorAnimation(30, DOOR_ACTION_CLOSE);
+    switchDoorAnimation(51, DOOR_ACTION_OPEN);
+    switchDoorAnimation(52, DOOR_ACTION_OPEN);
+    switchDoorAnimation(53, DOOR_ACTION_CLOSE);
+
+    // The party is thrown to the exit passage, facing east, and comes to rested and healed.
+    pParty->pos.x = 3328;
+    pParty->pos.y = 25920;
+    pParty->uFallStartZ = pParty->pos.z;
+    pParty->_viewYaw = 512;
+    pParty->velocity = Vec3f();
+    pAudioPlayer->playSound(static_cast<SoundId>(232), SOUND_MODE_UI);
+    pParty->restAndHeal();
+}
+
 //----- (00402D6E) --------------------------------------------------------
 void Actor::Die(unsigned int uActorID) {
     Actor *actor = &pActors[uActorID];
@@ -1826,6 +1886,9 @@ void Actor::Die(unsigned int uActorID) {
     for (HouseId house : allTownhallHouses())
         if (pParty->monster_id_for_hunting[house] == actor->monsterInfo.id)
             pParty->monster_for_hunting_killed[house] = true;
+
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        mm6QuestMonsterDied(actor);
 
     for (SpellBuff &buff : actor->buffs)
         buff.Reset();
@@ -2999,6 +3062,16 @@ void Actor::InitializeActors() {
     for (unsigned i = 0; i < pActors.size(); ++i) {
         Actor *actor = &pActors[i];
 
+        // MM6 endgame monsters stay dead across map reloads (MM6.EXE map-load despawn @0x46e880):
+        // the Demon Queen once quest bit 202 is up, the Hive reactor once 180 is.
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            if ((actor->monsterInfo.id == MONSTER_MM6_DEMON_QUEEN && pParty->_questBits[static_cast<QuestBit>(202)]) ||
+                (actor->monsterInfo.id == MONSTER_MM6_REACTOR && pParty->_questBits[static_cast<QuestBit>(180)])) {
+                actor->aiState = Removed;
+                continue;
+            }
+        }
+
         if (actor->CanAct() || actor->aiState == Disabled) {
             actor->pos.x = actor->initialPosition.x;
             actor->pos.y = actor->initialPosition.y;
@@ -3118,7 +3191,10 @@ int Actor::DamageMonsterFromParty(Pid a1, unsigned int uActorID_Monster, const V
                 v61 = 1;
                 if (character->getSkillValue(SKILL_BLASTER).mastery() >= MASTERY_MASTER)
                     skillLevel = character->getSkillValue(SKILL_BLASTER).level();
-                attackElement = DAMAGE_PHYSICAL;
+                // MM6 blasters deal Energy damage - unresistable (monsters.txt has no Ener resist
+                // column), and the ONLY thing that hurts the Hive reactor, whose every resistance
+                // is Imm. MM7 lasers stay physical, as its decompile had it.
+                attackElement = engine->gameVersion() == GAME_VERSION_MM6 ? DAMAGE_ENERGY : DAMAGE_PHYSICAL;
                 uDamageAmount = character->CalculateMeleeDamageTo(true, true, MONSTER_INVALID);
                 if (!character->characterHitOrMiss(pMonster, v61, skillLevel)) {
                     character->playReaction(SPEECH_ATTACK_MISS);

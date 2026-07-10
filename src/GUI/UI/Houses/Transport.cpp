@@ -2,6 +2,7 @@
 
 #include <string>
 #include <array>
+#include <utility>
 #include <vector>
 
 #include "GUI/UI/UIStatusBar.h"
@@ -16,6 +17,7 @@
 #include "Engine/PriceCalculator.h"
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Objects/NPC.h"
+#include "Engine/Tables/NPCTable.h"
 #include "Engine/MapInfo.h"
 #include "Engine/Party.h"
 #include "Engine/Engine.h"
@@ -116,6 +118,27 @@ static constexpr MapId MAP_MM6_ARENA = static_cast<MapId>(52);
 static constexpr QuestBit QBIT_MM6_VISITED_FREE_HAVEN = static_cast<QuestBit>(178);
 static constexpr QuestBit QBIT_MM6_VISITED_SILVER_COVE = static_cast<QuestBit>(179);
 static constexpr QuestBit QBIT_MM6_SILVER_HELM_ROUTES = static_cast<QuestBit>(168);
+
+// MM6's Price Fixing council quest (Loretta Fleise, global event 79/80): with the quest taken
+// (bit 116) every stable grows a "Price Fixing" option; agreeing sets bit houseId+99 (stables
+// 48-56 -> bits 147-155), and once all nine coach companies signed up, bit 117 arms the
+// hand-in. MM6.EXE menu factory @0x49927a, click handler @0x49d575.
+static constexpr QuestBit QBIT_MM6_PRICE_FIXING_TAKEN = static_cast<QuestBit>(116);
+static constexpr QuestBit QBIT_MM6_ALL_PRICES_RAISED = static_cast<QuestBit>(117);
+static constexpr int MM6_PRICE_FIXING_QBIT_OFFSET = 99;
+static constexpr HouseId HOUSE_MM6_FIRST_STABLE = static_cast<HouseId>(48);
+static constexpr HouseId HOUSE_MM6_LAST_STABLE = static_cast<HouseId>(56);
+
+static QuestBit mm6PriceFixingBitForStable(HouseId houseId) {
+    return static_cast<QuestBit>(std::to_underlying(houseId) + MM6_PRICE_FIXING_QBIT_OFFSET);
+}
+
+static bool mm6PriceFixingAvailable(HouseId houseId) {
+    return engine->gameVersion() == GAME_VERSION_MM6 &&
+           houseTable[houseId].uType == HOUSE_TYPE_STABLE &&
+           pParty->_questBits[QBIT_MM6_PRICE_FIXING_TAKEN] &&
+           !pParty->_questBits[mm6PriceFixingBitForStable(houseId)];
+}
 
 // MM6.EXE 0x4C3F20: TravelInfo[36]. Destination map ids translated from the stored
 // 1-based games.lod file indices.
@@ -218,7 +241,14 @@ void GUIWindow_Transport::mainDialogue() {
     int lastsched = 255;
     bool hasActiveRoute = false;
 
-    for (int schedule_id : transportRoutesForHouse(houseId())) {
+    for (DialogueId option : listDialogueOptions()) {
+        if (option == DIALOGUE_TRANSPORT_MM6_PRICE_FIXING) {
+            optionsText.push_back(pNPCTopics[98].pTopic); // npctopic row 99 "Price Fixing".
+            hasActiveRoute = true;
+            continue;
+        }
+
+        int schedule_id = transportRoutesForHouse(houseId())[std::to_underlying(option) - std::to_underlying(DIALOGUE_TRANSPORT_SCHEDULE_1)];
         bool routeActive = false;
 
         if (schedule_id != 255 && (lastsched != schedule_id)) {
@@ -309,9 +339,30 @@ void GUIWindow_Transport::houseSpecificDialogue() {
       case DIALOGUE_TRANSPORT_SCHEDULE_4:
         transportDialogue();
         break;
+      case DIALOGUE_TRANSPORT_MM6_PRICE_FIXING:
+        mm6PriceFixingDialogue();
+        break;
       default:
         break;
     }
+
+    // MM6 keeps the stablemaster's agreement line up in the dialogue panel for the rest of the
+    // visit (the EXE's [0x9dddf8] panel-text swap at its handler tail).
+    if (!_mm6PriceFixingText.empty())
+        DrawDialoguePanel(_mm6PriceFixingText);
+}
+
+void GUIWindow_Transport::mm6PriceFixingDialogue() {
+    pParty->_questBits.set(mm6PriceFixingBitForStable(houseId()));
+
+    bool allConvinced = true;
+    for (HouseId stable = HOUSE_MM6_FIRST_STABLE; stable <= HOUSE_MM6_LAST_STABLE; stable = static_cast<HouseId>(std::to_underlying(stable) + 1))
+        allConvinced = allConvinced && pParty->_questBits[mm6PriceFixingBitForStable(stable)];
+    if (allConvinced)
+        pParty->_questBits.set(QBIT_MM6_ALL_PRICES_RAISED);
+
+    _mm6PriceFixingText = pNPCTopics[135].pText; // npctext row 136: "...count me in!".
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
 }
 
 void GUIWindow_Transport::houseDialogueOptionSelected(DialogueId option) {
@@ -320,8 +371,17 @@ void GUIWindow_Transport::houseDialogueOptionSelected(DialogueId option) {
 
 std::vector<DialogueId> GUIWindow_Transport::listDialogueOptions() {
     switch (_currentDialogue) {
-      case DIALOGUE_MAIN:
+      case DIALOGUE_MAIN: {
+        // MM6 transport houses have three schedule slots (the fourth is always empty), plus the
+        // Price Fixing quest option at the stables while Loretta's quest is up.
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            std::vector<DialogueId> options = {DIALOGUE_TRANSPORT_SCHEDULE_1, DIALOGUE_TRANSPORT_SCHEDULE_2, DIALOGUE_TRANSPORT_SCHEDULE_3};
+            if (mm6PriceFixingAvailable(houseId()))
+                options.push_back(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING);
+            return options;
+        }
         return {DIALOGUE_TRANSPORT_SCHEDULE_1, DIALOGUE_TRANSPORT_SCHEDULE_2, DIALOGUE_TRANSPORT_SCHEDULE_3, DIALOGUE_TRANSPORT_SCHEDULE_4};
+      }
       default:
         return {};
     }

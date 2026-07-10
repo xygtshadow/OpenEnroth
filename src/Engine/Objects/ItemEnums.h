@@ -1030,6 +1030,10 @@ constexpr ItemId ITEM_MM6_RELIC_ARES = ItemId(416);         // +30 Fire Damage.
 constexpr ItemId ITEM_MM6_RELIC_ARTEMIS = ItemId(420);      // +20 Electricity Damage.
 constexpr ItemId ITEM_MM6_RELIC_AEGIS = ItemId(423);        // Shielding and Immunity to Flesh to Stone.
 
+// MM6 main-quest item: carrying it decides the ending when the Hive reactor is destroyed
+// (MM6.EXE actor-death handler @0x4031f1), and the reactor face event 60 trades it for the win.
+constexpr ItemId ITEM_MM6_RITUAL_OF_THE_VOID = ItemId(544);
+
 enum class ItemType {
     ITEM_TYPE_INVALID = -1, // No items in the game have this type.
     ITEM_TYPE_SINGLE_HANDED = 0, // Also blasters.
