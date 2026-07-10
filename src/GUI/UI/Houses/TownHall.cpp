@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -173,26 +174,27 @@ MonsterId GUIWindow_TownHall::randomMonsterForHunting(HouseId townhall) {
     }
 }
 
-void GUIWindow_TownHall::bountyHuntingDialogueOptionClicked() {
+std::pair<std::string, MonsterId> bountyHuntInteraction(HouseId townHall) {
     bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
-    HouseId house = bountyHuntSlot(houseId());
+    HouseId house = bountyHuntSlot(townHall);
 
     // Generate new bounty
     if (pParty->PartyTimes.bountyHuntNextGenTime[house] < pParty->GetPlayingTime()) {
         pParty->monster_for_hunting_killed[house] = false;
         pParty->PartyTimes.bountyHuntNextGenTime[house] = Time::fromMonths(pParty->GetPlayingTime().toMonths() + 1);
-        pParty->monster_id_for_hunting[house] = randomMonsterForHunting(house);
+        pParty->monster_id_for_hunting[house] = GUIWindow_TownHall::randomMonsterForHunting(house);
     }
 
-    _bountyHuntMonsterId = pParty->monster_id_for_hunting[house];
+    MonsterId bountyMonsterId = pParty->monster_id_for_hunting[house];
+    std::string bountyText;
 
     // The reply texts are the same three consecutive npctext rows in both games, at each game's own
     // row numbers: MM6 368-370, MM7 352-354.
     if (!pParty->monster_for_hunting_killed[house]) {
         if (pParty->monster_id_for_hunting[house] != MONSTER_INVALID) {
-            _bountyHuntText = pNPCTopics[mm6 ? 367 : 351].pText; // "This month's bounty is on a %s..."
+            bountyText = pNPCTopics[mm6 ? 367 : 351].pText; // "This month's bounty is on a %s..."
         } else {
-            _bountyHuntText = pNPCTopics[mm6 ? 369 : 353].pText; // "Someone has already claimed the bounty this month..."
+            bountyText = pNPCTopics[mm6 ? 369 : 353].pText; // "Someone has already claimed the bounty this month..."
         }
     } else {
         // Get prize
@@ -221,19 +223,29 @@ void GUIWindow_TownHall::bountyHuntingDialogueOptionClicked() {
             pParty->monster_for_hunting_killed[house] = false;
         }
 
-        _bountyHuntText = pNPCTopics[mm6 ? 368 : 352].pText; // "Congratulations on defeating the %s! Here is the %lu gold reward..."
+        bountyText = pNPCTopics[mm6 ? 368 : 352].pText; // "Congratulations on defeating the %s! Here is the %lu gold reward..."
     }
+
+    return {bountyText, bountyMonsterId};
+}
+
+std::string bountyHuntReplyText(const std::string &rawText, MonsterId monsterId) {
+    assert(!rawText.empty());
+
+    // This happens when you claim a bounty and revisit the town hall the same month.
+    // Assumes rawText is already containing the "someone has already" text (pNPCTopics[353]).
+    if (monsterId == MONSTER_INVALID)
+        return rawText;
+
+    // TODO(captainurist): what do we do with exceptions inside fmt?
+    std::string name = fmt::format("{::}{}{::}", colorTable.PaleCanary.tag(), pMonsterStats->infos[monsterId].name, colorTable.White.tag());
+    return fmt::sprintf(rawText, name, 100 * pMonsterStats->infos[monsterId].level); // NOLINT: this is not ::sprintf.
+}
+
+void GUIWindow_TownHall::bountyHuntingDialogueOptionClicked() {
+    std::tie(_bountyHuntText, _bountyHuntMonsterId) = bountyHuntInteraction(houseId());
 }
 
 std::string GUIWindow_TownHall::bountyHuntingText() {
-    assert(!_bountyHuntText.empty());
-
-    // This happens when you claim a bounty and revisit the town hall the same month.
-    // Assumes _bountyHuntText is already containing the "someone has already" text (pNPCTopics[353]).
-    if (_bountyHuntMonsterId == MONSTER_INVALID)
-        return _bountyHuntText;
-
-    // TODO(captainurist): what do we do with exceptions inside fmt?
-    std::string name = fmt::format("{::}{}{::}", colorTable.PaleCanary.tag(), pMonsterStats->infos[_bountyHuntMonsterId].name, colorTable.White.tag());
-    return fmt::sprintf(_bountyHuntText, name, 100 * pMonsterStats->infos[_bountyHuntMonsterId].level); // NOLINT: this is not ::sprintf.
+    return bountyHuntReplyText(_bountyHuntText, _bountyHuntMonsterId);
 }

@@ -30,6 +30,7 @@
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIStatusBar.h"
+#include "GUI/UI/Houses/TownHall.h"
 
 #include "Media/Audio/AudioPlayer.h"
 
@@ -245,8 +246,13 @@ DialogueId arenaMainDialogue() {
 
     if (killedMonsters >= pActors.size() || pActors.size() <= 0) {
         pParty->uNumArenaWins[pParty->arenaLevel]++;
+        // MM6's arena-victor awards are its own awards.txt rows 84-87 ("%u Page Arena Victories"...,
+        // MM6.EXE 0x4A342A grants state byte + 4); MM7's live at rows 88-91 behind the AwardId enum.
+        int awardId = engine->gameVersion() == GAME_VERSION_MM6
+            ? 83 + std::to_underlying(pParty->arenaLevel)
+            : std::to_underlying(awardForArenaLevel(pParty->arenaLevel));
         for (Character &player : pParty->pCharacters) {
-            player.SetVariable(VAR_Award, std::to_underlying(awardForArenaLevel(pParty->arenaLevel)));
+            player.SetVariable(VAR_Award, awardId);
         }
         pParty->partyFindsGold(gold_transaction_amount, GOLD_RECEIVE_SHARE);
         pAudioPlayer->playUISound(SOUND_51heroism03);
@@ -298,6 +304,8 @@ void prepareArenaFight(ArenaLevel level) {
         }
     }
 
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+
     int monsterMaxLevel = characterMaxLevel;
     int monsterMinLevel = characterMaxLevel / 2;
 
@@ -309,27 +317,44 @@ void prepareArenaFight(ArenaLevel level) {
         monsterMaxLevel = characterMaxLevel * 1.5;
         break;
     case ARENA_LEVEL_KNIGHT:
+        monsterMaxLevel = characterMaxLevel * 2;
+        break;
     case ARENA_LEVEL_LORD:
+        // MM6's Lord tier doesn't halve the lower bound (MM6.EXE 0x4A39B0: min = max party level).
+        if (isMm6)
+            monsterMinLevel = characterMaxLevel;
         monsterMaxLevel = characterMaxLevel * 2;
         break;
     default:
         assert(false);
     }
 
-    if (monsterMinLevel < 2)
-        monsterMinLevel = 2;
+    // MM6.EXE 0x4A39C0 clamps to [1, 100]; MM7 raised the floor to 2.
+    int minLevelFloor = isMm6 ? 1 : 2;
+    if (monsterMinLevel < minLevelFloor)
+        monsterMinLevel = minLevelFloor;
     if (monsterMinLevel > 100)
         monsterMinLevel = 100;
 
     if (monsterMaxLevel > 100)
         monsterMaxLevel = 100;
-    if (monsterMaxLevel < 2)
-        monsterMaxLevel = 2;
+    if (monsterMaxLevel < minLevelFloor)
+        monsterMaxLevel = minLevelFloor;
 
     std::vector<MonsterId> candidateIds;
-    for (MonsterId i : allArenaMonsters()) {
-        if (pMonsterStats->infos[i].level >= monsterMinLevel && pMonsterStats->infos[i].level <= monsterMaxLevel) {
-            candidateIds.push_back(i);
+    if (isMm6) {
+        // MM6.EXE 0x4A39DC: every monsters.txt row 1-171 whose level fits the window is a candidate -
+        // no arena-suitability flag, only the special endgame rows past 171 are excluded.
+        for (int i = 1; i <= 171; i++) {
+            MonsterId id = static_cast<MonsterId>(i);
+            if (pMonsterStats->infos[id].level >= monsterMinLevel && pMonsterStats->infos[id].level <= monsterMaxLevel)
+                candidateIds.push_back(id);
+        }
+    } else {
+        for (MonsterId i : allArenaMonsters()) {
+            if (pMonsterStats->infos[i].level >= monsterMinLevel && pMonsterStats->infos[i].level <= monsterMaxLevel) {
+                candidateIds.push_back(i);
+            }
         }
     }
     assert(!candidateIds.empty());
@@ -424,6 +449,89 @@ void oracleDialogue() {
                 }
             }
         }
+    }
+}
+
+// The Seer's lost-quest-item table (MM6.EXE 0x4C3DAC, 25 (quest bit, item) word pairs read by the
+// "I lost it" handler @0x496570): while the quest bit is set and no character carries the item,
+// the Seer hands out a replacement. Quest bit 181 is set in the new-game template - it arms the
+// replacement of The Letter (item 505), the party's starting quest item.
+static constexpr std::array<std::pair<QuestBit, ItemId>, 25> mm6SeerLostItemPairs = {{
+    {QuestBit(181), ItemId(505)}, {QuestBit(182), ItemId(499)}, {QuestBit(183), ItemId(433)},
+    {QuestBit(184), ItemId(506)}, {QuestBit(185), ItemId(455)}, {QuestBit(186), ItemId(457)},
+    {QuestBit(187), ItemId(508)}, {QuestBit(188), ItemId(434)}, {QuestBit(189), ItemId(486)},
+    {QuestBit(190), ItemId(502)}, {QuestBit(191), ItemId(550)}, {QuestBit(192), ItemId(551)},
+    {QuestBit(193), ItemId(552)}, {QuestBit(194), ItemId(553)}, {QuestBit(195), ItemId(456)},
+    {QuestBit(196), ItemId(446)}, {QuestBit(197), ItemId(461)}, {QuestBit(198), ItemId(544)},
+    {QuestBit(199), ItemId(487)}, {QuestBit(229), ItemId(538)}, {QuestBit(230), ItemId(542)},
+    {QuestBit(231), ItemId(537)}, {QuestBit(232), ItemId(539)}, {QuestBit(233), ItemId(541)},
+    {QuestBit(234), ItemId(540)},
+}};
+
+// MM6's Seer "I lost it" topic (npc topic 45, MM6.EXE handler @0x496570) - the ancestor of MM7's
+// Oracle "I lost it!" dialogue above. The Ritual of the Void (item 544) is checked first with its
+// own gate: re-given while the endgame is armed (quest bit 177) and not yet performed (bit 237).
+static void mm6SeerLostItemDialogue() {
+    current_npc_text = pNPCTopics[174].pText; // npctext row 175: "You never found it."
+
+    auto missing = [](ItemId itemId) {
+        return !pParty->hasItem(itemId) && pParty->pPickedItem.itemId != itemId;
+    };
+
+    ItemId itemId = ITEM_NULL;
+    if (!pParty->_questBits[QuestBit(237)] && pParty->_questBits[QuestBit(177)] && missing(ItemId(544))) {
+        itemId = ItemId(544); // Ritual of the Void.
+    } else {
+        for (auto [questBit, pairItemId] : mm6SeerLostItemPairs) {
+            if (pParty->_questBits[questBit] && missing(pairItemId)) {
+                itemId = pairItemId;
+                break;
+            }
+        }
+    }
+
+    if (itemId != ITEM_NULL) {
+        pParty->pCharacters[0].AddVariable(VAR_PlayerItemInHands, std::to_underlying(itemId));
+        // npctext row 176: "Here is the %s you have misplaced.  You must be more careful in the future."
+        current_npc_text = fmt::sprintf(pNPCTopics[175].pText, // NOLINT: this is not ::sprintf.
+                                        fmt::format("{::}{}\f00000", colorTable.Sunflower.tag(),
+                                                    pItemTable->items[itemId].unidentifiedName));
+    }
+}
+
+// The shrine a pilgrimage visits is keyed to the CALENDAR month (the shrine events compare
+// MonthIs): months 0-6 are the seven stat shrines in display order, 7-11 the five resistance
+// shrines. Name sources per MM6.EXE 0x49786f: the stat-name table for 0-6, global.txt rows
+// 87/71/43/166/138 for 7-11.
+static std::string mm6ShrineNameForMonth(int month) {
+    if (month <= 6)
+        return localization->attributeName(static_cast<Attribute>(month));
+    static constexpr std::array<LstrId, 5> resistanceRows = {
+        LstrId(87), LstrId(71), LstrId(43), LstrId(166), LstrId(138)}; // Fire/Electricity/Cold/Poison/Magic.
+    return localization->str(resistanceRows[month - 7]);
+}
+
+// MM6's Seer "Pilgrimage" topic (npc topic 41, MM6.EXE handler @0x4A2F20): the Seer names the
+// current month's shrine, and - once a month, on the first visit in a new month - resets the
+// pilgrimage quest bits so the shrines' blessing can be collected again (the shrine events gate on
+// bit 206; bit 205 is cleared alongside but nothing in the shipped game sets or reads it). The
+// reset timestamp lives in MM6's own party struct, not the MM7 save format OE serializes, so like
+// the tavern state it does not survive save/load.
+static void mm6SeerPilgrimageDialogue() {
+    if (pParty->_mm6SeerNextPilgrimageReset < pParty->GetPlayingTime()) {
+        pParty->_questBits[QuestBit(205)] = false;
+        pParty->_questBits[QuestBit(206)] = false;
+        pParty->_mm6SeerNextPilgrimageReset = Time::fromMonths(pParty->GetPlayingTime().toMonths() + 1);
+    }
+
+    if (pParty->_questBits[QuestBit(206)]) {
+        current_npc_text = pNPCTopics[54].pText; // npctext row 55: "You must wait until the new month..."
+    } else {
+        // npctext row 54: "This is %s, the month of %s.  Journey to the Shrine of %s and pray there
+        // to be rewarded." - the EXE passes (month name, shrine name, shrine name).
+        std::string shrine = mm6ShrineNameForMonth(pParty->uCurrentMonth);
+        current_npc_text = fmt::sprintf(pNPCTopics[53].pText, // NOLINT: this is not ::sprintf.
+                                        localization->monthName(pParty->uCurrentMonth), shrine, shrine);
     }
 }
 
@@ -862,7 +970,8 @@ std::string npcDialogueOptionString(DialogueId topic, NPCData *npcData) {
 // unconditionally for NPC topics, so listing and intercepting these ids is faithful.)
 static bool isMm6ReservedNPCTopic(unsigned int eventId) {
     return engine->gameVersion() == GAME_VERSION_MM6 &&
-           ((eventId >= 381 && eventId <= 397) || (eventId >= 200 && eventId <= 259));
+           ((eventId >= 381 && eventId <= 397) || (eventId >= 200 && eventId <= 259) ||
+            eventId == 41 || eventId == 45 || eventId == 399 || eventId == 400);
 }
 
 std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
@@ -939,6 +1048,24 @@ DialogueId handleScriptedNPCTopicSelection(DialogueId topic, NPCData *npcData) {
             current_npc_text = pNPCTopics[eventId - 1].pText;
             topicEventId = eventId;
             return DIALOGUE_MASTERY_TEACHER_OFFER;
+        }
+        if (eventId == 41) { // The Seer's "Pilgrimage" (MM6.EXE @0x4A2F20).
+            mm6SeerPilgrimageDialogue();
+            return DIALOGUE_MAIN;
+        }
+        if (eventId == 45) { // The Seer's "I lost it" (MM6.EXE @0x496570).
+            mm6SeerLostItemDialogue();
+            return DIALOGUE_MAIN;
+        }
+        if (eventId == 399) {
+            // The town-hall bounty hunt as an NPC topic (Janice/Earnest/Jake carry it; MM6.EXE
+            // @0x4A30B0) - the same interaction the town-hall house dialogue offers.
+            auto [text, monsterId] = bountyHuntInteraction(npcData->house);
+            current_npc_text = bountyHuntReplyText(text, monsterId);
+            return DIALOGUE_MAIN;
+        }
+        if (eventId == 400) { // The Arena Master (MM6.EXE @0x4A3350) - MM7's arena descends from this.
+            return arenaMainDialogue();
         }
     }
     if (engine->gameVersion() == GAME_VERSION_MM7) {

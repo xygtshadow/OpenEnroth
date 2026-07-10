@@ -11,6 +11,7 @@
 
 #include "Engine/Data/AwardEnums.h"
 #include "Engine/Engine.h"
+#include "Engine/Localization.h"
 #include "Engine/Evt/EvtProgram.h"
 #include "Engine/Evt/Processor.h"
 #include "Engine/MapEnumFunctions.h"
@@ -5169,4 +5170,262 @@ GAME_TEST(Mm6, NpcSkillTeachers) {
     EXPECT_EQ(pParty->GetGold(), 1000);
     EXPECT_EQ(roderick.getSkillValue(SKILL_BLASTER), CombinedSkillValue(4, MASTERY_MASTER));
     leaveHouse(game);
+}
+
+// Finds a dialogue-option button in an open street NPC dialogue (GUIWindow_Dialogue, message
+// UIMSG_SelectNPCDialogueOption - the house-NPC variant above uses a different message id).
+static const GUIButton *findStreetDialogueOption(DialogueId topic) {
+    if (!pDialogueWindow)
+        return nullptr;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectNPCDialogueOption && button->msg_param == std::to_underlying(topic))
+            return button;
+    return nullptr;
+}
+
+static void selectStreetDialogueOption(EngineController &game, DialogueId topic) {
+    const GUIButton *option = findStreetDialogueOption(topic);
+    ASSERT_NE(option, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, option->rect.x + option->rect.w / 2,
+                               option->rect.y + option->rect.h / 2);
+    game.tick(2);
+}
+
+GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->GetPlayingTime() += Duration::fromHours(2); // 11:00, inside the Seer's open hours.
+    game.tick(1);
+
+    // The Seer (npcdata 9, house 169 in the Castle Ironfist region) carries MM6's two reserved
+    // Seer topics: 41 "Pilgrimage" and 45 "I lost it" (plus the ordinary hint script 46).
+    NPCData *seer = &pNPCStats->pNPCData[9];
+    EXPECT_EQ(seer->name, "The Seer");
+    ASSERT_EQ(seer->house, HouseId(169));
+    ASSERT_EQ(seer->dialogue_1_evt_id, 41);
+    ASSERT_EQ(seer->dialogue_2_evt_id, 45);
+    EXPECT_EQ(pNPCTopics[41].pTopic, "Pilgrimage");
+    EXPECT_EQ(pNPCTopics[45].pTopic, "I lost it");
+
+    ASSERT_TRUE(enterHouse(HouseId(169)));
+    createHouseUI(HouseId(169));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    auto escapeToHouseScreen = [&] {
+        for (int i = 0; i < 5 && pDialogueWindow; i++) {
+            game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+            game.tick(2);
+        }
+        ASSERT_EQ(pDialogueWindow, nullptr);
+        ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    };
+
+    // "I lost it" with nothing missing: the party still carries its starting Letter (item 505,
+    // armed by quest bit 181), so the reply is npctext row 175.
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(181)]);
+    ASSERT_TRUE(pParty->hasItem(ItemId(505)));
+    clickHouseNpcPortrait(game, seer);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_EQ(current_npc_text, pNPCTopics[174].pText); // "You never found it."
+    escapeToHouseScreen();
+
+    // Lose the Letter: the Seer replaces it (quest bit 181 + item 505 is the first table pair).
+    InventoryEntry letter = pParty->pCharacters[0].inventory.find(ItemId(505));
+    ASSERT_TRUE(letter);
+    pParty->pCharacters[0].inventory.take(letter);
+    ASSERT_FALSE(pParty->hasItem(ItemId(505)));
+    clickHouseNpcPortrait(game, seer);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
+    EXPECT_EQ(pParty->pPickedItem.itemId, ItemId(505)); // Handed over "in hands", like event item grants.
+    EXPECT_NE(current_npc_text, pNPCTopics[174].pText); // Row 176: "Here is the %s you have misplaced..."
+    EXPECT_TRUE(current_npc_text.contains(pItemTable->items[ItemId(505)].unidentifiedName));
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(pParty->pPickedItem));
+    pParty->takeHoldingItem();
+    escapeToHouseScreen();
+
+    // "Pilgrimage" names the current month's shrine ("This is %s, the month of %s. Journey to the
+    // Shrine of %s...", npctext row 54 - months 0-6 are the stat shrines in display order).
+    int month = pParty->uCurrentMonth;
+    std::string shrine = month <= 6
+        ? localization->attributeName(static_cast<Attribute>(month))
+        : localization->str(static_cast<LstrId>(std::array<int, 5>{87, 71, 43, 166, 138}[month - 7]));
+    std::string expected = fmt::sprintf(pNPCTopics[53].pText, localization->monthName(month), shrine, shrine); // NOLINT: this is not ::sprintf.
+    clickHouseNpcPortrait(game, seer);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(current_npc_text, expected);
+    escapeToHouseScreen();
+
+    // With this month's blessing already taken (quest bit 206), the Seer tells the party to wait.
+    pParty->_questBits[static_cast<QuestBit>(206)] = true;
+    clickHouseNpcPortrait(game, seer);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(current_npc_text, pNPCTopics[54].pText); // "You must wait until the new month..."
+    escapeToHouseScreen();
+    leaveHouse(game);
+
+    // A Seer visit in a NEW month resets the pilgrimage bits (MM6.EXE @0x4A2F20 recomputes the
+    // start-of-next-month timestamp and clears bits 205/206).
+    pParty->GetPlayingTime() += Duration::fromDays(28); // MM months are exactly 28 days.
+    game.tick(2);
+    ASSERT_NE(pParty->uCurrentMonth, month);
+    ASSERT_TRUE(enterHouse(HouseId(169)));
+    createHouseUI(HouseId(169));
+    game.tick(2);
+    clickHouseNpcPortrait(game, seer);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(206)]);
+    EXPECT_TRUE(current_npc_text.contains(localization->monthName(pParty->uCurrentMonth)));
+    escapeToHouseScreen();
+    leaveHouse(game);
+
+    // The shrine end of the loop: New Sorpigal's shrine (oute3 event 261) is the month-6 Luck
+    // shrine - Cmp(MonthIs, 6), then the whole party gets +10 permanent Luck once (quest bit 213)
+    // and the monthly blessing gate (bit 206) closes until the next Seer visit in a new month.
+    while (pParty->uCurrentMonth != 6) {
+        pParty->GetPlayingTime() += Duration::fromDays(28);
+        game.tick(1);
+    }
+    pParty->_questBits[static_cast<QuestBit>(206)] = false;
+    std::array<int, 4> luckBefore;
+    for (int i = 0; i < 4; i++)
+        luckBefore[i] = pParty->pCharacters[i]._stats[ATTRIBUTE_LUCK];
+    eventProcessor(261, Pid(), 1);
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(pParty->pCharacters[i]._stats[ATTRIBUTE_LUCK], luckBefore[i] + 10);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(206)]);
+    EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(213)]);
+
+    // Praying again the same month: blocked by bit 206, nothing changes.
+    eventProcessor(261, Pid(), 1);
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(pParty->pCharacters[i]._stats[ATTRIBUTE_LUCK], luckBefore[i] + 10);
+    game.tick(2);
+}
+
+GAME_TEST(Mm6, TownHallBountyTopic) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->GetPlayingTime() += Duration::fromHours(2); // 11:00, town halls open at 10:00.
+    game.tick(1);
+
+    // Janice, the New Sorpigal town-hall proprietor, carries the reserved bounty topic 399 in her
+    // third npcdata slot (MM6.EXE routes it to the bounty handler @0x4A30B0) - talking to her as a
+    // house occupant must open the same bounty interaction as the town-hall house option, not run
+    // global script 399.
+    NPCData *janice = &pNPCStats->pNPCData[291];
+    EXPECT_EQ(janice->name, "Janice");
+    ASSERT_EQ(janice->house, HouseId(89));
+    ASSERT_EQ(janice->dialogue_3_evt_id, 399);
+
+    ASSERT_TRUE(enterHouse(HouseId(89)));
+    createHouseUI(HouseId(89));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    clickHouseNpcPortrait(game, janice);
+    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_3);
+
+    // The first interaction generates the month's bounty for the New Sorpigal slot and announces it.
+    HouseId slot = HOUSE_FIRST_TOWN_HALL;
+    MonsterId target = pParty->monster_id_for_hunting[slot];
+    ASSERT_NE(target, MONSTER_INVALID);
+    EXPECT_TRUE(current_npc_text.contains(pMonsterStats->infos[target].name));
+    game.tick(2);
+}
+
+GAME_TEST(Mm6, ArenaFightAndPrize) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6's arena is the indoor map zarena.blv; the Arena Master is npcdata 307, reached through
+    // the map's SpeakNPC(307) event 5 (he is not a placed actor). His only topic is the reserved
+    // arena topic 400 (MM6.EXE @0x4A3350) - MM7's whole arena flow descends from it, so the fight
+    // rides the same code with MM6's own numbers.
+    NPCData *master = &pNPCStats->pNPCData[307];
+    EXPECT_EQ(master->name, "Arena Master");
+    ASSERT_EQ(master->dialogue_1_evt_id, 400);
+
+    game.teleportTo(pMapStats->GetMapInfo("zarena.blv"), Vec3f(0, 0, 0), 0);
+    game.teleportTo(pMapStats->GetMapInfo("zarena.blv"), Vec3f(3849, 5770, 1), 0);
+    game.tick(5);
+    ASSERT_EQ(pActors.size(), 0u); // The arena is empty until a fight is arranged.
+    ASSERT_EQ(pParty->arenaState, ARENA_STATE_INITIAL);
+
+    auto talkToArenaMaster = [&] {
+        eventProcessor(5, Pid(), 1); // zarena event 5 = SpeakNPC(307).
+        game.tick(2);
+        ASSERT_NE(pDialogueWindow, nullptr);
+    };
+
+    // First talk: the welcome screen offers the four difficulty tiers (labels are MM6's own
+    // global.txt rows 578-581, which MM7 kept at the same rows).
+    talkToArenaMaster();
+    selectStreetDialogueOption(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_PAGE), nullptr);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_SQUIRE), nullptr);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_KNIGHT), nullptr);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_LORD), nullptr);
+
+    // Pick Page: 6-8 monsters spawn at the fixed placements, drawn from every monsters.txt row
+    // 1-171 whose level fits the tier window - for a level-1 party that's [1, 1] (MM6's floor is 1,
+    // not MM7's 2). The dialogue closes and the party stands in the pit.
+    int characterMaxLevel = 0;
+    for (Character &character : pParty->pCharacters)
+        characterMaxLevel = std::max(characterMaxLevel, (int)character.GetActualLevel());
+    ASSERT_EQ(characterMaxLevel, 1);
+    selectStreetDialogueOption(game, DIALOGUE_ARENA_SELECT_PAGE);
+    game.tick(3);
+    EXPECT_EQ(pDialogueWindow, nullptr);
+    EXPECT_EQ(pParty->arenaState, ARENA_STATE_FIGHTING);
+    EXPECT_EQ(pParty->arenaLevel, ARENA_LEVEL_PAGE);
+    EXPECT_GE(pActors.size(), 6u);
+    EXPECT_LE(pActors.size(), 8u);
+    for (const Actor &actor : pActors)
+        EXPECT_EQ(pMonsterStats->infos[actor.monsterInfo.id].level, 1);
+    EXPECT_EQ(pParty->pos.x, 3849);
+    EXPECT_EQ(pParty->pos.y, 5770);
+
+    // Talking mid-fight sends the party back into the pit ("Get back in there you wimps").
+    pParty->pos = Vec3f(3000, 5000, 1);
+    talkToArenaMaster();
+    selectStreetDialogueOption(game, DIALOGUE_SCRIPTED_LINE_1);
+    game.tick(3);
+    EXPECT_EQ(pParty->pos.x, 3849);
+    EXPECT_EQ(pParty->pos.y, 5770);
+
+    // Win: prize = 50 x max party level for Page, every character gets MM6's award 84
+    // ("%u Page Arena Victories"), and the win counter ticks.
+    for (Actor &actor : pActors)
+        actor.aiState = Dead;
+    int goldBefore = pParty->GetGold();
+    talkToArenaMaster();
+    selectStreetDialogueOption(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(pParty->GetGold(), goldBefore + 50 * characterMaxLevel);
+    EXPECT_EQ(pParty->uNumArenaWins[ARENA_LEVEL_PAGE], 1);
+    EXPECT_EQ(pParty->arenaState, ARENA_STATE_WON);
+    for (Character &character : pParty->pCharacters)
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(84)]);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Asking again the same trip: no rematch, no second payout.
+    talkToArenaMaster();
+    selectStreetDialogueOption(game, DIALOGUE_SCRIPTED_LINE_1);
+    EXPECT_EQ(pParty->GetGold(), goldBefore + 50 * characterMaxLevel);
+    EXPECT_EQ(pParty->uNumArenaWins[ARENA_LEVEL_PAGE], 1);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Leaving the map resets the arena for the next visit.
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-9728, -11319, 160), 0);
+    game.tick(2);
+    EXPECT_EQ(pParty->arenaState, ARENA_STATE_INITIAL);
+    game.tick(2);
 }

@@ -385,6 +385,13 @@ struct Party {
     std::set<HouseId> _mm6TavernsDrunkIn;
     std::map<HouseId, std::string> _mm6TavernRumors;
 
+    // MM6 Seer pilgrimage state: when the party next visits the Seer's Pilgrimage topic at or past
+    // this time, the pilgrimage quest bits 205/206 reset and the timestamp advances to the start of
+    // the next month (MM6.EXE handler @0x4A2F20). Same transient class as the tavern state above -
+    // MM6's own party struct holds it, the MM7 save format OE serializes does not, so it resets on
+    // save/load.
+    Time _mm6SeerNextPilgrimageReset;
+
     /**
      * @return                          1-based index of currently active character. Zero means that there is no
      *                                  active character.

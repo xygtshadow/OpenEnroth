@@ -115,6 +115,7 @@ void Party::Zero() {
     uNumArcomageLoses = 0;
     _mm6TavernsDrunkIn.clear();
     _mm6TavernRumors.clear();
+    _mm6SeerNextPilgrimageReset = Time();
     bTurnBasedModeOn = false;
     uFlags2 = 0;
     alignment = PartyAlignment_Neutral;
