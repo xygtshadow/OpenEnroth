@@ -14,6 +14,8 @@
 #include "Engine/PriceCalculator.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Party.h"
+#include "Engine/Random/Random.h"
+#include "Engine/Tables/NPCTable.h"
 #include "Engine/mm7_data.h"
 #include "Engine/Engine.h"
 
@@ -21,6 +23,12 @@
 #include "Engine/Graphics/Viewport.h"
 
 #include "Media/MediaPlayer.h"
+
+#include "Utility/Segment.h"
+
+// MM6 global.txt row 399 is "Tip Barkeep"; MM7 reuses that row for "Neutral", so there is no
+// shared LSTR id for it.
+static constexpr LstrId MM6_LSTR_TIP_BARKEEP = static_cast<LstrId>(399);
 
 void GUIWindow_Tavern::mainDialogue() {
     if (!checkIfPlayerCanInteract()) {
@@ -30,6 +38,16 @@ void GUIWindow_Tavern::mainDialogue() {
     int pPriceRoom = PriceCalculator::tavernRoomCostForPlayer(&pParty->activeCharacter(), houseTable[houseId()]);
     int pPriceFood = PriceCalculator::tavernFoodCostForPlayer(&pParty->activeCharacter(), houseTable[houseId()]);
     int foodNum = houseTable[houseId()].fPriceMultiplier;
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // Labels for the flat MM6 menu, parallel to listDialogueOptions().
+        std::vector<std::string> optionsText = {localization->format(LSTR_RENT_ROOM_FOR_D_GOLD, pPriceRoom),
+                                                localization->format(LSTR_FILL_PACKS_TO_D_DAYS_FOR_D_GOLD, foodNum, pPriceFood),
+                                                localization->str(LSTR_HAVE_A_DRINK),
+                                                localization->str(MM6_LSTR_TIP_BARKEEP)};
+        drawOptions(optionsText, colorTable.PaleCanary);
+        return;
+    }
 
     std::vector<std::string> optionsText = {localization->format(LSTR_RENT_ROOM_FOR_D_GOLD, pPriceRoom),
                                             localization->format(LSTR_FILL_PACKS_TO_D_DAYS_FOR_D_GOLD, foodNum, pPriceFood),
@@ -131,6 +149,69 @@ void GUIWindow_Tavern::buyFoodDialogue() {
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
 }
 
+// MM6.EXE tavern handler, Drink case @0x49F45C: a drink costs a flat 1 gold and marks this tavern
+// as drunk-in (which is what gates Tip). Half the time the drinker hiccups aloud, and 1-in-3 of
+// those come down with the Drunk condition; on the sober half there is a 1-in-4 chance of a random
+// stat gaining an until-rest +5..10 bonus. The original shows no status line when short on gold
+// here - just the proprietor's refusal bark.
+void GUIWindow_Tavern::mm6DrinksDialogue() {
+    if (pParty->GetGold() < 1) {
+        playHouseSound(houseId(), HOUSE_SOUND_TAVERN_NOT_ENOUGH_GOLD);
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
+        return;
+    }
+
+    pParty->TakeGold(1);
+    engine->_statusBar->setEvent(LSTR_HIC);
+    playHouseSound(houseId(), HOUSE_SOUND_TAVERN_BUY_FOOD);
+    pParty->_mm6TavernsDrunkIn.insert(houseId());
+    _mm6RumorText.clear();
+
+    Character &drinker = pParty->activeCharacter();
+    if (grng->random(2) == 1) {
+        drinker.playReaction(SPEECH_TAVERN_GOT_DRUNK);
+        if (grng->random(3) == 1)
+            drinker.conditions.set(CONDITION_DRUNK, pParty->GetPlayingTime());
+    } else {
+        if (grng->random(4) == 1) {
+            Attribute stat = grng->randomSample(Segment(ATTRIBUTE_FIRST_STAT, ATTRIBUTE_LAST_STAT));
+            drinker._statBonuses[stat] += grng->random(6) + 5;
+        }
+        drinker.playReaction(SPEECH_TAVERN_DRINK);
+    }
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
+}
+
+// MM6.EXE tavern handler, Tip case @0x49F716: tipping needs a prior drink in THIS tavern and costs
+// 1 gold; the barkeep then tells a rumor from the same regional-news pool the street townsfolk
+// greet with. The rumor is rolled ONCE per tavern and cached in the party - later tips still cost
+// gold but repeat the same line (and only the first roll gets the thank-you voice line).
+void GUIWindow_Tavern::mm6TipDialogue() {
+    if (!pParty->_mm6TavernsDrunkIn.contains(houseId())) {
+        engine->_statusBar->setEvent(LSTR_HAVE_A_DRINK_FIRST);
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
+        return;
+    }
+    if (pParty->GetGold() < 1) {
+        engine->_statusBar->setEvent(LSTR_YOU_DONT_HAVE_ENOUGH_GOLD);
+        playHouseSound(houseId(), HOUSE_SOUND_TAVERN_NOT_ENOUGH_GOLD);
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
+        return;
+    }
+
+    pParty->TakeGold(1);
+    std::string &rumor = pParty->_mm6TavernRumors[houseId()];
+    if (rumor.empty()) {
+        rumor = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
+        if (pParty->hasActiveCharacter())
+            pParty->activeCharacter().playReaction(SPEECH_TAVERN_TIP);
+    }
+    _mm6RumorText = rumor;
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
+}
+
 void GUIWindow_Tavern::houseDialogueOptionSelected(DialogueId option) {
     _currentDialogue = option;
     if (option == DIALOGUE_TAVERN_ARCOMAGE_RESULT) {
@@ -168,6 +249,12 @@ void GUIWindow_Tavern::houseSpecificDialogue() {
       case DIALOGUE_TAVERN_BUY_FOOD:
         buyFoodDialogue();
         break;
+      case DIALOGUE_TAVERN_MM6_DRINKS:
+        mm6DrinksDialogue();
+        break;
+      case DIALOGUE_TAVERN_MM6_TIP:
+        mm6TipDialogue();
+        break;
       case DIALOGUE_LEARN_SKILLS:
         learnSkillsDialogue(colorTable.PaleCanary);
         break;
@@ -175,9 +262,25 @@ void GUIWindow_Tavern::houseSpecificDialogue() {
         engine->_messageQueue->addMessageCurrentFrame(UIMSG_Escape, 1, 0);
         break;
     }
+
+    // MM6 draws the tipped rumor in the dialogue panel for as long as it is current - it stays up
+    // in the main menu until the next drink (the EXE's [0x9DDEB8] check at its handler tail).
+    if (!_mm6RumorText.empty())
+        DrawDialoguePanel(_mm6RumorText);
 }
 
 std::vector<DialogueId> GUIWindow_Tavern::listDialogueOptions() {
+    // MM6 taverns have a flat four-option menu (MM6.EXE option factory tavern case @0x498828):
+    // Rest / Fill Packs / Have a Drink / Tip Barkeep. No Arcomage, and no skill teaching - the
+    // tavern skills (Stealing/Disarm/Perception) are thieves-guild subjects in MM6.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (_currentDialogue == DIALOGUE_MAIN) {
+            return {DIALOGUE_TAVERN_REST, DIALOGUE_TAVERN_BUY_FOOD,
+                    DIALOGUE_TAVERN_MM6_DRINKS, DIALOGUE_TAVERN_MM6_TIP};
+        }
+        return {};
+    }
+
     switch (_currentDialogue) {
       case DIALOGUE_MAIN:
         if (houseId() == HOUSE_TAVERN_EMERALD_ISLAND) {

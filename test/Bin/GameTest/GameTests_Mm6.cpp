@@ -4121,6 +4121,64 @@ static const GUIButton *findProprietorOption(DialogueId option) {
     return nullptr;
 }
 
+// MM6 taverns have a flat four-option menu (MM6.EXE option factory tavern case @0x498828): Rent
+// Room(15) / Fill Packs(16) / Have a Drink(25) / Tip Barkeep(26) - no Arcomage, no skill teaching.
+// A drink (handler @0x49F45C) costs a flat 1 gold and marks the tavern as drunk-in; half the time
+// the drinker hiccups and 1-in-3 of those turn Drunk, otherwise 1-in-4 grants an until-rest +5..10
+// bonus to a random stat. A tip (@0x49F716) needs a prior drink in THIS tavern ("Have a Drink
+// first..."), costs 1 gold, and tells a rumor from the regional-news pool - rolled once per tavern
+// and repeated verbatim on later tips.
+GAME_TEST(Mm6, TavernDrinksAndTip) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    EXPECT_EQ(houseTable[HouseId(92)].uType, HOUSE_TYPE_TAVERN);
+    enterLonelyKnightTavern(game); // A Lonely Knight, house 92.
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    openProprietorDialogue(game);
+
+    EXPECT_EQ(listProprietorOptions(), (std::vector<DialogueId>{DIALOGUE_TAVERN_REST, DIALOGUE_TAVERN_BUY_FOOD,
+                                                                DIALOGUE_TAVERN_MM6_DRINKS, DIALOGUE_TAVERN_MM6_TIP}));
+
+    pParty->SetGold(1000);
+
+    // Tipping before drinking here is refused: no gold spent, no rumor told.
+    clickProprietorOption(game, DIALOGUE_TAVERN_MM6_TIP);
+    EXPECT_EQ(pParty->GetGold(), 1000);
+    EXPECT_FALSE(pParty->_mm6TavernRumors.contains(HouseId(92)));
+
+    // Drinks: 1 gold each. Over 64 rounds the random effects must materialize on the drinker -
+    // Drunk lands at 1/6 per drink and a stat bonus at 1/8, so P(neither, 64 rounds) ~ 2.6e-10.
+    Character &drinker = pParty->activeCharacter();
+    bool anyEffect = false;
+    for (int i = 0; i < 64; i++) {
+        int goldBefore = pParty->GetGold();
+        clickProprietorOption(game, DIALOGUE_TAVERN_MM6_DRINKS);
+        EXPECT_EQ(pParty->GetGold(), goldBefore - 1);
+        anyEffect = anyEffect || drinker.conditions.has(CONDITION_DRUNK);
+        for (Attribute stat : drinker._statBonuses.indices())
+            anyEffect = anyEffect || drinker._statBonuses[stat] > 0;
+    }
+    EXPECT_TRUE(pParty->_mm6TavernsDrunkIn.contains(HouseId(92)));
+    EXPECT_TRUE(anyEffect);
+
+    // Tip: 1 gold, and the barkeep tells a news-pool rumor. It is cached for this tavern - a
+    // second tip costs another gold but repeats the same line.
+    int goldBefore = pParty->GetGold();
+    clickProprietorOption(game, DIALOGUE_TAVERN_MM6_TIP);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 1);
+    ASSERT_TRUE(pParty->_mm6TavernRumors.contains(HouseId(92)));
+    std::string rumor = pParty->_mm6TavernRumors[HouseId(92)];
+    EXPECT_FALSE(rumor.empty());
+    clickProprietorOption(game, DIALOGUE_TAVERN_MM6_TIP);
+    EXPECT_EQ(pParty->GetGold(), goldBefore - 2);
+    EXPECT_EQ(pParty->_mm6TavernRumors[HouseId(92)], rumor);
+
+    leaveHouse(game);
+    game.tick(5);
+}
+
 // MM6's fighter and thief guilds are membership skill-teaching houses. The model, from MM6.EXE:
 // - 2dEvents "Merc Guild" rows are houses 141-146, "Thieves Guild" rows 147-152. Every membership
 //   house (magic guilds 119-140 included) maps to a per-house membership award bit via the word

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "GUI/UI/UIHouses.h"
@@ -23,4 +24,10 @@ class GUIWindow_Tavern : public GUIWindow_House {
     void arcomageResultDialogue();
     void restDialogue();
     void buyFoodDialogue();
+    void mm6DrinksDialogue();
+    void mm6TipDialogue();
+
+    // The rumor currently shown in the dialogue panel after a Tip (MM6.EXE's [0x9DDEB8] text id) -
+    // per-visit display state; the per-tavern rumor itself is cached in Party::_mm6TavernRumors.
+    std::string _mm6RumorText;
 };

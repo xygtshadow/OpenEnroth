@@ -113,6 +113,8 @@ void Party::Zero() {
     _autonoteBits.reset();
     uNumArcomageWins = 0;
     uNumArcomageLoses = 0;
+    _mm6TavernsDrunkIn.clear();
+    _mm6TavernRumors.clear();
     bTurnBasedModeOn = false;
     uFlags2 = 0;
     alignment = PartyAlignment_Neutral;

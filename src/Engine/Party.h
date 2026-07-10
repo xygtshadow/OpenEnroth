@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <array>
+#include <map>
+#include <set>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -373,6 +375,15 @@ struct Party {
     // ever sets it. The stored mastery selects the resurrect HP tier (Novice 1 / Expert half / Master full).
     Time _mm6GuardianAngelExpireTime;
     Mastery _mm6GuardianAngelMastery = MASTERY_NONE;
+
+    // MM6 tavern state: the taverns the party has bought a drink in (gates the Tip option - MM6.EXE
+    // bit array at party+0x180, bit = houseId-92), and the rumor each tavern's barkeep tells once
+    // tipped (the EXE caches the rolled npcnews row per house at party+0x127+houseId, so re-tipping
+    // repeats the same line). Both live in MM6's own party struct and thus its savegames, but like
+    // _mm6GuardianAngelExpireTime they are not part of the fixed MM7 save format OE serializes, so
+    // they do not survive save/load.
+    std::set<HouseId> _mm6TavernsDrunkIn;
+    std::map<HouseId, std::string> _mm6TavernRumors;
 
     /**
      * @return                          1-based index of currently active character. Zero means that there is no
