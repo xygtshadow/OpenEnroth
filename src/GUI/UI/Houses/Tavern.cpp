@@ -203,7 +203,7 @@ void GUIWindow_Tavern::mm6TipDialogue() {
     pParty->TakeGold(1);
     std::string &rumor = pParty->_mm6TavernRumors[houseId()];
     if (rumor.empty()) {
-        rumor = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
+        rumor = pNPCStats->pickRandomNewsEntry(engine->_currentLoadedMapId).text;
         if (pParty->hasActiveCharacter())
             pParty->activeCharacter().playReaction(SPEECH_TAVERN_TIP);
     }

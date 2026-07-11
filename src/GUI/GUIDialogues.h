@@ -22,9 +22,12 @@ enum class DialogueId : int32_t {
     DIALOGUE_USE_HIRED_NPC_ABILITY = 9,
     DIALOGUE_TEMPLE_HEAL = 10,
     DIALOGUE_TEMPLE_DONATE = 11,
-    DIALOGUE_12 = 12,
+    // MM6 street-NPC dialogue kind 12: the profession small talk - labeled with the current
+    // weekday's proftext.txt topic, replies with its text.
+    DIALOGUE_STREET_MM6_PROF_TOPIC = 12,
     DIALOGUE_13_hiring_related = 13,
-    DIALOGUE_14 = 14,
+    // MM6 street-NPC dialogue kind 14: the regional news line assigned to the NPC at first talk.
+    DIALOGUE_STREET_MM6_NEWS = 14,
     DIALOGUE_TAVERN_REST = 15,
     DIALOGUE_TAVERN_BUY_FOOD = 16,
     DIALOGUE_TRAINING_HALL_TRAIN = 17,
@@ -114,6 +117,11 @@ enum class DialogueId : int32_t {
     // MM6-only stable option for Loretta Fleise's Price Fixing council quest (MM6.EXE dialogue
     // kind 74 - that value is taken by the skill-learning band here, so it gets its own id).
     DIALOGUE_TRANSPORT_MM6_PRICE_FIXING = 109,
+    // MM6-only street-NPC options offered when a citizen refuses to talk (fame/reputation gate).
+    // MM6.EXE dialogue kinds 22/23/24 - those values are taken by the scripted-line band here.
+    DIALOGUE_STREET_MM6_BEG = 110,
+    DIALOGUE_STREET_MM6_THREATEN = 111,
+    DIALOGUE_STREET_MM6_BRIBE = 112,
 
     DIALOGUE_OTHER = -1,
 

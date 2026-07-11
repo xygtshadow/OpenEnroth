@@ -1,11 +1,13 @@
 #include "UIDialogue.h"
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 #include <string>
 
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Image.h"
+#include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Localization.h"
 #include "Engine/Objects/Actor.h"
@@ -22,6 +24,7 @@
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIHouses.h"
+#include "GUI/UI/UIStatusBar.h"
 #include "GUI/UI/NPCTopics.h"
 
 #include "Io/KeyboardInputHandler.h"
@@ -43,17 +46,23 @@ const IndexedArray<std::string, PartyAlignment_Good, PartyAlignment_Evil> dialog
 
 void initializeNPCDialogue(int npcId, int bPlayerSaysHello, Actor *actor) {
     pNPCStats->dword_AE336C_LastMispronouncedNameFirstLetter = -1;
+    pNPCStats->mm6LastAddressingAwardPick = -1;
     pEventTimer->setPaused(true);
     pMiscTimer->setPaused(true);
     speakingNpcId = npcId;
     currentSpeakingActor = actor;
     NPCData *pNPCInfo = getNPCData(npcId);
-    if (!(pNPCInfo->flags & NPC_GREETED_SECOND)) {
-        if (pNPCInfo->flags & NPC_GREETED_FIRST) {
-            pNPCInfo->flags &= ~NPC_GREETED_FIRST;
-            pNPCInfo->flags |= NPC_GREETED_SECOND;
-        } else {
-            pNPCInfo->flags |= NPC_GREETED_FIRST;
+    if (engine->gameVersion() != GAME_VERSION_MM6) {
+        // MM7 greeted-once/greeted-before bookkeeping. MM6's greet byte is a STATE machine instead
+        // (0 never talked / 1 talked / 2 begged / 3 bribed / 4 threatened) written by the option
+        // clicks; opening the dialogue leaves it alone (MM6.EXE 0x43BE50).
+        if (!(pNPCInfo->flags & NPC_GREETED_SECOND)) {
+            if (pNPCInfo->flags & NPC_GREETED_FIRST) {
+                pNPCInfo->flags &= ~NPC_GREETED_FIRST;
+                pNPCInfo->flags |= NPC_GREETED_SECOND;
+            } else {
+                pNPCInfo->flags |= NPC_GREETED_FIRST;
+            }
         }
     }
 
@@ -106,12 +115,121 @@ void initializeNPCDialogue(int npcId, int bPlayerSaysHello, Actor *actor) {
     pDialogueWindow = std::make_unique<GUIWindow_Dialogue>(DIALOG_WINDOW_FULL);
 
     if (bPlayerSaysHello && pParty->hasActiveCharacter() && !pNPCInfo->Hired()) {
-        if (pParty->uCurrentHour < 5 || pParty->uCurrentHour > 21) {
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            // MM6.EXE 0x43C08B: the hello reaction is picked by the party's display reputation,
+            // not by the hour - MM6's speech bank keeps a friendly and a wary hello in these slots.
+            pParty->activeCharacter().playReaction(pParty->GetPartyReputation() >= 0 ? SPEECH_GOOD_DAY : SPEECH_GOOD_EVENING);
+        } else if (pParty->uCurrentHour < 5 || pParty->uCurrentHour > 21) {
             pParty->activeCharacter().playReaction(SPEECH_GOOD_EVENING);
         } else {
             pParty->activeCharacter().playReaction(SPEECH_GOOD_DAY);
         }
     }
+}
+
+// MM6's NPC greet state (the low bits of the flags byte): 0 = never talked to, 1 = talked to,
+// 2 = begged, 3 = bribed, 4 = threatened. The hired bit 0x80 lives in the same byte.
+static int mm6GreetState(const NPCData *npc) {
+    return std::to_underlying(npc->flags) & 0x7f;
+}
+
+// The MM6 street reputation gate (MM6.EXE 0x43BF71): no requirement always passes; a good NPC
+// (positive requirement) demands display reputation ABOVE it, an evil one (negative) demands
+// display reputation BELOW it.
+static bool mm6RepGatePassed(const NPCData *npc) {
+    if (npc->rep == 0)
+        return true;
+    int reputation = pParty->GetPartyReputation();
+    if (reputation > 0 && npc->rep > 0 && reputation > npc->rep)
+        return true;
+    return reputation < 0 && npc->rep < 0 && reputation < npc->rep;
+}
+
+// Which menu an MM6 street NPC offers (MM6.EXE 0x43BF39): hired NPCs always talk; then the fame
+// gate, then by greet state - begged/bribed-before keep only the Beg/Threaten/Bribe menu (a bribe
+// must be paid again on every visit; a beggar gets brushed off), threatened-before talk forever,
+// and fresh conversations run the reputation gate.
+static Mm6StreetDialoguePage mm6StreetPageFor(const NPCData *npc) {
+    if (npc->flags & NPC_HIRED)
+        return MM6_STREET_PAGE_TALK;
+    if (pParty->getPartyFame() <= npc->fame)
+        return MM6_STREET_PAGE_FAME_REFUSAL;
+    switch (mm6GreetState(npc)) {
+      case 2:
+      case 3:
+        return MM6_STREET_PAGE_BTB;
+      case 4:
+        return MM6_STREET_PAGE_TALK;
+      default:
+        return mm6RepGatePassed(npc) ? MM6_STREET_PAGE_TALK : MM6_STREET_PAGE_BTB;
+    }
+}
+
+// The character whose voice and stats street dialogue uses - the active one, like MM6.EXE's
+// [0x4D50E8] (falling back to the first character when nobody is active).
+static Character &mm6Speaker() {
+    return pParty->hasActiveCharacter() ? pParty->activeCharacter() : pParty->pCharacters[0];
+}
+
+static int mm6SpeakerId() {
+    return pParty->hasActiveCharacter() ? pParty->activeCharacterIndex() - 1 : 0;
+}
+
+// One npcbtb.txt reaction line for the NPC's personality, %-tokens expanded.
+static std::string mm6BtbText(int row, NPCData *npc) {
+    NpcPersonality personality = pNPCStats->mm6PersonalityByProfession[npc->profession];
+    return BuildDialogueString(pNPCStats->mm6BtbTexts[row][personality], mm6SpeakerId(), npc);
+}
+
+// The greeting an MM6 street NPC opens with - the npcbtb.txt row selection of the dialogue text
+// drawer (MM6.EXE 0x43AEB3): fame refusal, beg/bribe/threat returns, or a reputation-flavored
+// greeting/refusal with distinct first-visit and repeat-visit lines.
+static std::string mm6StreetGreeting(NPCData *npc) {
+    if (!npc->Hired() && pParty->getPartyFame() <= npc->fame)
+        return mm6BtbText(6, npc); // Fame too low.
+
+    int greet = mm6GreetState(npc);
+    if (greet >= 2 && greet <= 4)
+        return mm6BtbText(greet + 1, npc); // Rows 3/4/5: begged / bribed / threatened before.
+
+    int reputation = pParty->GetPartyReputation();
+    int required = npc->rep;
+    if (mm6RepGatePassed(npc)) {
+        if (reputation <= -1000 && required < 0)
+            return mm6BtbText(8, npc); // Notorious party, evil NPC: an extra-warm welcome.
+        if (reputation >= 1000 && required > 0)
+            return mm6BtbText(9, npc); // Saintly party, good NPC.
+        return mm6BtbText(greet == 0 ? 1 : 2, npc); // The plain first/repeat greeting.
+    }
+    if (reputation <= -1000 && required > 0)
+        return mm6BtbText(7, npc); // Notorious party, good NPC.
+    if (reputation >= 1000 && required < 0)
+        return mm6BtbText(10, npc); // Saintly party, evil NPC.
+    int base = greet == 0 ? 11 : 15; // Rows 11-14 on the first visit, 15-18 on repeats.
+    if (reputation <= 0 && required > 0)
+        return mm6BtbText(base, npc); // "Rep below zero".
+    if (reputation >= 0 && required < 0)
+        return mm6BtbText(base + 1, npc); // "Rep above ten, and I'm evil".
+    if (reputation > 0 && required >= reputation)
+        return mm6BtbText(base + 2, npc); // "You aren't good enough".
+    return mm6BtbText(base + 3, npc); // "You aren't bad enough".
+}
+
+int mm6DiplomacyBonus(const Character &character) {
+    CombinedSkillValue diplomacy = character.pActiveSkills[SKILL_DIPLOMACY];
+    int level = diplomacy.level();
+    if (CheckHiredNPCSpeciality(Counselor))
+        level += 4;
+    if (CheckHiredNPCSpeciality(Barrister))
+        level += 8;
+    if (CheckHiredNPCSpeciality(Negotiator))
+        level += 4;
+    int multiplier = diplomacy.mastery() >= MASTERY_MASTER ? 4 : diplomacy.mastery() == MASTERY_EXPERT ? 3 : 2;
+    return level * multiplier;
+}
+
+int mm6BribeCost() {
+    return std::max(10, (100 - mm6DiplomacyBonus(mm6Speaker())) * (pParty->_mm6NpcBribeCount + 1) / 2);
 }
 
 GUIWindow_Dialogue::GUIWindow_Dialogue(DialogWindowType type) : GUIWindow(WINDOW_Dialogue, {0, 0}, render->GetRenderDimensions()) {
@@ -129,12 +247,27 @@ GUIWindow_Dialogue::GUIWindow_Dialogue(DialogWindowType type) : GUIWindow(WINDOW
     NPCData *speakingNPC = getNPCData(speakingNpcId);
     std::vector<DialogueId> optionList;
 
-    if (engine->gameVersion() == GAME_VERSION_MM6 && getNPCType(speakingNpcId) == NPC_TYPE_HIREABLE)
-        _mm6NewsGreeting = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
-
     if (type == DIALOG_WINDOW_FULL) {
         if (getNPCType(speakingNpcId) == NPC_TYPE_QUEST) {
             optionList = prepareScriptedNPCDialogueTopics(speakingNPC);
+        } else if (engine->gameVersion() == GAME_VERSION_MM6) {
+            // MM6 street menu (MM6.EXE window pages @0x4195F9): an NPC that talks offers the
+            // profession small talk / Join / News trio; one that refuses over reputation (or was
+            // begged or bribed before) offers only Beg / Threaten / Bribe; one that refuses over
+            // fame offers nothing. The news line is assigned once per NPC, at the first dialogue.
+            if (speakingNPC->mm6News.text.empty())
+                speakingNPC->mm6News = pNPCStats->pickRandomNewsEntry(engine->_currentLoadedMapId);
+            _mm6StreetPage = mm6StreetPageFor(speakingNPC);
+            switch (_mm6StreetPage) {
+              case MM6_STREET_PAGE_TALK:
+                optionList = {DIALOGUE_STREET_MM6_PROF_TOPIC, DIALOGUE_HIRE_FIRE, DIALOGUE_STREET_MM6_NEWS};
+                break;
+              case MM6_STREET_PAGE_FAME_REFUSAL:
+                break;
+              case MM6_STREET_PAGE_BTB:
+                optionList = {DIALOGUE_STREET_MM6_BEG, DIALOGUE_STREET_MM6_THREATEN, DIALOGUE_STREET_MM6_BRIBE};
+                break;
+            }
         } else if (speakingNPC->canJoin) {
             optionList = {DIALOGUE_PROFESSION_DETAILS, DIALOGUE_HIRE_FIRE};
         }
@@ -215,6 +348,33 @@ void GUIWindow_Dialogue::Update() {
             dialogue_string = BuildDialogueString(pNPCStats->pProfessions[pNPC->profession].pJoinText, 0, pNPC);
             break;
 
+        case DIALOGUE_STREET_MM6_PROF_TOPIC:
+            // The profession's small talk for the current weekday, drawn raw (MM6.EXE 0x43AD0B).
+            dialogue_string = pNPCStats->mm6ProfText[pNPC->profession][pParty->uCurrentDayOfMonth % 7].text;
+            break;
+
+        case DIALOGUE_STREET_MM6_NEWS:
+            dialogue_string = pNPC->mm6News.text;
+            break;
+
+        case DIALOGUE_HIRE_FIRE:
+            // Displayed only when an MM6 one-click Join failed (not enough gold / party full) -
+            // success closes the dialogue. The join offer stays up, like MM6.EXE's state 13.
+            dialogue_string = BuildDialogueString(pNPCStats->pProfessions[pNPC->profession].pJoinText, 0, pNPC);
+            break;
+
+        case DIALOGUE_STREET_MM6_BEG:
+            dialogue_string = mm6BtbText(pNPCStats->mm6PersonalityAcceptsBeg[pNPCStats->mm6PersonalityByProfession[pNPC->profession]] ? 19 : 20, pNPC);
+            break;
+
+        case DIALOGUE_STREET_MM6_THREATEN:
+            dialogue_string = mm6BtbText(pNPCStats->mm6PersonalityAcceptsThreat[pNPCStats->mm6PersonalityByProfession[pNPC->profession]] ? 23 : 24, pNPC);
+            break;
+
+        case DIALOGUE_STREET_MM6_BRIBE:
+            dialogue_string = mm6BtbText(pNPCStats->mm6PersonalityAcceptsBribe[pNPCStats->mm6PersonalityByProfession[pNPC->profession]] ? 21 : 22, pNPC);
+            break;
+
         case DIALOGUE_PROFESSION_DETAILS: {
             if (dialogue_show_profession_details) {
                 dialogue_string = BuildDialogueString(pNPCStats->pProfessions[pNPC->profession].pBenefits, 0, pNPC);
@@ -258,8 +418,8 @@ void GUIWindow_Dialogue::Update() {
 
                 if (pNPC->Hired()) {
                     dialogue_string = BuildDialogueString(prof->pDismissText, 0, pNPC);
-                } else if (!_mm6NewsGreeting.empty()) {
-                    dialogue_string = _mm6NewsGreeting;
+                } else if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    dialogue_string = mm6StreetGreeting(pNPC);
                 } else {
                     dialogue_string = BuildDialogueString(prof->pJoinText, 0, pNPC);
                 }
@@ -343,6 +503,74 @@ void BuildHireableNpcDialogue() {
     pDialogueWindow = std::make_unique<GUIWindow_Dialogue>(DIALOG_WINDOW_HIRE_FIRE_SHORT);
 }
 
+// The MM6 Beg / Threaten / Bribe click handlers (MM6.EXE 0x4A3E19 / 0x4A3F16 / 0x4A4077). Whether
+// the NPC gives in is purely its personality's npcbtb.txt flag; success writes the greet state
+// (2/3/4) and costs reputation - the better the speaker's Diplomacy, the less: -max(0, 10/50/20 -
+// bonus) for beg/threaten/bribe. A bribe also costs gold, rising with every bribe ever paid, and a
+// refused personality doesn't take the money. The reaction text itself is keyed off the same
+// personality flag by the drawer, so the handlers only fire speech and mutate state.
+static void mm6StreetBtbAction(DialogueId option, NPCData *npc) {
+    NpcPersonality personality = pNPCStats->mm6PersonalityByProfession[npc->profession];
+    auto setGreetState = [&](int state) {
+        npc->flags = NpcFlags((std::to_underlying(npc->flags) & std::to_underlying(NPC_HIRED)) | state);
+    };
+    auto loseReputation = [&](int base) {
+        currentLocationInfo().reputation -= std::max(0, base - mm6DiplomacyBonus(mm6Speaker()));
+    };
+    auto playSpeech = [&](SpeechId speech) {
+        if (pParty->hasActiveCharacter())
+            pParty->activeCharacter().playReaction(speech);
+    };
+
+    switch (option) {
+      case DIALOGUE_STREET_MM6_BEG:
+        if (mm6GreetState(npc) == 2) {
+            // Begging worked once already - back to the row-3 brush-off greeting (MM6.EXE 0x4A3E26).
+            static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get())->setDisplayedDialogueType(DIALOGUE_MAIN);
+            return;
+        }
+        if (pNPCStats->mm6PersonalityAcceptsBeg[personality]) {
+            setGreetState(2);
+            loseReputation(10);
+            playSpeech(SPEECH_BEG);
+        } else {
+            playSpeech(SPEECH_BEG_FAIL);
+        }
+        return;
+
+      case DIALOGUE_STREET_MM6_THREATEN:
+        if (pNPCStats->mm6PersonalityAcceptsThreat[personality]) {
+            setGreetState(4);
+            loseReputation(50);
+            playSpeech(SPEECH_THREAT);
+        } else {
+            playSpeech(SPEECH_THREAT_FAIL);
+        }
+        return;
+
+      default: {
+        assert(option == DIALOGUE_STREET_MM6_BRIBE);
+        if (!pNPCStats->mm6PersonalityAcceptsBribe[personality]) {
+            playSpeech(SPEECH_BRIBE_FAIL);
+            return;
+        }
+        int cost = mm6BribeCost();
+        if (pParty->GetGold() < cost) {
+            engine->_statusBar->setEvent(LSTR_YOU_DONT_HAVE_ENOUGH_GOLD);
+            playSpeech(SPEECH_NOT_ENOUGH_GOLD);
+            static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get())->setDisplayedDialogueType(DIALOGUE_MAIN);
+            return;
+        }
+        pParty->TakeGold(cost);
+        setGreetState(3);
+        pParty->_mm6NpcBribeCount++;
+        loseReputation(20);
+        playSpeech(SPEECH_BRIBE);
+        return;
+      }
+    }
+}
+
 void selectNPCDialogueOption(DialogueId option) {
     NPCData *speakingNPC = getNPCData(speakingNpcId);
 
@@ -350,6 +578,12 @@ void selectNPCDialogueOption(DialogueId option) {
 
     if (!speakingNPC->flags) {
         speakingNPC->flags = NPC_GREETED_FIRST;
+    }
+
+    if (option == DIALOGUE_STREET_MM6_BEG || option == DIALOGUE_STREET_MM6_THREATEN ||
+        option == DIALOGUE_STREET_MM6_BRIBE) {
+        mm6StreetBtbAction(option, speakingNPC);
+        return;
     }
 
     if (option >= DIALOGUE_SCRIPTED_LINE_1 && option <= DIALOGUE_SCRIPTED_LINE_6) {

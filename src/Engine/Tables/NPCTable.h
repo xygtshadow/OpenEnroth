@@ -2,6 +2,7 @@
 
 #include <string>
 #include <array>
+#include <span>
 #include <vector>
 
 #include "Application/Paths/GameVersion.h"
@@ -37,14 +38,27 @@ struct NPCTopic {
     std::string pText;
 };
 
+// One row of MM6's npcnews.txt - the "Regional News" gossip that street townsfolk tell when talked to.
+struct RegionalNewsEntry {
+    std::string topic; // Dev-facing topic name, e.g. "Goblinwatch". Labels the "News" dialogue option.
+    std::string text; // The news line itself.
+};
+
 struct NPCData {  // 4Ch
     inline bool Hired() { return flags & NPC_HIRED; }
 
     std::string name; // Actual NPC name as displayed in-game.
     unsigned int portraitId = 0; // Portrait texture is "npcXXX" in icons.lod.
     NpcFlags flags = 0;
-    int fame = 0; // Fame requirement for NPC to talk to the party, unused.
-    int rep = 0; // NPC's reputation, is it even used in the game?
+    // Fame requirement for the NPC to talk to the party. Live in MM6 street dialogue: party fame
+    // (total experience / 1000) must EXCEED it or the NPC refuses to talk (npcbtb.txt row 6).
+    // Unused in MM7 (the gate survives only as #if 0 code).
+    int fame = 0;
+    // Reputation requirement, signed: positive = a good NPC that demands display reputation > rep,
+    // negative = an evil NPC that demands display reputation < rep. Live in MM6 street dialogue -
+    // failing it gets a refusal greeting and only the Beg/Threaten/Bribe options. Generated street
+    // citizens roll it (see initializeMm6StreetCitizen), fixed NPCs carry it in npcdata.txt.
+    int rep = 0;
     HouseId house = HOUSE_INVALID; // House where this NPC is in.
     NpcProfession profession = NoProfession;
     int greetingIndex = 0; // Index into "npcgreet.txt" for this NPC's greeting.
@@ -59,6 +73,10 @@ struct NPCData {  // 4Ch
     Sex sex = SEX_MALE;
     int hasUsedAbility = 0;
     int newsTopic = 0;
+    // MM6: the regional news line behind this NPC's "News" dialogue option, picked once at first
+    // dialogue (MM6.EXE 0x43BC20 stores an npcnews.txt index in the NPC's NewsTopic field, so the
+    // NPC repeats the same line forever). Transient - street citizens live per map session.
+    RegionalNewsEntry mm6News;
 };
 
 struct NPCSacrificeStatus {
@@ -85,10 +103,11 @@ struct NPCGreeting {
     std::string pGreeting2;  // at latest meets
 };
 
-// One row of MM6's npcnews.txt - the "Regional News" gossip that street townsfolk tell when talked to.
-struct RegionalNewsEntry {
-    std::string topic; // Dev-facing topic name, e.g. "Goblinwatch".
-    std::string text; // The news line itself.
+// One weekday's profession small talk from MM6's proftext.txt - the topic labels the profession
+// dialogue option, the text is the reply.
+struct Mm6ProfDayText {
+    std::string topic;
+    std::string text;
 };
 
 struct NPCStats {
@@ -102,20 +121,44 @@ struct NPCStats {
     void InitializeNPCGreets(const Blob &npcGreets);
     void InitializeNPCGroups(const Blob &npcGroups);
     void InitializeNPCNews(const Blob &npcNews, GameVersion version);
+
+    /**
+     * Parses MM6's npcbtb.txt ("beg/threaten/bribe") - per-personality flags for which of the three
+     * work at all, plus the whole street-dialogue reaction text matrix (greetings by reputation
+     * band, refusals, beg/bribe/threat accept and refuse lines). MM6 only.
+     */
+    void InitializeNPCBtb(const Blob &npcBtb);
+
+    /**
+     * Parses MM6's proftext.txt - per-profession weekday small talk. The current weekday's topic
+     * labels a street citizen's profession dialogue option, the text is the reply. MM6 only.
+     */
+    void InitializeMm6ProfText(const Blob &profText);
+
     void InitializeAdditionalNPCs(NPCData *pNPCDataBuff, MonsterId npc_uid,
                                   HouseId uLocation2D, MapId uMapId);
 
     /**
      * Generates an MM6 street citizen into `npc`. MM6 street townsfolk aren't npcdata NPCs - the
-     * original generates a random citizen when the party first talks to a peasant actor: name by sex
-     * from npcnames.txt, profession weighted by npcprof.txt's "Random Chance" column (same weights on
-     * every map), portrait from the dedicated commoner block npc501..npc554.
+     * original generates a random citizen when the party first talks to a peasant actor
+     * (MM6.EXE 0x469210): name by sex from npcnames.txt, portrait from per-sex pools over the
+     * regular npcdata portrait space (tables @0x4C13F0/0x4C15D0), profession weighted by
+     * npcprof.txt's "Random Chance" column (same weights on every map), and a rolled reputation
+     * requirement (d100: 59% none, 30% > +200, 5% < -300, 3% > +400, 3% < -600) that gates whether
+     * the citizen talks to the party at all.
      *
      * @param npc                       Slot in `pAdditionalNPC` to fill.
      * @param sex                       Citizen sex, from the peasant's monster row (the PeasantF / PeasantM models).
      * @param mapId                     Map the citizen lives on.
      */
     void initializeMm6StreetCitizen(NPCData *npc, Sex sex, MapId mapId);
+
+    /**
+     * @param sex                       Citizen sex.
+     * @return                          MM6's street-citizen portrait pool for that sex - portrait ids into the
+     *                                  regular npcXXX space (MM6.EXE tables @0x4C13F0 male / @0x4C15D0 female).
+     */
+    static std::span<const int> mm6CitizenPortraitPool(Sex sex);
 
     /**
      * Rolls a random profession weighted by `pProfessionChance` for the given map (MM7: npcdist.txt
@@ -151,18 +194,32 @@ struct NPCStats {
     const std::string &sub_495366_MispronounceName(char firstLetter, Sex gender);
 
     /**
-     * Picks a random news line for a street townsfolk chat - either regional news for the given map or a
-     * kingdom-wide rumor, uniformly across both pools. Only populated for MM6 (from npcnews.txt).
+     * Picks a random news entry for a street townsfolk chat / tavern rumor: a regional entry for the
+     * given map if it has any, else a kingdom-wide rumor (MM6.EXE 0x43BC20 falls back to the map-1
+     * pool when the current map has no news of its own). Only populated for MM6 (from npcnews.txt).
      *
      * @param map                       Map the party is on.
-     * @return                          News line text, or an empty string if no news is loaded.
+     * @return                          The picked entry, or an empty one if no news is loaded.
      */
-    std::string pickRandomNewsLine(MapId map) const;
+    RegionalNewsEntry pickRandomNewsEntry(MapId map) const;
 
     std::array<NPCData, 501> pOriginalNPCData; // NPC data as read from npcdata.txt.
     std::array<NPCData, 501> pNPCData; // NPC data used during the game.
     IndexedArray<std::vector<std::string>, SEX_FIRST, SEX_LAST> pNPCNames = {};
     IndexedArray<NPCProfession, NPC_PROFESSION_FIRST, NPC_PROFESSION_LAST> pProfessions = {};
+    // MM6: npcprof.txt's "Personality" column - keys all npcbtb.txt lookups below.
+    IndexedArray<NpcPersonality, NPC_PROFESSION_FIRST, NPC_PROFESSION_LAST> mm6PersonalityByProfession = {{}};
+    // MM6 npcbtb.txt: which personalities accept begging / bribes / threats at all.
+    IndexedArray<bool, PERSONALITY_FIRST, PERSONALITY_LAST> mm6PersonalityAcceptsBeg = {{}};
+    IndexedArray<bool, PERSONALITY_FIRST, PERSONALITY_LAST> mm6PersonalityAcceptsBribe = {{}};
+    IndexedArray<bool, PERSONALITY_FIRST, PERSONALITY_LAST> mm6PersonalityAcceptsThreat = {{}};
+    // MM6 npcbtb.txt reaction texts, indexed by the file's Msg# rows 1..24 (row 0 unused, like
+    // MM6.EXE's own Text[25][13] @0x6B99A8): 1/2 greetings, 3/4/5 begged/bribed/threatened-before
+    // returns, 6 fame too low, 7-18 reputation greetings and refusals, 19-24 beg/bribe/threat
+    // accept and refuse lines.
+    std::array<IndexedArray<std::string, PERSONALITY_FIRST, PERSONALITY_LAST>, 25> mm6BtbTexts;
+    // MM6 proftext.txt: per-profession weekday small talk, [profession][day of week 0-6, Sunday first].
+    IndexedArray<std::array<Mm6ProfDayText, 7>, NPC_PROFESSION_FIRST, NPC_PROFESSION_LAST> mm6ProfText = {{}};
     std::array<NPCData, 100> pAdditionalNPC = {{}};
     std::array<std::string, 52> pCatchPhrases{};   // 15CA4h
     IndexedArray<std::vector<RegionalNewsEntry>, MAP_FIRST, MAP_LAST> pRegionalNews = {{}}; // MM6 npcnews.txt, keyed by map.
@@ -181,6 +238,10 @@ struct NPCStats {
 
     static int dword_AE336C_LastMispronouncedNameFirstLetter;
     static int dword_AE3370_LastMispronouncedNameResult;
+    // MM6: which of the speaker's fame-worthy awards the %08 token names - rolled once per
+    // dialogue so the line doesn't change between frames (MM6.EXE cache @0x944C60, reset at
+    // dialogue open). -1 = not rolled yet.
+    static int mm6LastAddressingAwardPick;
 };
 
 extern std::array<NPCTopic, 789> pNPCTopics;

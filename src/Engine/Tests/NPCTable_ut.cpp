@@ -100,7 +100,7 @@ GAME_TEST(NPCTableNewsMm6, ParsesRegionalNews) {
     EXPECT_EQ(stats->pGeneralNews[0].topic, "Obelisks");
 
     // And a news line can be picked for the map (from either pool).
-    EXPECT_FALSE(stats->pickRandomNewsLine(static_cast<MapId>(15)).empty());
+    EXPECT_FALSE(stats->pickRandomNewsEntry(static_cast<MapId>(15)).text.empty());
 
     // MM7's catch-phrase array stays at its defaults.
     EXPECT_TRUE(stats->pCatchPhrases[0].empty());

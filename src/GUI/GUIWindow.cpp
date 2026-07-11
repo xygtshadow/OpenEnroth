@@ -875,11 +875,24 @@ std::string BuildDialogueString(std::string_view str, int uPlayerID, NPCData *np
                 break;
             case 2:
                 result += pPlayer->name;
-                i += 2;
+                if (engine->gameVersion() != GAME_VERSION_MM6)
+                    i += 2; // MM6 texts use plain %02; only MM7's own %02 templates carry the extra chars.
                 break;
             case 3:
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6: the NPC's possessive pronoun, like %09 (MM6.EXE token case @0x489E5B).
+                    result += localization->str(npc->sex == SEX_FEMALE ? LSTR_HER : LSTR_HIS);
+                } else {
+                    result += v1;
+                }
+                break;
             case 4:
-                result += v1;
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6: the live bribe price - "Do you have %04 for me?" (MM6.EXE @0x489E7A).
+                    result += fmt::format("{}", mm6BribeCost());
+                } else {
+                    result += v1;
+                }
                 break;
             case 5:
                 time = pParty->GetPlayingTime().toCivilTime();
@@ -905,19 +918,24 @@ std::string BuildDialogueString(std::string_view str, int uPlayerID, NPCData *np
                     result += localization->str(LSTR_SIR_CAPITALIZED);
                 break;
             case 8:
-                // #mm6 remnant, this code simply won't work in mm7, relevant bits don't look like they are related
-                // to titles.
-                assert(false);
+                // MM6's "how you %08" - a fame-worthy deed of the speaker, named by its awards.txt
+                // line (MM6.EXE @0x489FCA; possibleAddressingAwardBits is the EXE's priority list
+                // @0x4C29A8 verbatim). MM7 kept the code but no MM7 template uses the token, and
+                // its award rows don't line up. The pick is cached per dialogue so the greeting
+                // doesn't change from frame to frame (the EXE cache @0x944C60).
+                assert(engine->gameVersion() == GAME_VERSION_MM6);
                 for (int bit : possibleAddressingAwardBits) {
                     if (pPlayer->_achievedAwardsBits[static_cast<AwardId>(bit)]) {
                         addressingBits.push_back(static_cast<AwardId>(bit));
                     }
                 }
                 if (!addressingBits.empty()) {
-                    AwardId currentAddressingAwardBit = addressingBits[vrng->random(addressingBits.size())];
+                    if (NPCStats::mm6LastAddressingAwardPick < 0)
+                        NPCStats::mm6LastAddressingAwardPick = vrng->random(addressingBits.size());
+                    AwardId currentAddressingAwardBit = addressingBits[NPCStats::mm6LastAddressingAwardPick % addressingBits.size()];
                     result += pAwards[currentAddressingAwardBit].pText;
                 } else {
-                    result += pNPCTopics[55].pText; // #mm6 remnant, in mm7 that's a dialogue text for Thieves to Rogues promotion.
+                    result += pNPCTopics[55].pText; // The EXE's no-deeds-yet fallback line, same row in both games.
                 }
                 break;
             case 9:

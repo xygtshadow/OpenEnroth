@@ -403,6 +403,11 @@ struct Party {
     // save/load.
     Time _mm6SeerNextPilgrimageReset;
 
+    // MM6: how many NPCs the party has ever bribed (MM6.EXE party+0xDC @0x908D4C) - every bribe
+    // gets more expensive: cost = max(10, (100 - diplomacy bonus) * (count + 1) / 2). Same
+    // transient class as the tavern state above - not in the MM7 save format, resets on save/load.
+    int _mm6NpcBribeCount = 0;
+
     // MM6's reputation is a single GLOBAL party value (MM6.EXE party+0xD8 @0x908D48, positive =
     // good), while OE stores a per-map value in LocationInfo::reputation. The current map's slot
     // stays the working copy that every consumer reads and mutates - and the piece the save format

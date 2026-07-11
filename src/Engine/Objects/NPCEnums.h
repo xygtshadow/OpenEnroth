@@ -123,3 +123,27 @@ enum class NpcProfession : int32_t {
     NPC_PROFESSION_LAST = Child
 };
 using enum NpcProfession;
+
+// MM6 NPC personality - the "Personality" column of MM6's npcprof.txt, one per profession. Keys
+// npcbtb.txt: whether an NPC accepts begging / bribes / threats, and every one of its greeting and
+// reaction lines. Numeric values are the in-memory order of MM6.EXE's BTB tables @0x6B9980 (the
+// file's column order differs - see the parser); MM6.EXE remaps columns via the table @0x4C1036.
+enum class NpcPersonality {
+    PERSONALITY_ADVENTURER = 0,
+    PERSONALITY_EVIL_FANATIC = 1, // npcprof.txt spells it "Fanatic".
+    PERSONALITY_GUARD = 2,
+    PERSONALITY_MERCHANT = 3,
+    PERSONALITY_NOBLE = 4,
+    PERSONALITY_OFFICIAL = 5,
+    PERSONALITY_PALADIN = 6,
+    PERSONALITY_PEASANT = 7,
+    PERSONALITY_PRIEST = 8,
+    PERSONALITY_SCHOLAR = 9,
+    PERSONALITY_SORCERER = 10,
+    PERSONALITY_THIEF = 11,
+    PERSONALITY_MONSTER = 12, // Not used by any npcprof.txt row; npcbtb.txt still has lines for it.
+
+    PERSONALITY_FIRST = PERSONALITY_ADVENTURER,
+    PERSONALITY_LAST = PERSONALITY_MONSTER
+};
+using enum NpcPersonality;

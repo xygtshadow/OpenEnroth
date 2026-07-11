@@ -196,11 +196,11 @@ void InteractWithActor(unsigned int id) {
         // party first talks to a peasant actor. Generation is lazy (not at level load) because towns
         // place far more peasants than pAdditionalNPC has slots (New Sorpigal alone has ~120). The
         // generated citizen sticks to the actor for the map session, and talking opens the standard
-        // hireable-NPC dialogue, which greets with a regional news line. The bare news line remains as
-        // the fallback once the citizen buffer is full. The citizen's sex comes from the peasant's
-        // monster row - MM6 rows 121-132 are the PeasantF* (female) models, 133-144 the PeasantM* ones
-        // (the ddm npcId on peasants is 0/1/2 with no reliable sex semantics - it even contradicts the
-        // model sex where set).
+        // hireable-NPC dialogue, gated by MM6's fame/reputation checks and greeting per npcbtb.txt
+        // (see GUIWindow_Dialogue). A bare news line remains as the fallback once the citizen buffer
+        // is full. The citizen's sex comes from the peasant's monster row - MM6 rows 121-132 are the
+        // PeasantF* (female) models, 133-144 the PeasantM* ones (the ddm npcId on peasants is 0/1/2
+        // with no reliable sex semantics - it even contradicts the model sex where set).
         if (pActors[id].npcId < 5000 && isPeasant(pActors[id].monsterInfo.id, GAME_VERSION_MM6) &&
             pNPCStats->uNewlNPCBufPos < static_cast<int>(pNPCStats->pAdditionalNPC.size())) {
             Sex sex = std::to_underlying(pActors[id].monsterInfo.id) <= 132 ? SEX_FEMALE : SEX_MALE;
@@ -213,7 +213,7 @@ void InteractWithActor(unsigned int id) {
             engine->_messageQueue->addMessageCurrentFrame(UIMSG_StartNPCDialogue, id, 0);
             return;
         }
-        std::string news = pNPCStats->pickRandomNewsLine(engine->_currentLoadedMapId);
+        std::string news = pNPCStats->pickRandomNewsEntry(engine->_currentLoadedMapId).text;
         if (!news.empty()) {
             branchless_dialogue_str = std::move(news);
             startBranchlessDialogue(0, 0, EVENT_Invalid);

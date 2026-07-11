@@ -23,6 +23,7 @@
 #include "Engine/mm7_data.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Utility/Segment.h"
 #include "Engine/Graphics/BSPModel.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Indoor.h"
@@ -1227,27 +1228,60 @@ GAME_TEST(Mm6, StreetCitizenDialogueAndHire) {
     NPCData *citizen = getNPCData(speakingNpcId);
     EXPECT_FALSE(citizen->name.empty());
     EXPECT_TRUE(std::ranges::contains(pNPCStats->pNPCNames[citizen->sex], citizen->name));
-    EXPECT_GE(citizen->portraitId, 501);
-    EXPECT_LE(citizen->portraitId, 554);
+    // Portraits come from MM6's per-sex pools over the regular npcXXX space (EXE tables
+    // @0x4C13F0/0x4C15D0) - not from the npc501..554 commoner block.
+    EXPECT_TRUE(std::ranges::contains(NPCStats::mm6CitizenPortraitPool(citizen->sex), static_cast<int>(citizen->portraitId)));
     EXPECT_NE(citizen->profession, NoProfession);
     EXPECT_GT(pNPCStats->pProfessions[citizen->profession].uHirePrice, 0u);
     EXPECT_TRUE(citizen->canJoin);
+    EXPECT_EQ(citizen->fame, 0);
+    // The reputation requirement is rolled at generation: 59% none, then +200/-300/+400/-600.
+    EXPECT_TRUE(citizen->rep == 0 || citizen->rep == 200 || citizen->rep == -300 ||
+                citizen->rep == 400 || citizen->rep == -600);
 
-    // The citizen greets with a regional news line: New Sorpigal local news or a kingdom-wide rumor.
-    auto *dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
-    const std::string &greeting = dialogue->mm6NewsGreeting();
-    EXPECT_FALSE(greeting.empty());
+    // A regional news entry was assigned to the citizen at this first dialogue, and it sticks.
     const std::vector<RegionalNewsEntry> &localNews = pNPCStats->pRegionalNews[engine->_currentLoadedMapId];
     EXPECT_EQ(localNews.size(), 30u); // New Sorpigal's share of npcnews.txt.
-    auto saysIt = [&](const RegionalNewsEntry &entry) { return entry.text == greeting; };
-    EXPECT_TRUE(std::ranges::any_of(localNews, saysIt) || std::ranges::any_of(pNPCStats->pGeneralNews, saysIt));
+    auto saysIt = [&](const RegionalNewsEntry &entry) { return entry.text == citizen->mm6News.text; };
+    EXPECT_TRUE(std::ranges::any_of(localNews, saysIt)); // New Sorpigal HAS news, so no kingdom-wide fallback.
+    std::string firstNewsLine = citizen->mm6News.text;
 
-    // Hire the citizen: click the hire topic (buttons are re-laid-out on draw - locate by msg_param).
+    // Make sure the citizen talks regardless of its rolled reputation requirement, and reopen: the
+    // talk menu is MM6's trio - the profession's weekday small talk, Join, and News.
+    citizen->rep = 0;
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    auto *dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_TALK);
+    EXPECT_EQ(citizen->mm6News.text, firstNewsLine); // Same line on every visit.
+    auto findOption = [&](DialogueId topic) -> const GUIButton * {
+        for (const GUIButton *button : pDialogueWindow->vButtons)
+            if (button->msg == UIMSG_SelectNPCDialogueOption && button->msg_param == std::to_underlying(topic))
+                return button;
+        return nullptr;
+    };
+    ASSERT_NE(findOption(DIALOGUE_STREET_MM6_PROF_TOPIC), nullptr);
+    ASSERT_NE(findOption(DIALOGUE_STREET_MM6_NEWS), nullptr);
+    EXPECT_EQ(findOption(DIALOGUE_PROFESSION_DETAILS), nullptr); // The MM7-style menu is gone.
+
+    // The profession option is labeled with the weekday's proftext.txt topic; News with the news topic.
+    EXPECT_EQ(findOption(DIALOGUE_STREET_MM6_PROF_TOPIC)->sLabel,
+              pNPCStats->mm6ProfText[citizen->profession][pParty->uCurrentDayOfMonth % 7].topic);
+    EXPECT_EQ(findOption(DIALOGUE_STREET_MM6_NEWS)->sLabel, citizen->mm6News.topic);
+
+    // The News option replies with the assigned news line.
+    const GUIButton *newsOption = findOption(DIALOGUE_STREET_MM6_NEWS);
+    game.pressAndReleaseButton(BUTTON_LEFT, newsOption->rect.x + newsOption->rect.w / 2,
+                               newsOption->rect.y + newsOption->rect.h / 2);
+    game.tick(2);
+    EXPECT_EQ(dialogue->getDisplayedDialogueType(), DIALOGUE_STREET_MM6_NEWS);
+
+    // Hire the citizen: MM6's one-click Join (buttons are re-laid-out on draw - locate by msg_param).
     pParty->SetGold(5000); // Some professions cost up to 2000 to hire.
-    const GUIButton *hireOption = nullptr;
-    for (const GUIButton *button : pDialogueWindow->vButtons)
-        if (button->msg == UIMSG_SelectNPCDialogueOption && button->msg_param == std::to_underlying(DIALOGUE_HIRE_FIRE))
-            hireOption = button;
+    const GUIButton *hireOption = findOption(DIALOGUE_HIRE_FIRE);
     ASSERT_NE(hireOption, nullptr);
     game.pressAndReleaseButton(BUTTON_LEFT, hireOption->rect.x + hireOption->rect.w / 2,
                                hireOption->rect.y + hireOption->rect.h / 2);
@@ -5192,6 +5226,156 @@ static void selectStreetDialogueOption(EngineController &game, DialogueId topic)
     ASSERT_NE(option, nullptr);
     game.pressAndReleaseButton(BUTTON_LEFT, option->rect.x + option->rect.w / 2,
                                option->rect.y + option->rect.h / 2);
+    game.tick(2);
+}
+
+// MM6's street-dialogue gates: citizens with a reputation requirement refuse to talk and offer
+// only Beg / Threaten / Bribe, whose outcomes are keyed to the NPC's npcprof.txt personality via
+// npcbtb.txt. Begging works once, a bribe must be paid again on every visit (at a rising price),
+// and a successful threat opens the normal menu forever. All three cost reputation, less with
+// better Diplomacy. Fame below the NPC's requirement shuts the conversation down entirely.
+GAME_TEST(Mm6, StreetBegBribeThreaten) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The parsed personality/BTB tables: npcprof.txt's Personality column keys npcbtb.txt's flags.
+    EXPECT_EQ(pNPCStats->mm6PersonalityByProfession[Smith], PERSONALITY_MERCHANT);
+    EXPECT_EQ(pNPCStats->mm6PersonalityByProfession[Alchemist], PERSONALITY_SORCERER);
+    EXPECT_EQ(pNPCStats->mm6PersonalityByProfession[FollowerOfBaa], PERSONALITY_EVIL_FANATIC);
+    EXPECT_FALSE(pNPCStats->mm6PersonalityAcceptsBeg[PERSONALITY_MERCHANT]); // Merchant: BT - bribe & threat only.
+    EXPECT_TRUE(pNPCStats->mm6PersonalityAcceptsBribe[PERSONALITY_MERCHANT]);
+    EXPECT_TRUE(pNPCStats->mm6PersonalityAcceptsThreat[PERSONALITY_MERCHANT]);
+    EXPECT_TRUE(pNPCStats->mm6PersonalityAcceptsBeg[PERSONALITY_PEASANT]); // Peasant: BTB - all three.
+    EXPECT_FALSE(pNPCStats->mm6PersonalityAcceptsBribe[PERSONALITY_SORCERER]); // Sorcerer: TB - no bribes.
+    EXPECT_FALSE(pNPCStats->mm6PersonalityAcceptsThreat[PERSONALITY_PALADIN]); // Paladin: Be - beg only.
+    for (NpcPersonality personality : Segment(PERSONALITY_FIRST, PERSONALITY_LAST)) {
+        EXPECT_FALSE(pNPCStats->mm6BtbTexts[1][personality].empty()); // Greeting rows cover every personality.
+        EXPECT_FALSE(pNPCStats->mm6BtbTexts[13][personality].empty()); // "You aren't good enough".
+    }
+    EXPECT_EQ(pNPCStats->mm6ProfText[Smith][0].topic, "Rest"); // Smith's Sunday small talk.
+    // npcdata's fame/rep requirement columns parse (fixed NPCs; the BTB gate itself is street-only).
+    EXPECT_EQ(pNPCStats->pOriginalNPCData[22].rep, 400); // Benito Tellman.
+    EXPECT_EQ(pNPCStats->pOriginalNPCData[24].fame, 800); // John Tuck.
+    EXPECT_EQ(pNPCStats->pOriginalNPCData[255].rep, -1000); // Su Lang Manchu, the Notorious-only teacher.
+
+    // Talk to a peasant to generate a citizen, then shape it: a Smith (Merchant personality) that
+    // demands display reputation above +200 - a fresh party (reputation 0) gets refused.
+    auto peasant = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return isPeasant(actor.monsterInfo.id, GAME_VERSION_MM6) && actor.CanAct();
+    });
+    ASSERT_NE(peasant, pActors.end());
+    Vec3f peasantPos = peasant->pos;
+    Vec3f pos = peasantPos + Vec3f(-160, 0, 0);
+    int yawDegrees = TrigLUT.atan2(peasantPos.x - pos.x, peasantPos.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    pParty->setActiveCharacterIndex(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    ASSERT_GE(speakingNpcId, 5000);
+    NPCData *citizen = getNPCData(speakingNpcId);
+    citizen->profession = Smith;
+    citizen->rep = 200;
+    citizen->flags = 0;
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Reopen: the refusal menu is exactly Beg / Threaten / Bribe, with the bribe price on its label.
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    auto *dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_BTB);
+    EXPECT_EQ(findStreetDialogueOption(DIALOGUE_HIRE_FIRE), nullptr);
+    ASSERT_NE(findStreetDialogueOption(DIALOGUE_STREET_MM6_BEG), nullptr);
+    ASSERT_NE(findStreetDialogueOption(DIALOGUE_STREET_MM6_THREATEN), nullptr);
+    ASSERT_NE(findStreetDialogueOption(DIALOGUE_STREET_MM6_BRIBE), nullptr);
+    int diplomacy = mm6DiplomacyBonus(pParty->activeCharacter());
+    int expectedCost = std::max(10, (100 - diplomacy) * (pParty->_mm6NpcBribeCount + 1) / 2);
+    EXPECT_EQ(mm6BribeCost(), expectedCost);
+    EXPECT_TRUE(findStreetDialogueOption(DIALOGUE_STREET_MM6_BRIBE)->sLabel.contains(std::to_string(expectedCost)));
+
+    // Begging a Merchant personality fails: no state change, no reputation loss, the refuse line shows.
+    int reputationBefore = currentLocationInfo().reputation;
+    selectStreetDialogueOption(game, DIALOGUE_STREET_MM6_BEG);
+    EXPECT_EQ(dialogue->getDisplayedDialogueType(), DIALOGUE_STREET_MM6_BEG);
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore);
+    EXPECT_EQ(std::to_underlying(citizen->flags) & 0x7f, 1); // Just "talked to", not "begged".
+
+    // Bribing works: gold down by the price, the party-wide bribe counter up, greet state 3,
+    // reputation down by max(0, 20 - diplomacy bonus).
+    pParty->SetGold(1000);
+    selectStreetDialogueOption(game, DIALOGUE_STREET_MM6_BRIBE);
+    EXPECT_EQ(pParty->GetGold(), 1000 - expectedCost);
+    EXPECT_EQ(pParty->_mm6NpcBribeCount, 1);
+    EXPECT_EQ(std::to_underlying(citizen->flags) & 0x7f, 3);
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore - std::max(0, 20 - diplomacy));
+    reputationBefore = currentLocationInfo().reputation;
+
+    // A bribed NPC wants paying again next time: the reopened dialogue is the BTB menu again, and
+    // the next bribe is pricier (the counter scales the price).
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_BTB);
+    EXPECT_EQ(mm6BribeCost(), std::max(10, (100 - diplomacy) * 2 / 2));
+
+    // Threatening a Merchant personality works and is permanent: greet state 4, reputation down by
+    // max(0, 50 - diplomacy bonus), and the next visit gets the normal talk menu.
+    selectStreetDialogueOption(game, DIALOGUE_STREET_MM6_THREATEN);
+    EXPECT_EQ(std::to_underlying(citizen->flags) & 0x7f, 4);
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore - std::max(0, 50 - diplomacy));
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_TALK);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_STREET_MM6_PROF_TOPIC), nullptr);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_HIRE_FIRE), nullptr);
+    EXPECT_NE(findStreetDialogueOption(DIALOGUE_STREET_MM6_NEWS), nullptr);
+
+    // Fame gate: it outranks even a successful threat, and offers nothing at all.
+    citizen->fame = 1 << 20;
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_FAME_REFUSAL);
+    EXPECT_EQ(findStreetDialogueOption(DIALOGUE_STREET_MM6_BEG), nullptr);
+    EXPECT_EQ(findStreetDialogueOption(DIALOGUE_STREET_MM6_PROF_TOPIC), nullptr);
+    citizen->fame = 0;
+
+    // Begging a Peasant personality works - once. The second beg is brushed off back to the
+    // greeting, and reopening still shows the BTB menu (begging never re-opens the talk menu).
+    reputationBefore = currentLocationInfo().reputation;
+    citizen->profession = Peasant;
+    citizen->flags = 0;
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_BTB);
+    selectStreetDialogueOption(game, DIALOGUE_STREET_MM6_BEG);
+    EXPECT_EQ(std::to_underlying(citizen->flags) & 0x7f, 2);
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore - std::max(0, 10 - diplomacy));
+    reputationBefore = currentLocationInfo().reputation;
+    selectStreetDialogueOption(game, DIALOGUE_STREET_MM6_BEG);
+    EXPECT_EQ(dialogue->getDisplayedDialogueType(), DIALOGUE_MAIN); // Brushed off, no double dip.
+    EXPECT_EQ(currentLocationInfo().reputation, reputationBefore);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    dialogue = static_cast<GUIWindow_Dialogue *>(pDialogueWindow.get());
+    EXPECT_EQ(dialogue->mm6StreetPage(), MM6_STREET_PAGE_BTB);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
 }
 

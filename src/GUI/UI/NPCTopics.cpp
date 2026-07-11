@@ -28,6 +28,7 @@
 
 #include "GUI/GUIWindow.h"
 #include "GUI/GUIMessageQueue.h"
+#include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIStatusBar.h"
 #include "GUI/UI/Houses/TownHall.h"
@@ -35,6 +36,12 @@
 #include "Media/Audio/AudioPlayer.h"
 
 #include "Utility/String/Ascii.h"
+
+// MM6's Beg / Threat / Bribe option labels sit at global.txt rows MM7 reuses for class names and
+// settings text, so they have no shared LSTR_* ids - same situation as Tavern.cpp's Tip Barkeep.
+static constexpr LstrId MM6_LSTR_BEG = static_cast<LstrId>(27);
+static constexpr LstrId MM6_LSTR_BRIBE = static_cast<LstrId>(31);
+static constexpr LstrId MM6_LSTR_THREAT = static_cast<LstrId>(226);
 
 int membershipOrTrainingApproved;
 int topicEventId; // event id of currently viewed scripted NPC event
@@ -935,9 +942,23 @@ std::string npcDialogueOptionString(DialogueId topic, NPCData *npcData) {
       case DIALOGUE_HIRE_FIRE:
         if (npcData->Hired()) {
             return localization->format(LSTR_DISMISS_S, npcData->name);
+        } else if (engine->gameVersion() == GAME_VERSION_MM6) {
+            return localization->str(LSTR_JOIN); // MM6's one-click hire is labeled "Join" (global.txt 122).
         } else {
             return localization->str(LSTR_HIRE);
         }
+      case DIALOGUE_STREET_MM6_PROF_TOPIC:
+        // Labeled with the profession's small-talk topic for the current weekday (MM6.EXE 0x4974E7).
+        return pNPCStats->mm6ProfText[npcData->profession][pParty->uCurrentDayOfMonth % 7].topic;
+      case DIALOGUE_STREET_MM6_NEWS:
+        return npcData->mm6News.topic; // The npcnews.txt topic column, e.g. "Goblinwatch".
+      case DIALOGUE_STREET_MM6_BEG:
+        return localization->str(MM6_LSTR_BEG);
+      case DIALOGUE_STREET_MM6_THREATEN:
+        return localization->str(MM6_LSTR_THREAT);
+      case DIALOGUE_STREET_MM6_BRIBE:
+        // "Bribe 50 Gold" - the live price, recomputed as bribes accumulate (MM6.EXE 0x43B75B).
+        return fmt::format("{} {} {}", localization->str(MM6_LSTR_BRIBE), mm6BribeCost(), localization->str(LSTR_GOLD));
       case DIALOGUE_13_hiring_related:
         if (npcData->Hired()) {
             return localization->format(LSTR_DISMISS_S, npcData->name);
