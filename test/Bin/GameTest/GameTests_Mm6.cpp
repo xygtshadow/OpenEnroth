@@ -5125,6 +5125,58 @@ GAME_TEST(Mm6, BookScreens) {
     ASSERT_EQ(current_screen_type, SCREEN_GAME);
 }
 
+// Milestone 73: the spellbook screen draws from MM6's own assets - the shared `book` parchment +
+// `pagemask`, TABSPELL/TABEXIT tabs at the page's bottom edge, school tabs at (414/421, 13+35*i),
+// and each school page composed from per-spell patch images ({prefix}000 emblem + {prefix}NNN per
+// known spell) with the spell name drawn under each icon. Previously it loaded MM7's SBxB00 page
+// backgrounds and SBxS##/SBxC## icons, which MM6's data does not have (MM6.EXE ctor 0x40ce30,
+// draw 0x40ddc0, prefix table 0x4bc3d8, position tables 0x4bc75c/0x4bc90c/0x4bc3fc/0x4bc5ac).
+GAME_TEST(Mm6, SpellbookScreen) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // The MM6 spellbook assets resolve; the per-spell patches exist for every school prefix.
+    EXPECT_EQ(assets->getImage_Alpha("pagemask")->size(), Sizei(460, 344));
+    EXPECT_EQ(assets->getImage_Alpha("tabspell")->size(), Sizei(55, 17));
+    for (const char *name : {"fire000", "fire001", "fire011", "air001", "wtr001", "earth001",
+                             "sprt001", "mind001", "body001", "lite001", "dark001"})
+        EXPECT_GT(assets->getImage_Alpha(name)->width(), 1) << name;
+
+    // Zoltan the sorcerer (4th character) knows Torch Light (fire #1); make him active and open
+    // the spellbook.
+    pParty->setActiveCharacterIndex(4);
+    ASSERT_EQ(pParty->activeCharacter().classType, CLASS_SORCERER);
+    ASSERT_TRUE(pParty->activeCharacter().bHaveSpell[SPELL_FIRE_TORCH_LIGHT]);
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_SpellBookWindow, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_SPELL_BOOK);
+    game.tick(2); // Draw smoke through the MM6 page composition.
+
+    // The known spell got a button at its MM6 slot position (fire slot 1 icon at (198,32)) and the
+    // fire school tab button sits at (410,13).
+    bool foundSpellButton = false, foundSchoolButton = false;
+    for (GUIButton *button : pGUIWindow_CurrentMenu->vButtons) {
+        if (button->msg == UIMSG_SelectSpell && button->msg_param == std::to_underlying(SPELL_FIRE_TORCH_LIGHT)) {
+            EXPECT_EQ(button->rect.topLeft(), Pointi(198, 32));
+            foundSpellButton = true;
+        }
+        if (button->msg == UIMSG_OpenSpellbookPage && button->msg_param == std::to_underlying(MAGIC_SCHOOL_FIRE)) {
+            EXPECT_EQ(button->rect.topLeft(), Pointi(410, 13));
+            foundSchoolButton = true;
+        }
+    }
+    EXPECT_TRUE(foundSpellButton);
+    EXPECT_TRUE(foundSchoolButton);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+}
+
 // Milestone 42: the character screen draws from MM6's own skin - leather + fr_* parchments,
 // BUTT* tab buttons at MM6's rects, and the MM6 paper doll (per-face body/arms, armor doll
 // variants, items at their items.txt anchors) with the BACKHAND rings view.

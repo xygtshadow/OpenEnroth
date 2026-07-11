@@ -16,6 +16,7 @@
 #include "Engine/Time/Timer.h"
 
 #include "GUI/GUIButton.h"
+#include "GUI/GUIFont.h"
 
 #include "Io/Mouse.h"
 
@@ -81,6 +82,47 @@ static constexpr IndexedArray<std::array<int, 2>, MAGIC_SCHOOL_FIRST, MAGIC_SCHO
     {MAGIC_SCHOOL_DARK,     {416, 307}}
 }};
 
+// MM6 composes each school page from twelve patch images "{prefix}{slot:03}" - slot 0 is the school
+// emblem, slots 1..11 are the school's eleven spells in native id order - drawn at fixed per-slot
+// positions, with the spell NAME rendered under each icon (spell.fnt). Prefix table from MM6.EXE
+// 0x4bc3d8 (engine school order); icon positions from the tables at 0x4bc75c/0x4bc90c and the name
+// anchors from 0x4bc3fc/0x4bc5ac (the EXE draws the name in a 100px window at (nameX+6, nameY-5)).
+static constexpr IndexedArray<const char *, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> kMm6SchoolPrefixes = {
+    {MAGIC_SCHOOL_FIRE,   "fire"},
+    {MAGIC_SCHOOL_AIR,    "air"},
+    {MAGIC_SCHOOL_WATER,  "wtr"},
+    {MAGIC_SCHOOL_EARTH,  "earth"},
+    {MAGIC_SCHOOL_SPIRIT, "sprt"},
+    {MAGIC_SCHOOL_MIND,   "mind"},
+    {MAGIC_SCHOOL_BODY,   "body"},
+    {MAGIC_SCHOOL_LIGHT,  "lite"},
+    {MAGIC_SCHOOL_DARK,   "dark"}
+};
+
+static constexpr IndexedArray<std::array<Pointi, 12>, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> kMm6SpellIconPos = {{
+    {MAGIC_SCHOOL_FIRE,   {{{48, 18}, {198, 32}, {313, 32}, {68, 107}, {183, 107}, {328, 107}, {68, 182}, {198, 182}, {312, 182}, {56, 254}, {198, 257}, {328, 257}}}},
+    {MAGIC_SCHOOL_AIR,    {{{48, 18}, {198, 32}, {328, 31}, {67, 104}, {198, 103}, {328, 107}, {68, 182}, {185, 182}, {300, 182}, {66, 255}, {181, 252}, {328, 255}}}},
+    {MAGIC_SCHOOL_WATER,  {{{48, 18}, {197, 32}, {297, 31}, {64, 107}, {193, 105}, {325, 107}, {50, 182}, {194, 182}, {325, 182}, {68, 257}, {188, 257}, {325, 253}}}},
+    {MAGIC_SCHOOL_EARTH,  {{{48, 18}, {198, 31}, {302, 32}, {46, 104}, {162, 104}, {328, 107}, {58, 182}, {198, 181}, {327, 182}, {68, 256}, {197, 257}, {308, 257}}}},
+    {MAGIC_SCHOOL_SPIRIT, {{{48, 18}, {195, 27}, {328, 32}, {64, 103}, {198, 107}, {328, 107}, {68, 180}, {198, 182}, {328, 182}, {68, 257}, {181, 253}, {328, 257}}}},
+    {MAGIC_SCHOOL_MIND,   {{{48, 18}, {198, 32}, {328, 32}, {68, 107}, {186, 106}, {328, 107}, {68, 182}, {180, 182}, {315, 179}, {68, 257}, {197, 258}, {316, 257}}}},
+    {MAGIC_SCHOOL_BODY,   {{{48, 18}, {191, 31}, {328, 32}, {68, 107}, {198, 107}, {328, 107}, {68, 182}, {195, 179}, {315, 182}, {68, 257}, {197, 257}, {315, 250}}}},
+    {MAGIC_SCHOOL_LIGHT,  {{{48, 18}, {193, 32}, {321, 32}, {68, 107}, {198, 107}, {322, 107}, {61, 180}, {188, 182}, {327, 182}, {68, 257}, {198, 257}, {328, 257}}}},
+    {MAGIC_SCHOOL_DARK,   {{{48, 18}, {198, 32}, {314, 32}, {61, 107}, {183, 107}, {328, 107}, {68, 182}, {195, 182}, {324, 182}, {48, 255}, {188, 257}, {328, 257}}}}
+}};
+
+static constexpr IndexedArray<std::array<Pointi, 12>, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> kMm6SpellNamePos = {{
+    {MAGIC_SCHOOL_FIRE,   {{{46, 89}, {176, 89}, {307, 89}, {46, 161}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_AIR,    {{{46, 89}, {176, 89}, {307, 89}, {46, 161}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_WATER,  {{{46, 89}, {176, 89}, {307, 89}, {46, 161}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_EARTH,  {{{46, 89}, {176, 89}, {307, 89}, {46, 161}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_SPIRIT, {{{46, 89}, {176, 89}, {307, 89}, {46, 164}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_MIND,   {{{46, 89}, {176, 89}, {307, 89}, {46, 164}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_BODY,   {{{46, 89}, {176, 89}, {307, 89}, {46, 161}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 314}}}},
+    {MAGIC_SCHOOL_LIGHT,  {{{46, 89}, {176, 89}, {307, 89}, {46, 164}, {176, 164}, {307, 164}, {46, 240}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 310}}}},
+    {MAGIC_SCHOOL_DARK,   {{{46, 89}, {176, 89}, {307, 89}, {46, 164}, {176, 164}, {307, 164}, {46, 236}, {176, 240}, {307, 240}, {46, 314}, {176, 314}, {307, 310}}}}
+}};
+
 SpellId spellbookSelectedSpell;
 
 GUIWindow_Spellbook::GUIWindow_Spellbook() : GUIWindow(WINDOW_SpellBook, {0, 0}, render->GetRenderDimensions()) {
@@ -107,15 +149,17 @@ void GUIWindow_Spellbook::openSpellbook() {
 
     loadSpellbook();
 
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
     MagicSchool chapter = player.lastOpenedSpellbookPage;
     for (SpellId spell : spellsForMagicSchool(chapter)) {
         if (!player.bHaveSpell[spell] && !engine->config->debug.AllMagic.value())
             continue;
 
         int index = spellIndexInMagicSchool(spell);
-        CreateButton(fmt::format("SpellBook_Spell{}", index),
-                     {pViewport.x + pIconPos[chapter][pSpellbookSpellIndices[chapter][index + 1]].Xpos,
-                     pViewport.y + pIconPos[chapter][pSpellbookSpellIndices[chapter][index + 1]].Ypos},
+        Pointi iconPos = isMm6 ? kMm6SpellIconPos[chapter][index + 1]
+                               : Pointi(pViewport.x + pIconPos[chapter][pSpellbookSpellIndices[chapter][index + 1]].Xpos,
+                                        pViewport.y + pIconPos[chapter][pSpellbookSpellIndices[chapter][index + 1]].Ypos);
+        CreateButton(fmt::format("SpellBook_Spell{}", index), iconPos,
                      SBPageSSpellsTextureList[index + 1]->size(), BUTTON_TYPE_NORMAL, UIMSG_Spellbook_ShowHightlightedSpellInfo,
                      UIMSG_SelectSpell, std::to_underlying(spell));
         pageSpells++;
@@ -140,14 +184,23 @@ void GUIWindow_Spellbook::openSpellbook() {
 
     for (MagicSchool school : allMagicSchools())
         if (player.pActiveSkills[skillForMagicSchool(school)] || engine->config->debug.AllMagic.value())
-            CreateButton(fmt::format("SpellBook_School{}", std::to_underlying(school)), buttonPositions[school],
-                         {50, 36}, BUTTON_TYPE_NORMAL, 0, UIMSG_OpenSpellbookPage, std::to_underlying(school), INPUT_ACTION_INVALID,
-                         localization->spellSchoolName(school));
+            CreateButton(fmt::format("SpellBook_School{}", std::to_underlying(school)),
+                         isMm6 ? Pointi(410, 13 + 35 * std::to_underlying(school)) : buttonPositions[school],
+                         isMm6 ? Sizei(50, 34) : Sizei(50, 36), BUTTON_TYPE_NORMAL, 0, UIMSG_OpenSpellbookPage,
+                         std::to_underlying(school), INPUT_ACTION_INVALID, localization->spellSchoolName(school));
 
-    pBtn_InstallRemoveSpell = CreateButton({476, 450}, ui_spellbook_btn_quckspell->size(), BUTTON_TYPE_NORMAL, UIMSG_HintSelectRemoveQuickSpellBtn,
-                                           UIMSG_ClickInstallRemoveQuickSpellBtn, 0, INPUT_ACTION_INVALID, "", {ui_spellbook_btn_quckspell_click});
-    pBtn_CloseBook = CreateButton({561, 450}, ui_spellbook_btn_close->size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
-                                  localization->str(LSTR_EXIT_DIALOGUE), {ui_spellbook_btn_close_click});
+    if (isMm6) {
+        // MM6.EXE 0x40ce30: the quickspell (TABSPELL) and close (TABEXIT) tabs at the page's bottom edge.
+        pBtn_InstallRemoveSpell = CreateButton({301, 332}, ui_spellbook_btn_quckspell->size(), BUTTON_TYPE_NORMAL, UIMSG_HintSelectRemoveQuickSpellBtn,
+                                               UIMSG_ClickInstallRemoveQuickSpellBtn, 0, INPUT_ACTION_INVALID, "");
+        pBtn_CloseBook = CreateButton({360, 332}, ui_spellbook_btn_close->size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+                                      localization->str(LSTR_EXIT_DIALOGUE));
+    } else {
+        pBtn_InstallRemoveSpell = CreateButton({476, 450}, ui_spellbook_btn_quckspell->size(), BUTTON_TYPE_NORMAL, UIMSG_HintSelectRemoveQuickSpellBtn,
+                                               UIMSG_ClickInstallRemoveQuickSpellBtn, 0, INPUT_ACTION_INVALID, "", {ui_spellbook_btn_quckspell_click});
+        pBtn_CloseBook = CreateButton({561, 450}, ui_spellbook_btn_close->size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+                                      localization->str(LSTR_EXIT_DIALOGUE), {ui_spellbook_btn_close_click});
+    }
 }
 
 void GUIWindow_Spellbook::Update() {
@@ -155,6 +208,35 @@ void GUIWindow_Spellbook::Update() {
     int pX_coord, pY_coord;
 
     drawCurrentSchoolBackground();
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x40ddc0: school tabs run down (414, 13+35*i) - the current page's tab sits flush at
+        // x=414, the others recessed at x=421 - and each KNOWN spell draws its patch plus its name in a
+        // 100px window under the icon. The installed quickspell's name is tinted. (The EXE's exact text
+        // shades come from palette math; a plain white/yellow pair stands in.)
+        for (MagicSchool page : allMagicSchools()) {
+            if (!player.pActiveSkills[skillForMagicSchool(page)] && !engine->config->debug.AllMagic.value())
+                continue;
+            bool current = player.lastOpenedSpellbookPage == page;
+            render->DrawQuad2D(ui_spellbook_school_tabs[page][current ? 1 : 0],
+                               {current ? 414 : 421, 13 + 35 * std::to_underlying(page)});
+        }
+
+        MagicSchool page = player.lastOpenedSpellbookPage;
+        for (SpellId spell : spellsForMagicSchool(page)) {
+            if (!player.bHaveSpell[spell] && !engine->config->debug.AllMagic.value())
+                continue;
+            int slot = spellIndexInMagicSchool(spell) + 1;
+            if (SBPageSSpellsTextureList[slot])
+                render->DrawQuad2D(SBPageSSpellsTextureList[slot], kMm6SpellIconPos[page][slot]);
+
+            Pointi namePos = kMm6SpellNamePos[page][slot];
+            Recti nameWindow(namePos.x + 6, namePos.y - 5, 100, 344);
+            Color nameColor = (player.uQuickSpell == spell) ? colorTable.Yellow : colorTable.White;
+            DrawTitleText(assets->pFontBookLloyds.get(), 0, 0, nameColor, pSpellStats->pInfos[spell].name, 3, nameWindow);
+        }
+        return;
+    }
 
     for (MagicSchool page : allMagicSchools()) {
         Skill skill = skillForMagicSchool(page);
@@ -214,6 +296,21 @@ void GUIWindow_Spellbook::loadSpellbook() {
     else
         spellbookSelectedSpell = SPELL_NONE;
 
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's patches sit in slot order (slot i = the school's i-th spell, native id order) and there is
+        // no highlight variant - the quickspell shows through the name color instead. The slot-0 emblem
+        // draws unconditionally.
+        ui_mm6_spellbook_emblem = assets->getImage_Alpha(fmt::format("{}000", kMm6SchoolPrefixes[page]));
+        for (SpellId spell : spellsForMagicSchool(page)) {
+            if (pParty->activeCharacter().bHaveSpell[spell] || engine->config->debug.AllMagic.value()) {
+                int index = spellIndexInMagicSchool(spell);
+                SBPageSSpellsTextureList[index + 1] = assets->getImage_Alpha(fmt::format("{}{:03}", kMm6SchoolPrefixes[page], index + 1));
+                SBPageCSpellsTextureList[index + 1] = nullptr;
+            }
+        }
+        return;
+    }
+
     for (SpellId spell : spellsForMagicSchool(page)) {
         if (pParty->activeCharacter().bHaveSpell[spell] || engine->config->debug.AllMagic.value()) {
             int index = spellIndexInMagicSchool(spell);
@@ -233,6 +330,17 @@ void GUIWindow_Spellbook::drawCurrentSchoolBackground() {
     if (pParty->hasActiveCharacter()) {
         page = pParty->activeCharacter().lastOpenedSpellbookPage;
     }
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x40ddc0: the shared book parchment + page mask, the TABSPELL/TABEXIT tabs at the page's
+        // bottom edge, and the school emblem ({prefix}000) at its slot-0 position.
+        render->DrawQuad2D(ui_mm6_spellbook_base, {8, 8});
+        render->DrawQuad2D(ui_mm6_spellbook_pagemask, {8, 8});
+        render->DrawQuad2D(ui_spellbook_btn_quckspell, {301, 332});
+        render->DrawQuad2D(ui_spellbook_btn_close, {360, 332});
+        if (ui_mm6_spellbook_emblem)
+            render->DrawQuad2D(ui_mm6_spellbook_emblem, kMm6SpellIconPos[page][0]);
+        return;
+    }
     render->DrawQuad2D(ui_spellbook_school_backgrounds[page], {8, 8});
 
     render->DrawQuad2D(ui_spellbook_btn_quckspell, {476, 450});
@@ -242,19 +350,45 @@ void GUIWindow_Spellbook::drawCurrentSchoolBackground() {
 void GUIWindow_Spellbook::initializeTextures() {
     pAudioPlayer->playUISound(SOUND_openbook);
 
-    ui_spellbook_btn_close = assets->getImage_Solid("ib-m5-u");
-    ui_spellbook_btn_close_click = assets->getImage_Solid("ib-m5-d");
-    ui_spellbook_btn_quckspell = assets->getImage_Solid("ib-m6-u");
-    ui_spellbook_btn_quckspell_click = assets->getImage_Solid("ib-m6-d");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's spellbook (MM6.EXE ctor 0x40ce30 + draw 0x40ddc0) sits on the shared book parchment with a
+        // page mask, and its close/quickspell buttons are the TABEXIT/TABSPELL tabs at the page's bottom
+        // edge. The school tab art shares MM7's names. There are no per-school backgrounds and no
+        // pressed-state button art.
+        ui_mm6_spellbook_base = assets->getImage_Solid("book");
+        ui_mm6_spellbook_pagemask = assets->getImage_Alpha("pagemask");
+        ui_spellbook_btn_close = assets->getImage_Alpha("tabexit");
+        ui_spellbook_btn_close_click = nullptr;
+        ui_spellbook_btn_quckspell = assets->getImage_Alpha("tabspell");
+        ui_spellbook_btn_quckspell_click = nullptr;
+        if (!assets->pFontBookLloyds)
+            assets->pFontBookLloyds = GUIFont::LoadFont("spell.fnt");
+    } else {
+        ui_spellbook_btn_close = assets->getImage_Solid("ib-m5-u");
+        ui_spellbook_btn_close_click = assets->getImage_Solid("ib-m5-d");
+        ui_spellbook_btn_quckspell = assets->getImage_Solid("ib-m6-u");
+        ui_spellbook_btn_quckspell_click = assets->getImage_Solid("ib-m6-d");
+    }
 
     for (MagicSchool page : allMagicSchools()) {
-        ui_spellbook_school_backgrounds[page] = assets->getImage_ColorKey(texNames[page]);
+        // IndexedArray members do not zero-initialize - write every slot (MM6 has no school backgrounds).
+        ui_spellbook_school_backgrounds[page] = engine->gameVersion() == GAME_VERSION_MM6
+            ? nullptr
+            : assets->getImage_ColorKey(texNames[page]);
         ui_spellbook_school_tabs[page][0] = assets->getImage_Alpha(fmt::format("tab{}a", std::to_underlying(page) + 1));
         ui_spellbook_school_tabs[page][1] = assets->getImage_Alpha(fmt::format("tab{}b", std::to_underlying(page) + 1));
     }
 }
 
 void GUIWindow_Spellbook::onCloseSpellBook() {
+    if (ui_mm6_spellbook_base) {
+        ui_mm6_spellbook_base->release();
+        ui_mm6_spellbook_base = nullptr;
+    }
+    if (ui_mm6_spellbook_pagemask) {
+        ui_mm6_spellbook_pagemask->release();
+        ui_mm6_spellbook_pagemask = nullptr;
+    }
     if (ui_spellbook_btn_close) {
         ui_spellbook_btn_close->release();
         ui_spellbook_btn_close = nullptr;
@@ -293,6 +427,10 @@ void GUIWindow_Spellbook::onCloseSpellBook() {
 }
 
 void GUIWindow_Spellbook::onCloseSpellBookPage() {
+    if (ui_mm6_spellbook_emblem) {
+        ui_mm6_spellbook_emblem->release();
+        ui_mm6_spellbook_emblem = nullptr;
+    }
     for (unsigned int i = 1; i <= 11; i++) {
         if (SBPageCSpellsTextureList[i]) {
             SBPageCSpellsTextureList[i]->release();

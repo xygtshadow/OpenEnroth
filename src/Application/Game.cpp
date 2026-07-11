@@ -1361,7 +1361,7 @@ void Game::processQueuedMessages() {
                                 engine->_statusBar->clearAll();
                             }
                             // open window
-                            new OnButtonClick({ 476, 450 }, { 0, 0 }, pBtn_CastSpell);
+                            new OnButtonClick(pBtn_CastSpell->rect.topLeft(), { 0, 0 }, pBtn_CastSpell);
                             pGUIWindow_CurrentMenu = std::make_unique<GUIWindow_Spellbook>();
                             continue;
                         }

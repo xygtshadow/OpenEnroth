@@ -28,6 +28,11 @@ class GUIWindow_Spellbook : public GUIWindow {
     GraphicsImage *ui_spellbook_btn_close = nullptr;
     GraphicsImage *ui_spellbook_btn_close_click = nullptr;
 
+    // MM6 composes its spell pages over the shared book parchment instead of per-school backgrounds.
+    GraphicsImage *ui_mm6_spellbook_base = nullptr;      // "book"
+    GraphicsImage *ui_mm6_spellbook_pagemask = nullptr;  // "pagemask"
+    GraphicsImage *ui_mm6_spellbook_emblem = nullptr;    // "{school}000", the page's school emblem
+
     IndexedArray<GraphicsImage *, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> ui_spellbook_school_backgrounds = {};
     IndexedArray<std::array<GraphicsImage *, 2>, MAGIC_SCHOOL_FIRST, MAGIC_SCHOOL_LAST> ui_spellbook_school_tabs = {};
 
