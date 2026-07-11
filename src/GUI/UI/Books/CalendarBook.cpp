@@ -39,14 +39,27 @@ static std::array<int, 28> pDayMoonPhase = {
 GUIWindow_CalendarBook::GUIWindow_CalendarBook() : GUIWindow_Book() {
     this->eWindowType = WindowType::WINDOW_CalendarBook;
 
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(Pointi{570, 354}, Sizei{0, 0}, pBtn_Calendar);
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Calendar->rect.topLeft() : Pointi{570, 354}, Sizei{0, 0}, pBtn_Calendar);
 
-    ui_book_calendar_background = assets->getImage_ColorKey("sbdate-time");
-    ui_book_calendar_moon_new = assets->getImage_ColorKey("moon_new");
-    ui_book_calendar_moon_4 = assets->getImage_ColorKey("moon_4");
-    ui_book_calendar_moon_2 = assets->getImage_ColorKey("moon_2");
-    ui_book_calendar_moon_2_2 = assets->getImage_ColorKey("moon_2");
-    ui_book_calendar_moon_full = assets->getImage_ColorKey("moon_ful");
+    if (isMm6) {
+        // MM6's calendar (MM6.EXE window ctor case 0x40da9b + draw 0x40ed20): time_bg over the shared book
+        // base, and the current moon-phase image drawn at (266,198). The moon images share MM7's names and
+        // are blitted solid (0x40b000).
+        ui_book_calendar_background = assets->getImage_Solid("time_bg");
+        ui_book_calendar_moon_new = assets->getImage_Solid("moon_new");
+        ui_book_calendar_moon_4 = assets->getImage_Solid("moon_4");
+        ui_book_calendar_moon_2 = assets->getImage_Solid("moon_2");
+        ui_book_calendar_moon_2_2 = assets->getImage_Solid("moon_2");
+        ui_book_calendar_moon_full = assets->getImage_Solid("moon_ful");
+    } else {
+        ui_book_calendar_background = assets->getImage_ColorKey("sbdate-time");
+        ui_book_calendar_moon_new = assets->getImage_ColorKey("moon_new");
+        ui_book_calendar_moon_4 = assets->getImage_ColorKey("moon_4");
+        ui_book_calendar_moon_2 = assets->getImage_ColorKey("moon_2");
+        ui_book_calendar_moon_2_2 = assets->getImage_ColorKey("moon_2");
+        ui_book_calendar_moon_full = assets->getImage_ColorKey("moon_ful");
+    }
 }
 
 /**
@@ -67,10 +80,20 @@ static std::string getDayPart(int hour) {
 }
 
 void GUIWindow_CalendarBook::Update() {
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
-
-    render->DrawQuad2D(ui_book_calendar_background, pViewport.topLeft());
     CivilTime time = pParty->GetPlayingTime().toCivilTime();
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x40ed20: shared book base, time_bg at (47,22), and the moon-phase image at (266,198).
+        // The text lines below are identical between the games - MM7 inherited MM6's calendar layout but
+        // dropped the moon image.
+        drawMm6BookBase();
+        render->DrawQuad2D(ui_book_calendar_background, {47, 22});
+        GraphicsImage *moons[5] = {ui_book_calendar_moon_new, ui_book_calendar_moon_4, ui_book_calendar_moon_2,
+                                   ui_book_calendar_moon_2_2, ui_book_calendar_moon_full};
+        render->DrawQuad2D(moons[pDayMoonPhase[time.day - 1]], {266, 198});
+    } else {
+        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_book_calendar_background, pViewport.topLeft());
+    }
 
     DrawTitleText(assets->pFontBookTitle.get(), 0, 22, ui_book_calendar_title_color, localization->str(LSTR_TIME_IN_ERATHIA), 3, pViewport);
 

@@ -35,77 +35,151 @@ GUIWindow_MapBook::GUIWindow_MapBook() {
     viewparams->sViewCenterX = pParty->pos.x;
     viewparams->sViewCenterY = pParty->pos.y;
     viewparams->ClampMapViewPosition();
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(Pointi{546, 353}, Sizei{0, 0}, pBtn_Maps);
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Maps->rect.topLeft() : Pointi{546, 353}, Sizei{0, 0}, pBtn_Maps);
 
-    ui_book_map_background = assets->getImage_ColorKey("sbmap");
-    ui_book_button1_on = assets->getImage_Alpha("zoom-on");
-    ui_book_button2_on = assets->getImage_Alpha("zoot-on");
-    ui_book_button3_on = assets->getImage_Alpha("tabNon");
-    ui_book_button4_on = assets->getImage_Alpha("tabSon");
-    ui_book_button5_on = assets->getImage_Alpha("tabEon");
-    ui_book_button6_on = assets->getImage_Alpha("tabWon");
-    ui_book_button1_off = assets->getImage_Alpha("zoom-off");
-    ui_book_button2_off = assets->getImage_Alpha("zoot-off");
-    ui_book_button3_off = assets->getImage_Alpha("tabNoff");
-    ui_book_button4_off = assets->getImage_Alpha("tabSoff");
-    ui_book_button5_off = assets->getImage_Alpha("tabEoff");
-    ui_book_button6_off = assets->getImage_Alpha("tabWoff");
+    if (isMm6) {
+        // MM6's map book (MM6.EXE window ctor case 0x40d7f2 + draw 0x40e8d0): no background of its own -
+        // the map draws straight over the shared book base. Zoom tabs sit where the page tabs go
+        // ((415,13)/(415,48), zoom+*/zoom-* art) and the scroll tabs run N/S/W/E down (415, 118+35*i) -
+        // note MM6 puts West above East, the reverse of MM7's tab order.
+        ui_book_map_background = nullptr;
+        ui_book_button1_on = assets->getImage_Alpha("zoom+on");
+        ui_book_button2_on = assets->getImage_Alpha("zoom-on");
+        ui_book_button3_on = assets->getImage_Alpha("tabNon");
+        ui_book_button4_on = assets->getImage_Alpha("tabSon");
+        ui_book_button5_on = assets->getImage_Alpha("tabEon");
+        ui_book_button6_on = assets->getImage_Alpha("tabWon");
+        ui_book_button1_off = assets->getImage_Alpha("zoom+off");
+        ui_book_button2_off = assets->getImage_Alpha("zoom-off");
+        ui_book_button3_off = assets->getImage_Alpha("tabNoff");
+        ui_book_button4_off = assets->getImage_Alpha("tabSoff");
+        ui_book_button5_off = assets->getImage_Alpha("tabEoff");
+        ui_book_button6_off = assets->getImage_Alpha("tabWoff");
 
-    pBtn_Book_1 = CreateButton(pViewport.topLeft() + Pointi(398, 1), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_ZOOM_IN), INPUT_ACTION_ZOOM_IN, localization->str(LSTR_ZOOM_IN), {ui_book_button1_on});
-    pBtn_Book_2 = CreateButton(pViewport.topLeft() + Pointi(398, 38), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_ZOOM_OUT), INPUT_ACTION_ZOOM_OUT, localization->str(LSTR_ZOOM_OUT), {ui_book_button2_on});
-    pBtn_Book_3 = CreateButton(pViewport.topLeft() + Pointi(397, 113), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_SCROLL_UP), INPUT_ACTION_DIALOG_UP, localization->str(LSTR_SCROLL_UP), {ui_book_button3_on});
-    pBtn_Book_4 = CreateButton(pViewport.topLeft() + Pointi(397, 150), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_SCROLL_DOWN), INPUT_ACTION_DIALOG_DOWN, localization->str(LSTR_SCROLL_DOWN), {ui_book_button4_on});
-    pBtn_Book_5 = CreateButton(pViewport.topLeft() + Pointi(397, 188), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_SCROLL_RIGHT), INPUT_ACTION_DIALOG_RIGHT, localization->str(LSTR_SCROLL_RIGHT), {ui_book_button5_on});
-    pBtn_Book_6 = CreateButton(pViewport.topLeft() + Pointi(397, 226), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
-         std::to_underlying(BOOK_SCROLL_LEFT), INPUT_ACTION_DIALOG_LEFT, localization->str(LSTR_SCROLL_LEFT), {ui_book_button6_on});
+        pBtn_Book_1 = CreateButton({415, 13}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_ZOOM_IN), INPUT_ACTION_ZOOM_IN, localization->str(LSTR_ZOOM_IN), {ui_book_button1_on});
+        pBtn_Book_2 = CreateButton({415, 48}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_ZOOM_OUT), INPUT_ACTION_ZOOM_OUT, localization->str(LSTR_ZOOM_OUT), {ui_book_button2_on});
+        pBtn_Book_3 = CreateButton({415, 118}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_UP), INPUT_ACTION_DIALOG_UP, localization->str(LSTR_SCROLL_UP), {ui_book_button3_on});
+        pBtn_Book_4 = CreateButton({415, 153}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_DOWN), INPUT_ACTION_DIALOG_DOWN, localization->str(LSTR_SCROLL_DOWN), {ui_book_button4_on});
+        pBtn_Book_6 = CreateButton({415, 188}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_LEFT), INPUT_ACTION_DIALOG_LEFT, localization->str(LSTR_SCROLL_LEFT), {ui_book_button6_on});
+        pBtn_Book_5 = CreateButton({415, 223}, {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_RIGHT), INPUT_ACTION_DIALOG_RIGHT, localization->str(LSTR_SCROLL_RIGHT), {ui_book_button5_on});
+    } else {
+        ui_book_map_background = assets->getImage_ColorKey("sbmap");
+        ui_book_button1_on = assets->getImage_Alpha("zoom-on");
+        ui_book_button2_on = assets->getImage_Alpha("zoot-on");
+        ui_book_button3_on = assets->getImage_Alpha("tabNon");
+        ui_book_button4_on = assets->getImage_Alpha("tabSon");
+        ui_book_button5_on = assets->getImage_Alpha("tabEon");
+        ui_book_button6_on = assets->getImage_Alpha("tabWon");
+        ui_book_button1_off = assets->getImage_Alpha("zoom-off");
+        ui_book_button2_off = assets->getImage_Alpha("zoot-off");
+        ui_book_button3_off = assets->getImage_Alpha("tabNoff");
+        ui_book_button4_off = assets->getImage_Alpha("tabSoff");
+        ui_book_button5_off = assets->getImage_Alpha("tabEoff");
+        ui_book_button6_off = assets->getImage_Alpha("tabWoff");
+
+        pBtn_Book_1 = CreateButton(pViewport.topLeft() + Pointi(398, 1), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_ZOOM_IN), INPUT_ACTION_ZOOM_IN, localization->str(LSTR_ZOOM_IN), {ui_book_button1_on});
+        pBtn_Book_2 = CreateButton(pViewport.topLeft() + Pointi(398, 38), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_ZOOM_OUT), INPUT_ACTION_ZOOM_OUT, localization->str(LSTR_ZOOM_OUT), {ui_book_button2_on});
+        pBtn_Book_3 = CreateButton(pViewport.topLeft() + Pointi(397, 113), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_UP), INPUT_ACTION_DIALOG_UP, localization->str(LSTR_SCROLL_UP), {ui_book_button3_on});
+        pBtn_Book_4 = CreateButton(pViewport.topLeft() + Pointi(397, 150), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_DOWN), INPUT_ACTION_DIALOG_DOWN, localization->str(LSTR_SCROLL_DOWN), {ui_book_button4_on});
+        pBtn_Book_5 = CreateButton(pViewport.topLeft() + Pointi(397, 188), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_RIGHT), INPUT_ACTION_DIALOG_RIGHT, localization->str(LSTR_SCROLL_RIGHT), {ui_book_button5_on});
+        pBtn_Book_6 = CreateButton(pViewport.topLeft() + Pointi(397, 226), {50, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickBooksBtn,
+             std::to_underlying(BOOK_SCROLL_LEFT), INPUT_ACTION_DIALOG_LEFT, localization->str(LSTR_SCROLL_LEFT), {ui_book_button6_on});
+    }
 }
 
 void GUIWindow_MapBook::Update() {
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
-    render->DrawQuad2D(ui_book_map_background, pViewport.topLeft());
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
     auto [minX, maxX] = viewparams->GetMapViewMinMaxX();
     auto [minY, maxY] = viewparams->GetMapViewMinMaxY();
 
-    if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_IN) || viewparams->uMapBookMapZoom / 128 >= 12) {
-        render->DrawQuad2D(ui_book_button1_off, pViewport.topLeft() + Pointi(408, 2));
-    } else {
-        render->DrawQuad2D(ui_book_button1_on, pViewport.topLeft() + Pointi(398, 1));
-    }
+    if (isMm6) {
+        // MM6.EXE 0x40e8d0: the map draws over the shared book base directly (no sbmap analog); the zoom
+        // tabs sit at the page-tab spots and the four scroll tabs run N/S/W/E at (415, 118+35*i), showing
+        // their raised art at x=418 while idle.
+        drawMm6BookBase();
 
-    if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_OUT) || viewparams->uMapBookMapZoom / 128 <= 3) {
-        render->DrawQuad2D(ui_book_button2_off, pViewport.topLeft() + Pointi(408, 38));
+        if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_IN) || viewparams->uMapBookMapZoom / 128 >= 12) {
+            render->DrawQuad2D(ui_book_button1_on, {415, 13});
+        } else {
+            render->DrawQuad2D(ui_book_button1_off, {418, 13});
+        }
+        if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_OUT) || viewparams->uMapBookMapZoom / 128 <= 3) {
+            render->DrawQuad2D(ui_book_button2_on, {415, 48});
+        } else {
+            render->DrawQuad2D(ui_book_button2_off, {418, 48});
+        }
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_UP) {
+            render->DrawQuad2D(ui_book_button3_on, {415, 118});
+        } else {
+            render->DrawQuad2D(ui_book_button3_off, {418, 118});
+        }
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_DOWN) {
+            render->DrawQuad2D(ui_book_button4_on, {415, 153});
+        } else {
+            render->DrawQuad2D(ui_book_button4_off, {418, 153});
+        }
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_LEFT) {
+            render->DrawQuad2D(ui_book_button6_on, {415, 188});
+        } else {
+            render->DrawQuad2D(ui_book_button6_off, {418, 188});
+        }
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_RIGHT) {
+            render->DrawQuad2D(ui_book_button5_on, {415, 223});
+        } else {
+            render->DrawQuad2D(ui_book_button5_off, {418, 223});
+        }
     } else {
-        render->DrawQuad2D(ui_book_button2_on, pViewport.topLeft() + Pointi(398, 38));
-    }
+        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_book_map_background, pViewport.topLeft());
 
-    if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_UP || viewparams->sViewCenterY >= maxY) {
-        render->DrawQuad2D(ui_book_button3_off, pViewport.topLeft() + Pointi(408, 113));
-    } else {
-        render->DrawQuad2D(ui_book_button3_on, pViewport.topLeft() + Pointi(398, 113));
-    }
+        if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_IN) || viewparams->uMapBookMapZoom / 128 >= 12) {
+            render->DrawQuad2D(ui_book_button1_off, pViewport.topLeft() + Pointi(408, 2));
+        } else {
+            render->DrawQuad2D(ui_book_button1_on, pViewport.topLeft() + Pointi(398, 1));
+        }
 
-    if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_DOWN || viewparams->sViewCenterY <= minY) {
-        render->DrawQuad2D(ui_book_button4_off, pViewport.topLeft() + Pointi(408, 150));
-    } else {
-        render->DrawQuad2D(ui_book_button4_on, pViewport.topLeft() + Pointi(399, 150));
-    }
+        if ((_bookButtonClicked && _bookButtonAction == BOOK_ZOOM_OUT) || viewparams->uMapBookMapZoom / 128 <= 3) {
+            render->DrawQuad2D(ui_book_button2_off, pViewport.topLeft() + Pointi(408, 38));
+        } else {
+            render->DrawQuad2D(ui_book_button2_on, pViewport.topLeft() + Pointi(398, 38));
+        }
 
-    if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_RIGHT || viewparams->sViewCenterX >= maxX) {
-        render->DrawQuad2D(ui_book_button5_off, pViewport.topLeft() + Pointi(408, 188));
-    } else {
-        render->DrawQuad2D(ui_book_button5_on, pViewport.topLeft() + Pointi(397, 188));
-    }
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_UP || viewparams->sViewCenterY >= maxY) {
+            render->DrawQuad2D(ui_book_button3_off, pViewport.topLeft() + Pointi(408, 113));
+        } else {
+            render->DrawQuad2D(ui_book_button3_on, pViewport.topLeft() + Pointi(398, 113));
+        }
 
-    if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_LEFT || viewparams->sViewCenterX <= minX) {
-        render->DrawQuad2D(ui_book_button6_off, pViewport.topLeft() + Pointi(408, 226));
-    } else {
-        render->DrawQuad2D(ui_book_button6_on, pViewport.topLeft() + Pointi(397, 226));
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_DOWN || viewparams->sViewCenterY <= minY) {
+            render->DrawQuad2D(ui_book_button4_off, pViewport.topLeft() + Pointi(408, 150));
+        } else {
+            render->DrawQuad2D(ui_book_button4_on, pViewport.topLeft() + Pointi(399, 150));
+        }
+
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_RIGHT || viewparams->sViewCenterX >= maxX) {
+            render->DrawQuad2D(ui_book_button5_off, pViewport.topLeft() + Pointi(408, 188));
+        } else {
+            render->DrawQuad2D(ui_book_button5_on, pViewport.topLeft() + Pointi(397, 188));
+        }
+
+        if (_bookButtonClicked && _bookButtonAction == BOOK_SCROLL_LEFT || viewparams->sViewCenterX <= minX) {
+            render->DrawQuad2D(ui_book_button6_off, pViewport.topLeft() + Pointi(408, 226));
+        } else {
+            render->DrawQuad2D(ui_book_button6_on, pViewport.topLeft() + Pointi(397, 226));
+        }
     }
 
     if (_bookButtonClicked == 10) {
@@ -140,13 +214,16 @@ void GUIWindow_MapBook::Update() {
 
     Recti map_window = pViewport;
     if (engine->_currentLoadedMapId != MAP_INVALID) {
-        DrawTitleText(assets->pFontBookTitle.get(), -14, 12, ui_book_map_title_color, pMapStats->pInfos[engine->_currentLoadedMapId].name, 3, map_window);
+        DrawTitleText(assets->pFontBookTitle.get(), isMm6 ? 0 : -14, 12, ui_book_map_title_color, pMapStats->pInfos[engine->_currentLoadedMapId].name, 3, map_window);
     }
 
-    auto party_coordinates = localization->format(LSTR_X_D_Y_D, static_cast<int>(pParty->pos.x), static_cast<int>(pParty->pos.y));
+    // The party-coordinates line is an MM7 addition - MM6's map book (0x40e8d0) ends at the map name.
+    if (!isMm6) {
+        auto party_coordinates = localization->format(LSTR_X_D_Y_D, static_cast<int>(pParty->pos.x), static_cast<int>(pParty->pos.y));
 
-    map_window.x = 0;
-    DrawTitleText(assets->pFontComic.get(), 0, 320, ui_book_map_coordinates_color, party_coordinates, 0, map_window);
+        map_window.x = 0;
+        DrawTitleText(assets->pFontComic.get(), 0, 320, ui_book_map_coordinates_color, party_coordinates, 0, map_window);
+    }
 }
 
 //----- (00442955) --------------------------------------------------------

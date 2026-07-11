@@ -3,6 +3,7 @@
 
 #include "Engine/Localization.h"
 #include "Engine/AssetsManager.h"
+#include "Engine/Engine.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Time/Timer.h"
@@ -14,6 +15,12 @@
 #include "Media/Audio/AudioPlayer.h"
 
 GUIWindow_Book::~GUIWindow_Book() {
+    if (ui_book_mm6_base) {
+        ui_book_mm6_base->release();
+    }
+    if (ui_book_mm6_exit_tab) {
+        ui_book_mm6_exit_tab->release();
+    }
     if (ui_book_map_frame) {
         ui_book_map_frame->release();
     }
@@ -76,15 +83,31 @@ GUIWindow_Book::~GUIWindow_Book() {
 
 GUIWindow_Book::GUIWindow_Book() : GUIWindow(WINDOW_Book, {0, 0}, render->GetRenderDimensions()) {
     initializeFonts();
-    CreateButton({475, 445}, {158, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID, localization->str(LSTR_EXIT_DIALOGUE));
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 closes a book by clicking its TABEXIT close tab at (360,332) (loaded by the shared book-open
+        // path, MM6.EXE 0x40cfe0; drawn by the book dispatcher 0x40ebd0) - there is no right-panel exit row.
+        CreateButton({360, 332}, ui_book_mm6_exit_tab->size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0,
+                     INPUT_ACTION_INVALID, localization->str(LSTR_EXIT_DIALOGUE));
+    } else {
+        CreateButton({475, 445}, {158, 34}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID, localization->str(LSTR_EXIT_DIALOGUE));
+    }
     current_screen_type = SCREEN_BOOKS;
     pEventTimer->setPaused(true);
+}
+
+void GUIWindow_Book::drawMm6BookBase() {
+    render->DrawQuad2D(ui_book_mm6_base, {8, 8});
+    render->DrawQuad2D(ui_book_mm6_exit_tab, {360, 332});
 }
 
 void GUIWindow_Book::initializeFonts() {
     pAudioPlayer->playUISound(SOUND_openbook);
 
     ui_book_map_frame = assets->getImage_Alpha("mapbordr");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        ui_book_mm6_base = assets->getImage_Solid("book");
+        ui_book_mm6_exit_tab = assets->getImage_Alpha("tabexit");
+    }
 
     if (!assets->pFontBookCalendar)
         assets->pFontBookCalendar = GUIFont::LoadFont("book.fnt");

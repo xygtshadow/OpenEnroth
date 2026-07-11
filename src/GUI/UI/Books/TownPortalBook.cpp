@@ -166,14 +166,17 @@ GUIWindow_TownPortalBook::GUIWindow_TownPortalBook(Pid casterPid, SpellCastFlags
 }
 
 void GUIWindow_TownPortalBook::Update() {
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
-
     Pointi cursorPos = mouse->position();
     bool townPortalCheats = engine->config->debug.TownPortal.value();
     bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
     render->DrawQuad2D(ui_book_townportal_background, {8, 8});
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+    if (isMm6) {
+        // MM6.EXE 0x40ec5d: the townport image is the whole page; only the TABEXIT close tab draws over it.
+        render->DrawQuad2D(ui_book_mm6_exit_tab, {360, 332});
+    } else {
+        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+    }
 
     if (townPortalCheats && !isMm6) {
         // draw grey icons for cheat locations

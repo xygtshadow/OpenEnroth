@@ -51,6 +51,7 @@
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 #include "Engine/Spells/Spells.h"
+#include "Engine/Tables/AutonoteTable.h"
 #include "Engine/Tables/AwardTable.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
@@ -65,6 +66,8 @@
 #include "GUI/GUIDialogues.h"
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/GUIWindow.h"
+#include "GUI/UI/Books/AutonotesBook.h"
+#include "GUI/UI/UIBooks.h"
 #include "GUI/UI/UICharacter.h"
 #include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIGame.h"
@@ -5033,6 +5036,93 @@ GAME_TEST(Mm6, GameHudSkin) {
     EXPECT_EQ(defaultColor, ui_character_stat_default_color);
     EXPECT_EQ(buffedColor, ui_character_stat_buffed_color);
     EXPECT_EQ(debuffedColor, ui_character_stat_debuffed_color);
+}
+
+// Milestone 72: the quest/autonotes/map/calendar books draw from MM6's own assets - the shared
+// `book` base + `tabexit` close tab (MM6.EXE book dispatcher 0x40ebd0), per-book quest_bg /
+// note_bg / time_bg parchments at (47,22), the tab+/tab-- page tabs at (415,13)/(415,48) (top =
+// next page in MM6), five autonote category tabs (no teacher notes), zoom+/zoom- and N/S/W/E map
+// tabs, and the calendar's moon-phase image at (266,198). Previously these screens loaded MM7
+// asset names (sbquiknot/sbautnot/sbmap/sbdate-time/tab-an-*) that MM6's data does not have.
+GAME_TEST(Mm6, BookScreens) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // The MM6 book assets all resolve with their real dimensions.
+    EXPECT_EQ(assets->getImage_Solid("book")->size(), Sizei(460, 344));      // Fills the viewport.
+    EXPECT_EQ(assets->getImage_Alpha("tabexit")->size(), Sizei(55, 17));
+    EXPECT_EQ(assets->getImage_Solid("quest_bg")->size(), Sizei(360, 300));
+    EXPECT_EQ(assets->getImage_Solid("note_bg")->size(), Sizei(360, 300));
+    EXPECT_EQ(assets->getImage_Solid("time_bg")->size(), Sizei(360, 300));
+    EXPECT_EQ(assets->getImage_Alpha("tab+on")->size(), Sizei(39, 36));
+    EXPECT_EQ(assets->getImage_Alpha("tab--off")->size(), Sizei(39, 36));
+    EXPECT_EQ(assets->getImage_Alpha("anot1on")->size(), Sizei(39, 36));
+    EXPECT_EQ(assets->getImage_Alpha("zoom+on")->size(), Sizei(39, 36));
+    EXPECT_EQ(assets->getImage_Solid("lb_pl_bg")->size(), Sizei(411, 306));
+    EXPECT_EQ(assets->getImage_Solid("lb_go_bg")->size(), Sizei(411, 306));
+
+    // MM6's autonote.txt type column parses into the same five categories its EXE tab table
+    // (0x4bc1f8) groups: potion recipes 54-78, fountain stats 1-53, obelisks 79-93, seer/quest
+    // hints 108-116, misc 97-107/117-128.
+    EXPECT_EQ(pAutonoteTxt[54].eType, AUTONOTE_POTION_RECIPE);
+    EXPECT_EQ(pAutonoteTxt[1].eType, AUTONOTE_STAT_HINT);
+    EXPECT_EQ(pAutonoteTxt[79].eType, AUTONOTE_OBELISK);
+    EXPECT_EQ(pAutonoteTxt[116].eType, AUTONOTE_SEER);
+    EXPECT_EQ(pAutonoteTxt[100].eType, AUTONOTE_MISC);
+
+    // Quest book: opens, MM6 page-tab buttons at (415,13)/(415,48) (CreateButton stores w+1/h+1),
+    // page-flip messages run the MM6 draw, Escape closes.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenQuestBook, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(pBtn_Book_1->rect, Recti(415, 13, 51, 35));
+    EXPECT_EQ(pBtn_Book_2->rect, Recti(415, 48, 51, 35));
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_NEXT_PAGE), 0);
+    game.tick(2);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_PREV_PAGE), 0);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Grant a few notes across categories, then drive the autonotes book through every MM6 tab.
+    pParty->_autonoteBits.set(54);   // A potion recipe.
+    pParty->_autonoteBits.set(1);    // A fountain hint.
+    pParty->_autonoteBits.set(79);   // An obelisk piece.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenAutonotes, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    for (BookButtonAction action : {BOOK_NOTES_POTION, BOOK_NOTES_FOUNTAIN, BOOK_NOTES_OBELISK, BOOK_NOTES_SEER, BOOK_NOTES_MISC}) {
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(action), 0);
+        game.tick(2);
+    }
+    EXPECT_EQ(autonoteBookDisplayType, AUTONOTE_MISC);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Map book: MM6 tab order runs N/S/W/E with West above East; zoom buttons sit at the page-tab
+    // spots. Exercise a zoom and a scroll.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenMapBook, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(pBtn_Book_1->rect, Recti(415, 13, 51, 35));
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_ZOOM_IN), 0);
+    game.tick(2);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_SCROLL_LEFT), 0);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Calendar: the moon-phase image draws at (266,198) for the current day.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenCalendar, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
 }
 
 // Milestone 42: the character screen draws from MM6's own skin - leather + fr_* parchments,

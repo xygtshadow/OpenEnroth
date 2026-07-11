@@ -36,7 +36,18 @@ class GUIWindow_Book : public GUIWindow {
     void bookButtonClicked(BookButtonAction action);
 
  protected:
+    /**
+     * Draws MM6's shared book-screen base: the full-page `book` parchment at (8,8) and the `tabexit`
+     * close tab at (360,332) - what MM6.EXE's book-screen dispatcher (0x40ebd0) puts under every book
+     * before the per-book content. MM6 sessions only; MM7 books draw their own `sb*` backgrounds and
+     * the right-panel exit hint instead.
+     */
+    void drawMm6BookBase();
+
     std::unique_ptr<GUIWindow> pChildBooksOverlay;
+
+    GraphicsImage *ui_book_mm6_base{ nullptr };
+    GraphicsImage *ui_book_mm6_exit_tab{ nullptr };
 
     GraphicsImage *ui_book_button8_off{ nullptr };
     GraphicsImage *ui_book_button8_on{ nullptr };

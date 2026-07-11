@@ -49,13 +49,33 @@ GUIWindow_LloydsBook::GUIWindow_LloydsBook(Pid casterPid, SpellCastFlags castFla
         ui_book_lloyds_border = assets->getImage_ColorKey("lb_bordr");
     }
 
-    ui_book_lloyds_backgrounds[0] = assets->getImage_ColorKey("sbmap");
-    ui_book_lloyds_backgrounds[1] = assets->getImage_ColorKey("sbmap");
-    ui_book_button1_on = assets->getImage_Alpha("tab-an-6b");
-    ui_book_button1_off = assets->getImage_Alpha("tab-an-6a");
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    if (isMm6) {
+        // MM6's Lloyd's Beacon book (MM6.EXE ctor case 0x40db65 + draw 0x40c8b0): a full-page background
+        // per mode - lb_pl_bg (place) / lb_go_bg (recall) at (47,16) - and NO flip-tab art; the two flip
+        // buttons at (415,13)/(415,48) are invisible click zones on the page edge. The five beacon slots
+        // sit at the packed y*640+x positions from the table at MM6.EXE 0x4bcabc.
+        lloydsBeaconsPreviewXs = {{77, 297, 77, 297, 187}};
+        lloydsBeaconsPreviewYs = {{84, 84, 228, 228, 155}};
+        lloydsBeacons_SomeXs = {{75, 295, 75, 295, 185}};
+        lloydsBeacons_SomeYs = {{82, 82, 226, 226, 153}};
+        ui_book_lloyds_backgrounds[0] = assets->getImage_Solid("lb_pl_bg");
+        ui_book_lloyds_backgrounds[1] = assets->getImage_Solid("lb_go_bg");
+        ui_book_button1_on = nullptr;
+        ui_book_button1_off = nullptr;
+    } else {
+        lloydsBeaconsPreviewXs = {{61, 281, 61, 281, 171}};
+        lloydsBeaconsPreviewYs = {{84, 84, 228, 228, 155}};
+        lloydsBeacons_SomeXs = {{59, 279, 59, 279, 169}};
+        lloydsBeacons_SomeYs = {{82, 82, 226, 226, 153}};
+        ui_book_lloyds_backgrounds[0] = assets->getImage_ColorKey("sbmap");
+        ui_book_lloyds_backgrounds[1] = assets->getImage_ColorKey("sbmap");
+        ui_book_button1_on = assets->getImage_Alpha("tab-an-6b");
+        ui_book_button1_off = assets->getImage_Alpha("tab-an-6a");
+    }
 
-    pBtn_Book_1 = CreateButton({415, 13}, {39, 36}, BUTTON_TYPE_NORMAL, 0, UIMSG_LloydBookFlipButton, 0, INPUT_ACTION_INVALID, localization->str(LSTR_SET_BEACON));
-    pBtn_Book_2 = CreateButton({415, 48}, {39, 36}, BUTTON_TYPE_NORMAL, 0, UIMSG_LloydBookFlipButton, 1, INPUT_ACTION_INVALID, localization->str(LSTR_RECALL_BEACON));
+    pBtn_Book_1 = CreateButton({415, 13}, isMm6 ? Sizei{50, 34} : Sizei{39, 36}, BUTTON_TYPE_NORMAL, 0, UIMSG_LloydBookFlipButton, 0, INPUT_ACTION_INVALID, localization->str(LSTR_SET_BEACON));
+    pBtn_Book_2 = CreateButton({415, 48}, isMm6 ? Sizei{50, 34} : Sizei{39, 36}, BUTTON_TYPE_NORMAL, 0, UIMSG_LloydBookFlipButton, 1, INPUT_ACTION_INVALID, localization->str(LSTR_RECALL_BEACON));
 
     int casterId = casterPid.id();
     assert(casterId < pParty->pCharacters.size());
@@ -80,10 +100,17 @@ GUIWindow_LloydsBook::GUIWindow_LloydsBook(Pid casterPid, SpellCastFlags castFla
 }
 
 void GUIWindow_LloydsBook::Update() {
-    render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
-
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
     Character *pPlayer = &pParty->pCharacters[_casterPid.id()];
-    render->DrawQuad2D(ui_book_lloyds_backgrounds[_recallingBeacon ? 1 : 0], {8, 8});
+    if (isMm6) {
+        // MM6.EXE 0x40c8b0: shared book base, then the whole-page place/recall background at (47,16).
+        // The page state has no tab art of its own.
+        drawMm6BookBase();
+        render->DrawQuad2D(ui_book_lloyds_backgrounds[_recallingBeacon ? 1 : 0], {47, 16});
+    } else {
+        render->DrawQuad2D(ui_exit_cancel_button_background, {471, 445});
+        render->DrawQuad2D(ui_book_lloyds_backgrounds[_recallingBeacon ? 1 : 0], {8, 8});
+    }
     std::string pText = localization->str(LSTR_RECALL_BEACON);
 
     if (!_recallingBeacon) {
@@ -92,12 +119,14 @@ void GUIWindow_LloydsBook::Update() {
 
     Recti pWindow(pViewport.x, pViewport.y, 428, pViewport.h);
     DrawTitleText(assets->pFontBookTitle.get(), 0, 22, colorTable.White, pText, 3, pWindow);
-    if (_recallingBeacon) {
-        render->DrawQuad2D(ui_book_button1_on, pBtn_Book_1->rect.topLeft());
-        render->DrawQuad2D(ui_book_button1_off, pBtn_Book_2->rect.topLeft());
-    } else {
-        render->DrawQuad2D(ui_book_button1_off, pBtn_Book_1->rect.topLeft());
-        render->DrawQuad2D(ui_book_button1_on, pBtn_Book_2->rect.topLeft());
+    if (!isMm6) {
+        if (_recallingBeacon) {
+            render->DrawQuad2D(ui_book_button1_on, pBtn_Book_1->rect.topLeft());
+            render->DrawQuad2D(ui_book_button1_off, pBtn_Book_2->rect.topLeft());
+        } else {
+            render->DrawQuad2D(ui_book_button1_off, pBtn_Book_1->rect.topLeft());
+            render->DrawQuad2D(ui_book_button1_on, pBtn_Book_2->rect.topLeft());
+        }
     }
 
     for (size_t beaconId = 0; beaconId < _maxBeacons; beaconId++) {
