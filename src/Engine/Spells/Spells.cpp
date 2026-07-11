@@ -793,7 +793,10 @@ SpellId translateForCast(SpellId nativeId, GameVersion version) {
         {SPELL_WATER_POISON_SPRAY,           SPELL_WATER_ICE_BOLT},              // id24 MM6 Cold Beam -> Ice Bolt (cold bolt)
         {SPELL_EARTH_SLOW,                   SPELL_EARTH_DEADLY_SWARM},          // id35 MM6 Magic Arrow -> Deadly Swarm (single earth proj)
         {SPELL_EARTH_TELEKINESIS,            SPELL_LIGHT_PARALYZE},              // id42 MM6 Turn to Stone -> Paralyze (petrify~paralyze)
-        {SPELL_SPIRIT_DETECT_LIFE,           SPELL_SPIRIT_SPIRIT_LASH},          // id45 MM6 Spirit Arrow -> Spirit Lash
+        // id45 MM6 Spirit Arrow -> Harm: a plain targeted projectile. MM6.EXE's handler (0x4230e1) is the
+        // shared single-projectile launch tail; the earlier Spirit Lash analog forms no projectile at all
+        // (it's a close-range direct hit), so Spirit Arrow silently did nothing at range.
+        {SPELL_SPIRIT_DETECT_LIFE,           SPELL_BODY_HARM},
         {SPELL_SPIRIT_FATE,                  SPELL_BODY_FIRST_AID},              // id47 MM6 Healing Touch -> Heal (cross-school)
         {SPELL_SPIRIT_TURN_UNDEAD,           SPELL_SPIRIT_FATE},                 // id48 MM6 Lucky Day -> Fate (luck buff)
         {SPELL_MIND_TELEPATHY,               SPELL_SPIRIT_BLESS},                // id59 MM6 Precision -> Bless (attack buff, cross-school)

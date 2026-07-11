@@ -71,6 +71,7 @@
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
+#include "GUI/UI/UIStatusBar.h"
 #include "GUI/UI/UITransition.h"
 #include "GUI/UI/Houses/Shops.h"
 #include "GUI/UI/Houses/TownHall.h"
@@ -4182,6 +4183,155 @@ GAME_TEST(Mm6, DarkContainment) {
         EXPECT_FALSE(mon.buffs[debuff].Active()) << "debuff " << std::to_underlying(debuff);
     EXPECT_EQ(mon.cursedExpireTime, Time());
     EXPECT_EQ(mon.mm6FeeblemindExpireTime, Time());
+}
+
+// MM6 Moon Ray (native id 96) is an outdoors-at-night-only spell: ONE roll of 1-4 per point of skill
+// (mastery plays no part) is subtracted raw - no resistance, no magic save - from every monster in the
+// caster's sight, and every character that is not Dead/Eradicated heals by the same amount (MM6.EXE
+// 0x4297a1). A monster dies only when its hp goes strictly negative. Indoors the cast fails with MM6
+// global.txt row 498 "Can't cast MoonRay indoors!", in daylight (hour 5..20) with a plain "Spell failed".
+// It used to cast the Sunray analog - a single-target projectile with neither the AoE nor the heal.
+GAME_TEST(Mm6, MoonRay) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+    Character &healed = pParty->pCharacters[0];
+
+    // Daylight (a new game starts in the morning): the cast fails and nobody is healed.
+    ASSERT_TRUE(pParty->uCurrentHour >= 5 && pParty->uCurrentHour < 21);
+    healed.health = 1;
+    pushSpellOrRangedAttack(static_cast<SpellId>(96), 0, CombinedSkillValue(3, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(healed.health, 1);
+    EXPECT_EQ(engine->_statusBar->get(), localization->str(LSTR_SPELL_FAILED));
+
+    // Advance the clock to 22:00 - night.
+    pParty->GetPlayingTime() += Duration::fromHours((22 - pParty->GetPlayingTime().toCivilTime().hour + 24) % 24);
+    game.tick(1);
+    ASSERT_EQ(pParty->uCurrentHour, 22);
+
+    // Work with whatever is in sight (New Sorpigal's street peasants; tick until something is).
+    std::vector<Actor *> inView = render->getActorsInViewport(4096);
+    for (int i = 0; i < 300 && inView.empty(); i++) {
+        game.tick(1);
+        inView = render->getActorsInViewport(4096);
+    }
+    ASSERT_FALSE(inView.empty());
+    std::map<int, int> hpBefore; // Bump everything in sight to 500 hp so nothing dies of the ray.
+    for (Actor *actor : inView) {
+        actor->hp = 500;
+        hpBefore[actor->id] = actor->hp;
+    }
+
+    healed.health = 1;
+    pushSpellOrRangedAttack(static_cast<SpellId>(96), 0, CombinedSkillValue(3, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+
+    // The heal and every monster hit share ONE roll: skill 3 at Novice = 3-12 (well below Roderick's max hp,
+    // so the heal isn't clamped and measures the roll exactly).
+    int amount = healed.health - 1;
+    EXPECT_GE(amount, 3);
+    EXPECT_LE(amount, 12);
+    for (Actor *actor : inView) { // Anything still in sight at the cast lost exactly the shared roll;
+        int lost = hpBefore[actor->id] - actor->hp; // anything that wandered out of view lost nothing.
+        EXPECT_TRUE(lost == 0 || lost == amount) << "actor " << actor->id << " lost " << lost << ", roll was " << amount;
+    }
+
+    // The kill rule is strict: hp must go NEGATIVE (an actor left at exactly 0 survives), so 1 hp - a
+    // 3+ roll always dies.
+    Actor *sacrifice = inView[0];
+    sacrifice->hp = 1;
+    pushSpellOrRangedAttack(static_cast<SpellId>(96), 0, CombinedSkillValue(3, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+    EXPECT_TRUE(sacrifice->aiState == Dying || sacrifice->aiState == Dead)
+        << "actor " << sacrifice->id << " in state " << std::to_underlying(sacrifice->aiState);
+
+    // Indoors the cast fails outright, even at night.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
+    game.tick(1);
+    healed.health = 1;
+    pushSpellOrRangedAttack(static_cast<SpellId>(96), 0, CombinedSkillValue(3, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+    EXPECT_EQ(healed.health, 1);
+    // MM6 global.txt row 498; MM7 reuses that row for "Herbalist", so there is no LSTR_ name.
+    EXPECT_EQ(engine->_statusBar->get(), localization->str(static_cast<LstrId>(498)));
+}
+
+// MM6 Spirit Arrow (native id 45) is a plain single targeted projectile - MM6.EXE's cast handler (0x4230e1)
+// is the shared projectile launch tail - dealing a flat 1d6 of Spirit damage. Its former Spirit Lash analog
+// forms NO projectile (Spirit Lash is a close-range direct hit), so the spell silently did nothing; it now
+// translates to Harm, whose effect is exactly "launch one projectile at the target".
+GAME_TEST(Mm6, SpiritArrowProjectile) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // Indoor, so the projectile's sector is defined.
+    game.tick(1);
+
+    int monId = -1;
+    for (size_t i = 0; i < pActors.size(); i++) {
+        if (pActors[i].hp > 0) {
+            monId = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_NE(monId, -1);
+
+    pushSpellOrRangedAttack(static_cast<SpellId>(45), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 1);
+    game.tick(1);
+    int proj = -1;
+    for (size_t j = 0; j < pSpriteObjects.size(); j++)
+        if (pSpriteObjects[j].uSpellID == static_cast<SpellId>(45))
+            proj = static_cast<int>(j);
+    ASSERT_NE(proj, -1) << "Spirit Arrow formed no projectile";
+
+    // Impact it straight onto a monster (the ShiftedSpellDealsImpactDamage pattern - restore the fresh
+    // pre-impact sprite in case the projectile clipped scenery during its creating tick).
+    SpriteObject &p = pSpriteObjects[proj];
+    p.uSpellID = static_cast<SpellId>(45);
+    p.spriteId = SpellSpriteMapping[static_cast<SpellId>(45)];
+    p.uObjectDescID = pObjectList->ObjectIDByItemID(p.spriteId);
+    pActors[monId].hp = 500;
+    pActors[monId].monsterInfo.resSpirit = 0; // Deterministic: the found monster must not resist the damage.
+    processSpellImpact(proj, Pid(OBJECT_Actor, monId));
+    EXPECT_GT(500 - pActors[monId].hp, 0);
+}
+
+// MM6 Shrapmetal (native id 92) fires 3/5/7 pieces at Novice/Expert/Master (MM6.EXE 0x429445) - one fewer
+// per tier than the MM7 Sharpmetal effect it casts through.
+GAME_TEST(Mm6, ShrapmetalFan) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0);
+    game.tick(1);
+
+    auto countPieces = [&](Mastery mastery) -> int {
+        for (SpriteObject &object : pSpriteObjects) // Retire earlier casts' pieces so the scan below
+            if (object.uSpellID == static_cast<SpellId>(92)) // finds only the fresh fan.
+                object.uSpellID = SPELL_NONE;
+        pushSpellOrRangedAttack(static_cast<SpellId>(92), 0, CombinedSkillValue(5, mastery), 0, 1);
+        game.tick(1);
+        int pieces = 0;
+        for (const SpriteObject &object : pSpriteObjects)
+            if (object.uSpellID == static_cast<SpellId>(92))
+                pieces++;
+        return pieces;
+    };
+
+    EXPECT_EQ(countPieces(MASTERY_NOVICE), 3);
+    EXPECT_EQ(countPieces(MASTERY_EXPERT), 5);
+    EXPECT_EQ(countPieces(MASTERY_MASTER), 7);
 }
 
 // MM6 has no hostile.txt and no monster factions (MMExtension defines HostileTxt and the IsAgainst relation

@@ -309,6 +309,51 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
             break;
         }
 
+        case SPELL_DARK_SACRIFICE: {  // MM6 id 96 = Moon Ray.
+            // Damages every monster in the caster's sight and heals every character by the SAME single roll
+            // of 1-4 per point of skill - mastery plays no part (MM6.EXE 0x4297a1: damage = L + L rolls of
+            // rand()%4). Castable only outdoors at night (hour 21..4): indoors fails with MM6 global.txt
+            // row 498 "Can't cast MoonRay indoors!", in daylight with a plain "Spell failed". The damage is
+            // subtracted raw - no resistance and no magic save, unlike Mass Curse / Dark Containment - with
+            // the spell sprite spawned over each victim; a monster dies only when its hp goes strictly
+            // negative. The heal skips Dead and Eradicated characters, and both halves run even when the
+            // other has no targets (an empty sky still heals the party).
+            if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
+                // MM6 global.txt row 498; MM7 reuses that row for "Herbalist", so there is no LSTR_ name.
+                spellFailed(pCastSpell, static_cast<LstrId>(498));
+                setSpellRecovery(pCastSpell, failureRecoveryTime);
+                return true;
+            }
+            if (pParty->uCurrentHour >= 5 && pParty->uCurrentHour < 21) {
+                spellFailed(pCastSpell, LSTR_SPELL_FAILED);
+                setSpellRecovery(pCastSpell, failureRecoveryTime);
+                return true;
+            }
+            int amount = grng->randomDice(spellLevel, 4);
+            SpriteObject sprite;
+            sprite.spriteId = SpellSpriteMapping[pCastSpell->uSpellID];
+            initSpellSprite(&sprite, spellLevel, spellMastery, pCastSpell);
+            for (Actor *actor : render->getActorsInViewport(4096)) {
+                sprite.vPosition = actor->pos + Vec3f(0, 0, actor->height * 0.5f);
+                sprite.spell_target_pid = Pid(OBJECT_Actor, actor->id);
+                sprite.Create(0, 0, 0, 0);
+                actor->hp -= amount;
+                if (actor->hp < 0) {
+                    Actor::Die(actor->id);
+                    Actor::ApplyFineForKillingPeasant(actor->id);
+                    Actor::AggroSurroundingPeasants(actor->id, 1);
+                    if (actor->monsterInfo.exp)
+                        pParty->GivePartyExp(pMonsterStats->infos[actor->monsterInfo.id].exp);
+                } else {
+                    Actor::AI_Stun(actor->id, Pid(OBJECT_Character, pCastSpell->casterCharacterIndex), 0);
+                }
+            }
+            for (Character &character : pParty->pCharacters)
+                if (!character.conditions.has(CONDITION_DEAD) && !character.conditions.has(CONDITION_ERADICATED))
+                    character.Heal(amount);
+            break;
+        }
+
         default:
             return false;
     }
@@ -2975,6 +3020,10 @@ void CastSpellInfoHelpers::castSpell() {
                         default:
                             assert(false);
                     }
+                    // MM6 Shrapmetal (native id 92) fires 3/5/7 pieces at Novice/Expert/Master
+                    // (MM6.EXE 0x429445), one fewer per tier than MM7's counts.
+                    if (engine->gameVersion() == GAME_VERSION_MM6)
+                        blades_cound = spell_mastery >= MASTERY_MASTER ? 7 : spell_mastery == MASTERY_EXPERT ? 5 : 3;
                     initSpellSprite(&pSpellSprite, spell_level, spell_mastery, pCastSpell);
                     // TODO(pskelton): was pParty->uPartyHeight / 2
                     auto pos = pParty->pos + Vec3f(0, 0, pParty->height / 3);
@@ -3340,6 +3389,7 @@ void pushSpellOrRangedAttack(SpellId spell,
                     effectId = SPELL_NONE;
                     break;
                 case SPELL_DARK_VAMPIRIC_WEAPON:  // MM6 id 91 = Mass Curse (line-of-sight AoE, no target picker).
+                case SPELL_DARK_SACRIFICE:        // MM6 id 96 = Moon Ray (line-of-sight AoE + party heal, no picker).
                     effectId = SPELL_NONE;
                     break;
                 default:
