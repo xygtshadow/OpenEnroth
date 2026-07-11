@@ -35,6 +35,7 @@
 
 #include "Utility/Exception.h"
 #include "Utility/Streams/BlobOutputStream.h"
+#include "Utility/Streams/InputStream.h"
 
 #include "Engine/Graphics/Image.h"
 
@@ -474,10 +475,19 @@ void deserialize(InputStream &src, IndoorDelta_MM7 *dst, ContextTag<IndoorLocati
         deserialize(src, &chestCount);
         deserialize(src, &dst->chests, tags::presized(chestCount), tags::each, tags::via<Chest_MM6>);
 
+        // ctx->doorCount is 200 in every MM6 blv - the file stores the fixed in-engine door array capacity,
+        // and MM6.EXE dumps all 200 slots into the dlv (save routine at MM6.EXE:0x44fa1c). Slots past the
+        // live doors have zero counts and reconstruct into no-op doors, so reading all of them is correct.
         deserialize(src, &dst->doors, tags::presized(ctx->doorCount));
         deserialize(src, &dst->doorsData, tags::presized(ctx->header.doorsDataSizeBytes / sizeof(int16_t)));
         deserialize(src, &dst->eventVariables);
         deserialize(src, &dst->locationTime);
+
+        // The layout above is verified byte-exact against MM6.EXE's dlv writer - all shipped dlvs parse to
+        // exact EOF. Trailing bytes mean we misread something above, so fail loudly instead of silently
+        // reconstructing garbage.
+        if (src.size() != static_cast<size_t>(-1) && src.position() != src.size())
+            throw Exception("MM6 indoor delta has {} unparsed trailing bytes", src.size() - src.position());
         return;
     }
 
@@ -777,6 +787,10 @@ void deserialize(InputStream &src, OutdoorDelta_MM7 *dst, ContextTag<OutdoorLoca
 
         deserialize(src, &dst->eventVariables);
         deserialize(src, &dst->locationTime);
+
+        // Same byte-exactness guarantee as the indoor path - see the comment there.
+        if (src.size() != static_cast<size_t>(-1) && src.position() != src.size())
+            throw Exception("MM6 outdoor delta has {} unparsed trailing bytes", src.size() - src.position());
         return;
     }
 
