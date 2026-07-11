@@ -56,8 +56,25 @@ void createHouseUI(HouseId houseId);
 bool enterHouse(HouseId uHouseID);
 
 // House id the last successful enterHouse() actually opened - differs from the requested id when
-// the entry is redirected (throne room -> jail, MM6's King's Library Tanir's-Bell chain).
+// the entry is redirected (throne room -> jail for a party in trouble).
 extern HouseId enteredHouseId;
+
+/**
+ * MM6's per-frame house-movie end pass (MM6.EXE 0x4a6113): while the house screen for the High
+ * Council (165), the King's Library (168) or Archibald's library (553) is up and its one-shot
+ * clip is over, the screen tears down and re-enters - 168 chains to 553 ("archie" played,
+ * Archibald receives the party), 553 to 554 (the room clip played out - he leaves once the
+ * Ritual is granted), and the council to itself (the "Citytrtr" replay ends back at the chamber
+ * loop). Called once per frame from the main loop; a no-op outside MM6 house screens.
+ */
+void mm6HouseMovieEndChain();
+
+/**
+ * Queues the council's one-shot "Citytrtr" clip for the next entry of house 165. MM6.EXE
+ * 0x43cdf3 sets this flag when `MoveNPC` executes while the council screen is open (Slicker
+ * Silvertongue's conviction) and immediately re-enters the chamber.
+ */
+void mm6QueueCouncilCutscene();
 
 bool houseDialogPressEscape();
 

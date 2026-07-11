@@ -754,6 +754,13 @@ void MPlayer::OpenHouseMovie(std::string_view pMovieName, bool bLoop) {
     pMovie->LoadFromLOD(blob);
     pMovie_Track = std::dynamic_pointer_cast<IMovie>(pMovie);
     sInHouseMovie = pMovieName;
+    _houseMovieLooping = bLoop;
+}
+
+bool MPlayer::isHouseMovieOver() const {
+    if (!pMovie_Track)
+        return true;
+    return !_houseMovieLooping && engine->config->debug.NoVideo.value();
 }
 
 void MPlayer::HouseMovieLoop() {
@@ -790,6 +797,11 @@ void MPlayer::HouseMovieLoop() {
 
     } else {
         pMovie_Track = nullptr;
+        if (!_houseMovieLooping) {
+            // A one-shot clip (MM6 house cutscenes) unloads once its frames run out; the per-frame
+            // movie-end pass (mm6HouseMovieEndChain) picks the screen up from here.
+            return;
+        }
         Blob blob = LoadMovie(sInHouseMovie);
         if (blob) {
             std::shared_ptr<Movie> pMovie = std::make_shared<Movie>();

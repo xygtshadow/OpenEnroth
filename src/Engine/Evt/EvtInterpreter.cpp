@@ -170,8 +170,8 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         case EVENT_SpeakInHouse:
             if (enterHouse(ir.data.house_id)) {
                 pAudioPlayer->playHouseSound(SOUND_enter, false);
-                // enterHouse may redirect the entry (throne room -> jail for a party in trouble,
-                // MM6's King's Library bell chain) - open the house it actually resolved to.
+                // enterHouse may redirect the entry (throne room -> jail for a party in trouble) -
+                // open the house it actually resolved to.
                 createHouseUI(enteredHouseId);
             }
             break;
@@ -512,22 +512,20 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         }
         case EVENT_MoveNPC:
             pNPCStats->pNPCData[ir.data.npc_move_descr.npc_id].house = ir.data.npc_move_descr.location_id;
-            // TODO(Nik-RE-dev): Looks like it's artifact of MM6
-#if 0
-            if (window_SpeakInHouse) {
-                if (window_SpeakInHouse->houseId() == HOUSE_BODY_GUILD_MASTER_ERATHIA) {
-                    houseDialogPressEscape();
-                    pMediaPlayer->Unload();
-                    window_SpeakInHouse->Release();
-                    activeLevelDecoration = (LevelDecoration *)1;
-                    if (enterHouse(HOUSE_BODY_GUILD_MASTER_ERATHIA)) {
-                        pAudioPlayer->playUISound(SOUND_Invalid);
-                        window_SpeakInHouse = new GUIWindow_House({0, 0}, render->GetRenderDimensions(), HOUSE_BODY_GUILD_MASTER_ERATHIA, "");
-                        window_SpeakInHouse->DeleteButtons();
-                    }
+            // The MM7 decompile carried a disabled house-165 re-enter remnant here - it was MM6's
+            // council special, live in MM6.EXE's MoveNPC tail (0x43cdb0): a MoveNPC executed while
+            // the High Council screen is open (Slicker Silvertongue's conviction removes npc 304)
+            // replays the chamber entry with the one-shot "Citytrtr" clip, and one executed inside
+            // Archibald's library (topic 30 retires npc 12) demotes the room clip to a single pass,
+            // after which the movie-end chain advances the house to the empty stage 554.
+            if (engine->gameVersion() == GAME_VERSION_MM6 && window_SpeakInHouse) {
+                if (window_SpeakInHouse->houseId() == HOUSE_MM6_COUNCIL) {
+                    pMediaPlayer->Unload(); // MM6.EXE 0x43cdd0; the end chain re-enters this frame.
+                    mm6QueueCouncilCutscene();
+                } else if (window_SpeakInHouse->houseId() == HOUSE_MM6_LIBRARY_ARCHIBALD) {
+                    pMediaPlayer->stopHouseMovieLooping(); // MM6.EXE 0x43ce99.
                 }
             }
-#endif
             break;
         case EVENT_GiveItem:
         {

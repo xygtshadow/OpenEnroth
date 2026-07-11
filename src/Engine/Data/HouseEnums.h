@@ -539,6 +539,9 @@ enum class HouseId {
     // MM6's 2dEvents runs to row 557; rows past MM7's 525 are only filled in MM6 sessions.
     // Notable ones: 552 = Hermit's Hut, 553/554 = the King's Library stages with/after
     // Archibald (168 is the pre-Bell stage), 555/556 = Dragonsand tents.
+    // MM6 aliases for ids inside the shared range (their MM7 names above mean something else):
+    HOUSE_MM6_COUNCIL = 165, // The High Council, Free Haven.
+    HOUSE_MM6_LIBRARY = 168, // The King's Library, pre-Bell stage.
     HOUSE_MM6_HERMIT = 552,
     HOUSE_MM6_LIBRARY_ARCHIBALD = 553,
     HOUSE_MM6_LIBRARY_EMPTY = 554,

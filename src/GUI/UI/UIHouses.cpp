@@ -455,6 +455,44 @@ static constexpr IndexedArray<const char *, HOUSE_TYPE_WEAPON_SHOP, HOUSE_TYPE_M
 
 HouseId enteredHouseId = HOUSE_INVALID;
 
+// MM6.EXE dword_55BC00: arms the council's one-shot "Citytrtr" clip for the next house entry.
+static bool mm6CouncilCutsceneQueued = false;
+
+void mm6QueueCouncilCutscene() {
+    mm6CouncilCutsceneQueued = true;
+}
+
+void mm6HouseMovieEndChain() {
+    if (engine->gameVersion() != GAME_VERSION_MM6 || !window_SpeakInHouse)
+        return;
+
+    // MM6.EXE 0x4a6113 checks the same three house ids every frame and re-enters once the house
+    // movie is gone; every other house keeps looping its clip and never gets here.
+    HouseId house = window_SpeakInHouse->houseId();
+    HouseId next;
+    if (house == HOUSE_MM6_COUNCIL) {
+        next = HOUSE_MM6_COUNCIL; // The "Citytrtr" replay ends back at the chamber loop.
+    } else if (house == HOUSE_MM6_LIBRARY) {
+        next = HOUSE_MM6_LIBRARY_ARCHIBALD; // "archie" played - Archibald receives the party.
+    } else if (house == HOUSE_MM6_LIBRARY_ARCHIBALD) {
+        next = HOUSE_MM6_LIBRARY_EMPTY; // The room clip played out - he leaves, Ritual granted.
+    } else {
+        return;
+    }
+    if (!pMediaPlayer->isHouseMovieOver())
+        return;
+
+    // The teardown-and-re-enter idiom, same as the in-house map-exit path in EvtInterpreter.
+    while (houseDialogPressEscape()) {}
+    pMediaPlayer->Unload();
+    window_SpeakInHouse = nullptr;
+    pDialogueWindow = nullptr;
+    engine->_messageQueue->clear();
+    current_screen_type = SCREEN_GAME;
+    if (enterHouse(next))
+        createHouseUI(next);
+}
+
 bool enterHouse(HouseId uHouseID) {
     enteredHouseId = HOUSE_INVALID;
     engine->_statusBar->clearAll();
@@ -512,16 +550,16 @@ bool enterHouse(HouseId uHouseID) {
         }
     }
 
-    if (engine->gameVersion() == GAME_VERSION_MM6 && uHouseID == HouseId(168)) {
-        // The King's Library chain (MM6.EXE 0x43c3ad + 0x4a617f): with Tanir's Bell (item 461) in
-        // anyone's pack, entering house 168 plays the "archie" cutscene and re-enters as house 553 -
-        // Archibald's library, the only source of the Ritual of the Void. Without the bell the
-        // library stays the empty house 168; once the Ritual is taken (qbit 177) the door script
-        // itself reroutes to house 554. (We open 553 directly; the one-shot "archie" clip and the
-        // 553-to-554 advance after it ends are movie-flow fidelity, tracked in the ui-skin doc.)
+    bool mm6PlayArchie = false;
+    if (engine->gameVersion() == GAME_VERSION_MM6 && uHouseID == HOUSE_MM6_LIBRARY) {
+        // The King's Library chain (MM6.EXE 0x43c3ad): with Tanir's Bell (item 461) in anyone's
+        // pack, entering house 168 plays the one-shot "archie" cutscene, and the movie-end pass
+        // (mm6HouseMovieEndChain) re-enters as house 553 - Archibald's library, the only source of
+        // the Ritual of the Void. Without the bell the library stays the empty house 168; once the
+        // Ritual is taken (qbit 177) the door script itself reroutes to house 554.
         for (const Character &character : pParty->pCharacters) {
             if (character.inventory.find(ItemId(461))) {
-                uHouseID = HOUSE_MM6_LIBRARY_ARCHIBALD;
+                mm6PlayArchie = true;
                 break;
             }
         }
@@ -559,7 +597,7 @@ bool enterHouse(HouseId uHouseID) {
         }
     }
 
-    enteredHouseId = uHouseID; // What the entry resolved to after the jail / library redirects.
+    enteredHouseId = uHouseID; // What the entry resolved to after the jail redirect.
     currentHouseNpc = -1;
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6.EXE 0x43c66a: each house type carries its own marble dialogue panel, drawn over the
@@ -574,7 +612,23 @@ bool enterHouse(HouseId uHouseID) {
     if (houseNpcs.size() == 1) {
         currentHouseNpc = 0;
     }
-    pMediaPlayer->OpenHouseMovie(houseAnimDescr(uCurrentHouse_Animation).video_name, 1u);
+    std::string_view houseClip = houseAnimDescr(uCurrentHouse_Animation).video_name;
+    bool clipLoops = true;
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // The council flag is consumed on whatever house gets entered next, mirroring MM6.EXE's
+        // clear-on-teardown (0x4a4ad9) - it only ever survives up to the immediate re-entry.
+        bool councilCutscene = std::exchange(mm6CouncilCutsceneQueued, false) && uHouseID == HOUSE_MM6_COUNCIL;
+        if (councilCutscene) {
+            // MM6.EXE 0x43c6c9: the council re-entry queued by an in-council MoveNPC (Slicker's
+            // conviction) plays the one-shot "Citytrtr" clip instead of the chamber loop.
+            houseClip = "Citytrtr";
+            clipLoops = false;
+        } else if (mm6PlayArchie) {
+            houseClip = "archie"; // MM6.EXE 0x43c6ea, loop flag cleared at 0x43c6fa.
+            clipLoops = false;
+        }
+    }
+    pMediaPlayer->OpenHouseMovie(houseClip, clipLoops);
     // MM6 magic-guild house ids (119-140) don't line up with MM7's (139-170) and carry MM6's own
     // membership award bits - see MagicGuild.cpp.
     bool magicGuild = engine->gameVersion() == GAME_VERSION_MM6 ? mm6IsMagicGuildHouse(uHouseID) : isMagicGuild(uHouseID);
@@ -948,21 +1002,8 @@ void createHouseUI(HouseId houseId) {
 // TODO(Nik-RE-dev): looks like this function is not needed anymore
 void BackToHouseMenu() {
     auto pMouse = EngineIocContainer::ResolveMouse();
-    // TODO(Nik-RE-dev): Looks like it's artifact of MM6
-#if 0
-    if (window_SpeakInHouse && window_SpeakInHouse->houseId() == 165 &&
-        !pMovie_Track) {
-        GameOverNoSound = true;
-        houseDialogPressEscape();
-        window_SpeakInHouse->Release();
-        pParty->uFlags &= 0xFFFFFFFD;
-        if (enterHouse(HOUSE_BODY_GUILD_MASTER_ERATHIA)) {
-            pAudioPlayer->playUISound(SOUND_Invalid);
-            createHouseUI(HOUSE_BODY_GUILD_MASTER_ERATHIA);
-        }
-        GameOverNoSound = false;
-    }
-#endif
+    // The disabled house-165 re-enter block the MM7 decompile used to carry here was MM6's
+    // council movie-end special, now implemented properly in mm6HouseMovieEndChain().
 }
 
 void playHouseSound(HouseId houseID, HouseSoundType type) {

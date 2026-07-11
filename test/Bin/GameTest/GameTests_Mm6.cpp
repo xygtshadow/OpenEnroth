@@ -6341,12 +6341,18 @@ GAME_TEST(Mm6, CouncilQuestsAndTraitor) {
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
 
-    // With the Letter from Zenofex the traitor is convicted and jailed.
+    // With the Letter from Zenofex the traitor is convicted and jailed. The script's
+    // MoveNPC(304, 0) trips MM6.EXE's council special (0x43cdb0): the dialogue is torn down on
+    // the spot and the chamber re-enters playing the one-shot "Citytrtr" clip - Slicker's reply
+    // text never gets to show.
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(502))));
     int reputationBefore = pParty->GetPartyReputation();
     clickHouseNpcPortrait(game, slicker);
-    selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
-    EXPECT_TRUE(current_npc_text.contains("lose its grip"));
+    const GUIButton *conviction = findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1);
+    ASSERT_NE(conviction, nullptr);
+    game.pressAndReleaseButton(BUTTON_LEFT, conviction->rect.x + conviction->rect.w / 2,
+                               conviction->rect.y + conviction->rect.h / 2);
+    game.tick(1);
     EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(502))); // Letter taken as evidence.
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(168)]);
     for (const Character &character : pParty->pCharacters)
@@ -6355,13 +6361,26 @@ GAME_TEST(Mm6, CouncilQuestsAndTraitor) {
     // per member - reputation moves by 4 x 200, faithfully to the original interpreters.
     EXPECT_EQ(pParty->GetPartyReputation(), reputationBefore + 800);
     EXPECT_EQ(slicker->house, HouseId(0)); // MoveNPC(304, 0) - gone from the council.
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    // The re-entered chamber: the "Citytrtr" one-shot is up, Slicker's seat already empty.
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_COUNCIL);
+    EXPECT_EQ(pMediaPlayer->currentHouseMovieName(), "Citytrtr");
+    councilmen = 0;
+    for (const HouseNpcDesc &npc : houseNpcs)
+        if (npc.type == HOUSE_NPC)
+            councilmen++;
+    EXPECT_EQ(councilmen, 5);
+    // Headless one-shots are over instantly; the movie-end pass re-enters the chamber loop.
+    game.tick(1);
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_COUNCIL);
+    EXPECT_EQ(pMediaPlayer->currentHouseMovieName(),
+              houseAnimDescr(houseTable[HOUSE_MM6_COUNCIL].uAnimationID).video_name);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_GAME);
 
-    // Re-entering finds only five councilmen.
+    // Re-entering through the door finds only five councilmen.
     enterHouseThroughDoor(game, 49);
     councilmen = 0;
     for (const HouseNpcDesc &npc : houseNpcs)
@@ -6538,22 +6557,35 @@ GAME_TEST(Mm6, LibraryArchibaldRitual) {
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
 
-    // With the bell aboard the same door leads to Archibald.
+    // With the bell aboard the same door plays the one-shot "archie" cutscene over the still-empty
+    // house 168 (no redirect at entry), and the movie-end pass (MM6.EXE 0x4a617f) re-enters as
+    // house 553 - Archibald's library. Headless one-shots are over instantly.
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(461))));
-    enterHouseThroughDoor(game, 42);
+    ASSERT_TRUE(enterHouse(HOUSE_MM6_LIBRARY));
+    EXPECT_EQ(enteredHouseId, HOUSE_MM6_LIBRARY);
+    EXPECT_EQ(pMediaPlayer->currentHouseMovieName(), "archie");
+    createHouseUI(HOUSE_MM6_LIBRARY);
+    game.tick(1);
     ASSERT_NE(window_SpeakInHouse, nullptr);
     EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_ARCHIBALD);
+    EXPECT_EQ(pMediaPlayer->currentHouseMovieName(),
+              houseAnimDescr(houseTable[HOUSE_MM6_LIBRARY_ARCHIBALD].uAnimationID).video_name);
     NPCData *archibald = &pNPCStats->pNPCData[12];
     ASSERT_EQ(archibald->name, "Archibald Ironfist");
     uint64_t expBefore = pParty->pCharacters[0].experience;
     clickHouseNpcPortrait(game, archibald);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
-    EXPECT_EQ(stashPickedItem(), ItemId(544)); // The Ritual of the Void.
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(177)]);
     EXPECT_EQ(pParty->pCharacters[0].experience, expBefore + 50000);
     EXPECT_EQ(archibald->house, HOUSE_INVALID); // MoveNPC(12, 0) - he has left the library.
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    // That MoveNPC also demotes the room clip to a single pass (MM6.EXE 0x43ce99); once it's out
+    // the movie-end pass advances the screen to the empty stage 554, parking the granted Ritual
+    // (held on the cursor) into a pack on the way.
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_EMPTY);
+    EXPECT_TRUE(std::ranges::any_of(pParty->pCharacters, [](const Character &character) {
+        return !!character.inventory.find(ItemId(544)); // The Ritual of the Void.
+    }));
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_GAME);
@@ -7156,15 +7188,21 @@ GAME_TEST(Mm6, MainQuestEndToEnd) {
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(197)]);
     leaveHouse(game);
 
-    // --- The King's Library: with the bell aboard the door chains to Archibald Ironfist,
-    // whose topic 30 hands over the Ritual of the Void.
+    // --- The King's Library: with the bell aboard the door plays the "archie" one-shot and the
+    // movie-end pass chains to Archibald Ironfist (house 553), whose topic 30 hands over the
+    // Ritual of the Void; his MoveNPC(12, 0) then runs the clip out and the screen advances to
+    // the empty stage 554, parking the granted Ritual into a pack.
     enterHouseThroughDoor(game, 42);
     ASSERT_NE(window_SpeakInHouse, nullptr);
     ASSERT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_ARCHIBALD);
     NPCData *archibald = &pNPCStats->pNPCData[12];
     clickHouseNpcPortrait(game, archibald);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
-    EXPECT_EQ(stashPickedItem(), ITEM_MM6_RITUAL_OF_THE_VOID); // Stash before Escape parks the cursor.
+    ASSERT_NE(window_SpeakInHouse, nullptr);
+    EXPECT_EQ(window_SpeakInHouse->houseId(), HOUSE_MM6_LIBRARY_EMPTY);
+    EXPECT_TRUE(std::ranges::any_of(pParty->pCharacters, [](const Character &character) {
+        return !!character.inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID);
+    }));
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(177)]);
     leaveHouse(game);
 
@@ -7192,7 +7230,9 @@ GAME_TEST(Mm6, MainQuestEndToEnd) {
     EXPECT_EQ(uGameState, GAME_STATE_FINAL_WINDOW);
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(237)]);
     EXPECT_TRUE(everyoneHasAward(36));
-    EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID)); // Consumed by the win.
+    EXPECT_TRUE(std::ranges::none_of(pParty->pCharacters, [](const Character &character) {
+        return !!character.inventory.find(ITEM_MM6_RITUAL_OF_THE_VOID); // Consumed by the win.
+    }));
     ASSERT_TRUE(pGameOverWindow);
     game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
     game.tick(2);

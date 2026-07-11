@@ -1633,6 +1633,7 @@ void Game::gameLoop() {
                 continue;
             }
 
+            mm6HouseMovieEndChain();
             pMediaPlayer->HouseMovieLoop();
 
             pEventTimer->tick();
