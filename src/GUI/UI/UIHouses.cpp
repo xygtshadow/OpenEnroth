@@ -599,13 +599,30 @@ bool enterHouse(HouseId uHouseID) {
     return true;
 }
 
-// Portrait-strip slot for house occupant `index` of `count`. MM7's pNPCPortraits tables only go up
-// to six occupants; MM6's High Council seats seven (six councilmen plus its Oracle door once quest
-// bit 167 is up - the original shows a paged name list instead, see docs/pending/mm6-game-ui-skin.md),
-// so past six we pack the same two-column strip with a tighter row pitch instead of overflowing.
+// MM6's occupant-portrait slots on the dialogue panel (MM6.EXE 0x4BE7E0: a flat [6*count+index]
+// table of y*640+x screen offsets, decoded to points). The same spots get the 63x73 click buttons
+// (0x419C67 on house entry, 0x4A4BBE on escaping back to the selection screen). The shapes differ
+// from MM7's pNPCPortraits: counts 1-3 stack a single centered column at x=525 with a 95px pitch,
+// and count 6 opens the two columns already on the top row.
+static constexpr std::array<std::array<Pointi, 6>, 6> mm6HouseNpcPortraitPos = {{
+    {{{525, 34}}},
+    {{{525, 34}, {525, 129}}},
+    {{{525, 34}, {525, 129}, {525, 224}}},
+    {{{525, 34}, {486, 129}, {564, 129}, {525, 224}}},
+    {{{525, 34}, {486, 129}, {564, 129}, {486, 224}, {564, 224}}},
+    {{{486, 34}, {564, 34}, {486, 129}, {564, 129}, {486, 224}, {564, 224}}},
+}};
+
+// Portrait-strip slot for house occupant `index` of `count`. Both games' slot tables only go up
+// to six occupants (MM6.EXE indexes right past its table into the HouseMovies records for more -
+// the High Council seats seven once quest bit 167 opens its Oracle door), so past six we pack the
+// same two-column strip with a tighter row pitch instead of overflowing.
 static Pointi houseNpcPortraitPos(int index, int count) {
-    if (count <= 6)
+    if (count <= 6) {
+        if (engine->gameVersion() == GAME_VERSION_MM6)
+            return mm6HouseNpcPortraitPos[count - 1][index];
         return {pNPCPortraits_x[count - 1][index], pNPCPortraits_y[count - 1][index]};
+    }
     int rows = (count + 1) / 2;
     int pitch = std::min(95, (445 - 73 - 38) / (rows - 1)); // Keep the last row above the exit button.
     return {index % 2 ? 564 : 486, 38 + (index / 2) * pitch};
@@ -1187,6 +1204,8 @@ void GUIWindow_House::houseDialogManager() {
                     yPos = houseNpcPortraitPos(i, houseNpcs.size()).y + houseNpcs[i].icon->height() + 2;
                     break;
                 }
+                if (isMm6) // MM6.EXE 0x498312/0x49835C: every label row sits at 94*i+108, right under its slot.
+                    yPos = 94 * i + MM6_DIALOGUE_LABEL_ROW_Y;
                 DrawTitleText(assets->pFontCreate.get(), SIDE_TEXT_BOX_POS_X, yPos, colorTable.EasternBlue, pTitleText, 3, pWindow);
             }
         }

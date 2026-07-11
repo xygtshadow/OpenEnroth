@@ -1500,6 +1500,51 @@ static void selectScriptedTopic(EngineController &game, DialogueId topicLine) {
     game.tick(2);
 }
 
+GAME_TEST(Mm6, HouseOccupantSelectionStrip) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // MM6's occupant-selection screen places the 63x73 portrait buttons from its own slot table
+    // (MM6.EXE 0x4BE7E0; buttons created at the same spots - 0x419C67 on entry, 0x4A4BBE on escape
+    // back to the selection), NOT from MM7's pNPCPortraits: counts 1-3 stack one centered column
+    // at x=525 with a 95px pitch, count 6 opens the two columns already on the top row.
+    static constexpr std::array<std::array<Pointi, 6>, 6> expectedSlots = {{
+        {{{525, 34}}},
+        {{{525, 34}, {525, 129}}},
+        {{{525, 34}, {525, 129}, {525, 224}}},
+        {{{525, 34}, {486, 129}, {564, 129}, {525, 224}}},
+        {{{525, 34}, {486, 129}, {564, 129}, {486, 224}, {564, 224}}},
+        {{{486, 34}, {564, 34}, {486, 129}, {564, 129}, {486, 224}, {564, 224}}},
+    }};
+
+    // A Lonely Knight hosts three occupants: the proprietor plus Andover and Maria.
+    enterLonelyKnightTavern(game);
+    int count = static_cast<int>(houseNpcs.size());
+    ASSERT_EQ(count, 3);
+    for (int i = 0; i < count; i++) {
+        ASSERT_NE(houseNpcs[i].button, nullptr) << "occupant " << i;
+        EXPECT_EQ(houseNpcs[i].button->rect.topLeft(), expectedSlots[count - 1][i]) << "occupant " << i;
+    }
+
+    // Escaping out of an occupant's dialogue re-creates the strip at the same EXE slots.
+    NPCData *andover = &pNPCStats->pNPCData[1];
+    clickHouseNpcPortrait(game, andover);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(houseNpcs.size(), 3u);
+    for (int i = 0; i < count; i++) {
+        ASSERT_NE(houseNpcs[i].button, nullptr) << "occupant " << i;
+        EXPECT_EQ(houseNpcs[i].button->rect.topLeft(), expectedSlots[count - 1][i]) << "occupant " << i;
+    }
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
 GAME_TEST(Mm6, CompleteLetterQuestDelivery) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

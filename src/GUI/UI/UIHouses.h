@@ -29,7 +29,8 @@ constexpr int SIDE_TEXT_BOX_MAX_SPACING = 32;
 // bottom row; the row's y comes from a runtime global the disassembly doesn't pin down, placed
 // here 7px above the panel's bottom edge, mirroring the side margins.
 constexpr Pointi MM6_DIALOGUE_PANEL_POS = {481, 0};         // evpan###, 152x353.
-constexpr Pointi MM6_DIALOGUE_PORTRAIT_POS = {525, 34};     // npc###, 63x73.
+constexpr Pointi MM6_DIALOGUE_PORTRAIT_POS = {525, 34};     // npc###, 63x73. == slot [0] of the single-occupant strip.
+constexpr int MM6_DIALOGUE_LABEL_ROW_Y = 108;               // Occupant labels at 94*i+108 (MM6.EXE 0x498312).
 constexpr Pointi MM6_DIALOGUE_YES_BUTTON_POS = {486, 318};  // buttyes*.
 constexpr Pointi MM6_DIALOGUE_ESC_BUTTON_POS = {566, 318};  // buttesc* when paired with a yes-button.
 constexpr Pointi MM6_DIALOGUE_ESC_CENTERED_POS = {526, 318};  // buttesc* when it is the only button.
