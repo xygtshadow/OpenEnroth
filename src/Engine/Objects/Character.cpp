@@ -789,6 +789,23 @@ int Character::GetPerception() const {
 
 //----- (004912B0) --------------------------------------------------------
 int Character::GetDisarmTrap() const {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x4853E0: disarm = mastery multiplier (2/3/4 at Novice/Expert/Master) times
+        // (raw skill level, DOUBLED once per Thievery source, plus the hireling bonuses). The
+        // doublings stack (Pendragon, Hades and an 'of Thievery' enchant are checked separately),
+        // hirelings are added after the doubling, and there are no other item bonuses.
+        int level = pActiveSkills[SKILL_TRAP_DISARM].level();
+        if (wearsItem(ITEM_MM6_ARTIFACT_PENDRAGON)) level *= 2;
+        if (wearsItem(ITEM_MM6_RELIC_HADES)) level *= 2;
+        if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_THIEVERY)) level *= 2;
+        if (CheckHiredNPCSpeciality(Tinker)) level += 4;
+        if (CheckHiredNPCSpeciality(Locksmith)) level += 6;
+        if (CheckHiredNPCSpeciality(Burglar)) level += 8;
+        Mastery mastery = pActiveSkills[SKILL_TRAP_DISARM].mastery();
+        int multiplier = mastery >= MASTERY_MASTER ? 4 : mastery == MASTERY_EXPERT ? 3 : 2;
+        return multiplier * level;
+    }
+
     CombinedSkillValue val = getActualSkillValue(SKILL_TRAP_DISARM);
     int multiplier =
         GetMultiplierForSkillLevel(SKILL_TRAP_DISARM, 1, 2, 3, 5);
@@ -796,9 +813,7 @@ int Character::GetDisarmTrap() const {
     if (val.mastery() == MASTERY_GRANDMASTER)  // gm disarm
         return 10000;
 
-    bool mm6Thievery = engine->gameVersion() == GAME_VERSION_MM6 &&
-                       (wearsItem(ITEM_MM6_ARTIFACT_PENDRAGON) || wearsItem(ITEM_MM6_RELIC_HADES));
-    if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_THIEVERY) || mm6Thievery)  // item has increased disarm
+    if (wearsEnchantedItem(ITEM_ENCHANTMENT_OF_THIEVERY))  // item has increased disarm
         multiplier++;
 
     return multiplier * val.level();
@@ -808,7 +823,9 @@ int Character::getLearningPercent() const {
     int hirelingBonus = 0;
     if (CheckHiredNPCSpeciality(Teacher)) hirelingBonus = 10;
     if (CheckHiredNPCSpeciality(Instructor)) hirelingBonus += 15;
-    if (CheckHiredNPCSpeciality(Scholar)) hirelingBonus += 5;
+    // MM6.EXE's experience award (0x421520) checks only Teacher and Instructor - the Scholar's
+    // npcprof.txt "+5 percent experience" is a shipped no-op (its identification benefit is real).
+    if (CheckHiredNPCSpeciality(Scholar) && engine->gameVersion() != GAME_VERSION_MM6) hirelingBonus += 5;
 
     int skill = getActualSkillValue(SKILL_LEARNING).level();
 
@@ -2160,7 +2177,13 @@ int Character::GetActualResistance(Attribute resistance) const {
 
     CombinedSkillValue leatherSkill = getActualSkillValue(SKILL_LEATHER);
 
-    if (CheckHiredNPCSpeciality(Enchanter)) v10 = 20;
+    // MM6.EXE 0x47F670 checks the Enchanter only in its four elemental resistance cases
+    // (npcprof.txt "the four elements"); the Magic resistance (Mind/Spirit/Body here) gets nothing.
+    bool isElemental = resistance == ATTRIBUTE_RESIST_FIRE ||
+                       resistance == ATTRIBUTE_RESIST_AIR ||
+                       resistance == ATTRIBUTE_RESIST_WATER ||
+                       resistance == ATTRIBUTE_RESIST_EARTH;
+    if (CheckHiredNPCSpeciality(Enchanter) && (isElemental || engine->gameVersion() != GAME_VERSION_MM6)) v10 = 20;
     if ((resistance == ATTRIBUTE_RESIST_FIRE ||
          resistance == ATTRIBUTE_RESIST_AIR ||
          resistance == ATTRIBUTE_RESIST_WATER ||
@@ -2628,14 +2651,43 @@ int Character::actualSkillLevel(Skill skill) const {
         } break;
 
         case SKILL_ARMSMASTER: {
-            if (CheckHiredNPCSpeciality(Armsmaster)) bonus = 2;
-            if (CheckHiredNPCSpeciality(Weaponsmaster)) bonus += 3;
+            // MM6 has no Armsmaster skill - its Arms/Weapons Master hirelings boost every weapon
+            // skill instead (see below), so don't let them conjure a phantom Armsmaster skill here.
+            if (engine->gameVersion() != GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Armsmaster)) bonus = 2;
+                if (CheckHiredNPCSpeciality(Weaponsmaster)) bonus += 3;
+            }
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_ARMSMASTER);
         } break;
 
         case SKILL_STEALING: {
-            if (CheckHiredNPCSpeciality(Burglar)) bonus = 8;
+            // MM6 has no Stealing skill, and MM6.EXE gives its Burglar no skill bonus at all
+            // (disarm +8 is a separate check below).
+            if (CheckHiredNPCSpeciality(Burglar) && engine->gameVersion() != GAME_VERSION_MM6) bonus = 8;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_STEALING);
+        } break;
+
+        // MM6.EXE 0x48392C: Arms Master / Weapons Master / Squire hirelings add +2/+3/+2 to every
+        // weapon skill (npcprof.txt "bonus to all weapon skills"); MM7 moved the first two onto its
+        // new Armsmaster skill and dropped Squire's benefit. Squire also adds +2 to armor skills.
+        case SKILL_STAFF:
+        case SKILL_SWORD:
+        case SKILL_DAGGER:
+        case SKILL_AXE:
+        case SKILL_SPEAR:
+        case SKILL_MACE:
+        case SKILL_BLASTER: {
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Armsmaster)) bonus = 2;
+                if (CheckHiredNPCSpeciality(Weaponsmaster)) bonus += 3;
+                if (CheckHiredNPCSpeciality(Squire)) bonus += 2;
+            }
+        } break;
+
+        case SKILL_LEATHER:
+        case SKILL_CHAIN:
+        case SKILL_PLATE: {
+            if (engine->gameVersion() == GAME_VERSION_MM6 && CheckHiredNPCSpeciality(Squire)) bonus = 2;
         } break;
 
         case SKILL_ALCHEMY: {
@@ -2659,9 +2711,15 @@ int Character::actualSkillLevel(Skill skill) const {
         } break;
 
         case SKILL_BOW:
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Armsmaster)) bonus = 2;
+                if (CheckHiredNPCSpeciality(Weaponsmaster)) bonus += 3;
+                if (CheckHiredNPCSpeciality(Squire)) bonus += 2;
+            }
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_BOW);
             break;
         case SKILL_SHIELD:
+            if (engine->gameVersion() == GAME_VERSION_MM6 && CheckHiredNPCSpeciality(Squire)) bonus = 2;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_SHIELD);
             break;
 
@@ -2697,34 +2755,47 @@ int Character::actualSkillLevel(Skill skill) const {
                 bonus += 3;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_WATER);
             break;
+        // MM6.EXE 0x422B4E: Apprentice / Mystic / Spell Master boost EVERY spell school
+        // (npcprof.txt "bonus to all spell skills"); MM7 restricted them to the four elemental
+        // schools and introduced Acolyte2 / Initiate / Prelate for the self schools.
         case SKILL_SPIRIT:
-            if (CheckHiredNPCSpeciality(Acolyte2)) bonus = 2;
-            if (CheckHiredNPCSpeciality(Initiate)) bonus += 3;
-            if (CheckHiredNPCSpeciality(Prelate)) bonus += 4;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Apprentice : Acolyte2)) bonus = 2;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Mystic : Initiate)) bonus += 3;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Spellmaster : Prelate)) bonus += 4;
             if (classType == CLASS_WARLOCK && PartyHasDragon())
                 bonus += 3;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_SPIRIT);
             break;
         case SKILL_MIND:
-            if (CheckHiredNPCSpeciality(Acolyte2)) bonus = 2;
-            if (CheckHiredNPCSpeciality(Initiate)) bonus += 3;
-            if (CheckHiredNPCSpeciality(Prelate)) bonus += 4;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Apprentice : Acolyte2)) bonus = 2;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Mystic : Initiate)) bonus += 3;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Spellmaster : Prelate)) bonus += 4;
             if (classType == CLASS_WARLOCK && PartyHasDragon())
                 bonus += 3;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_MIND);
             break;
         case SKILL_BODY:
-            if (CheckHiredNPCSpeciality(Acolyte2)) bonus = 2;
-            if (CheckHiredNPCSpeciality(Initiate)) bonus += 3;
-            if (CheckHiredNPCSpeciality(Prelate)) bonus += 4;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Apprentice : Acolyte2)) bonus = 2;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Mystic : Initiate)) bonus += 3;
+            if (CheckHiredNPCSpeciality(engine->gameVersion() == GAME_VERSION_MM6 ? Spellmaster : Prelate)) bonus += 4;
             if (classType == CLASS_WARLOCK && PartyHasDragon())
                 bonus += 3;
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_BODY);
             break;
         case SKILL_LIGHT:
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Apprentice)) bonus = 2;
+                if (CheckHiredNPCSpeciality(Mystic)) bonus += 3;
+                if (CheckHiredNPCSpeciality(Spellmaster)) bonus += 4;
+            }
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_LIGHT);
             break;
         case SKILL_DARK: {
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Apprentice)) bonus = 2;
+                if (CheckHiredNPCSpeciality(Mystic)) bonus += 3;
+                if (CheckHiredNPCSpeciality(Spellmaster)) bonus += 4;
+            }
             bonus += GetItemsBonus(ATTRIBUTE_SKILL_DARK);
         } break;
 
@@ -2733,11 +2804,19 @@ int Character::actualSkillLevel(Skill skill) const {
             if (CheckHiredNPCSpeciality(Merchant)) bonus += 6;
             if (CheckHiredNPCSpeciality(Gypsy)) bonus += 3;
             if (CheckHiredNPCSpeciality(Duper)) bonus += 8;
+            // MM6-only profession (MM6.EXE 0x485340: Merchant +4 on top of its Diplomacy +4);
+            // never hireable in MM7, so no version gate needed.
+            if (CheckHiredNPCSpeciality(Negotiator)) bonus += 4;
         } break;
 
         case SKILL_PERCEPTION: {
-            if (CheckHiredNPCSpeciality(Scout)) bonus = 6;
-            if (CheckHiredNPCSpeciality(Psychic)) bonus += 5;
+            // MM6.EXE never checks the Scout profession anywhere, and checks Psychic only for
+            // Luck - their npcprof.txt Perception bonuses are shipped no-ops, like the Personality
+            // benefit texts of the commoner trades.
+            if (engine->gameVersion() != GAME_VERSION_MM6) {
+                if (CheckHiredNPCSpeciality(Scout)) bonus = 6;
+                if (CheckHiredNPCSpeciality(Psychic)) bonus += 5;
+            }
         } break;
 
         case SKILL_ITEM_ID:

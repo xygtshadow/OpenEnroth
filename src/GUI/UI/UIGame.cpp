@@ -1538,7 +1538,10 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
     Mastery uWizardEyeSkillLevel = pParty->wizardEyeSkillLevel();
     if (CheckHiredNPCSpeciality(Cartographer)) {
         bWizardEyeActive = true;
-        uWizardEyeSkillLevel = uWizardEyeSkillLevel > MASTERY_EXPERT ? uWizardEyeSkillLevel : MASTERY_EXPERT;
+        // MM7.EXE keeps the Cartographer's Wizard Eye at Expert; MM6.EXE 0x4372C2 forces the top
+        // tier (3, its Master).
+        Mastery least = isMm6 ? MASTERY_MASTER : MASTERY_EXPERT;
+        uWizardEyeSkillLevel = uWizardEyeSkillLevel > least ? uWizardEyeSkillLevel : least;
     }
 
     if (engine->config->debug.WizardEye.value()) {

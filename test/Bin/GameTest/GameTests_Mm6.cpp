@@ -2372,17 +2372,18 @@ GAME_TEST(Mm6, ArtifactBehavioralPowers) {
     EXPECT_TRUE(Item(ItemId(405)).grantsCarnage());
     EXPECT_FALSE(Item(ItemId(420)).grantsCarnage());
 
-    // Thievery: Pendragon (410) and Hades (415) boost trap disarming, like MM7's
-    // 'of Thievery' (the exact MM6 number is unreversed - the MM7 multiplier bump is used).
+    // Thievery: Pendragon (410) and Hades (415) each DOUBLE the raw disarm skill level
+    // (MM6.EXE 0x4853E0; the doublings stack), and the MM6 mastery multiplier is 2/3/4 -
+    // even a novice gets x2.
     CombinedSkillValue disarmSkillBefore = knight.pActiveSkills[SKILL_TRAP_DISARM];
     knight.pActiveSkills[SKILL_TRAP_DISARM] = CombinedSkillValue(4, MASTERY_NOVICE);
     int plainDisarm = knight.GetDisarmTrap();
-    EXPECT_EQ(plainDisarm, 4);
+    EXPECT_EQ(plainDisarm, 8);
     withEquipped(knight, ITEM_SLOT_CLOAK, 410, [&] {
-        EXPECT_EQ(knight.GetDisarmTrap(), plainDisarm + 4);
+        EXPECT_EQ(knight.GetDisarmTrap(), 16);
     });
     withEquipped(knight, ITEM_SLOT_MAIN_HAND, 415, [&] {
-        EXPECT_EQ(knight.GetDisarmTrap(), plainDisarm + 4);
+        EXPECT_EQ(knight.GetDisarmTrap(), 16);
     });
     knight.pActiveSkills[SKILL_TRAP_DISARM] = disarmSkillBefore;
 
@@ -6947,4 +6948,117 @@ GAME_TEST(Mm6, ReputationModel) {
     clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
     EXPECT_EQ(location.reputation, 100);
     leaveHouse(game);
+}
+
+// Hireling in-party benefits, MM6-audited against MM6.EXE (HasNPCProfession 0x467F30 caller
+// sweep): the benefit set and numbers below are the ones the shipped engine actually applies,
+// which differ from MM7's implementations in every case asserted here.
+GAME_TEST(Mm6, HirelingBenefits) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &roderick = pParty->pCharacters[0];
+    NPCData hirelingsBefore0 = pParty->pHirelings[0];
+    NPCData hirelingsBefore1 = pParty->pHirelings[1];
+    auto hire = [](NpcProfession first, NpcProfession second = NoProfession) {
+        pParty->pHirelings[0].profession = first;
+        pParty->pHirelings[1].profession = second;
+    };
+
+    // Arms Master +2 / Weapons Master +3 boost every weapon skill (they stack), Squire adds +2
+    // to weapon AND armor skills; none of them conjure a phantom MM7 Armsmaster skill.
+    hire(NoProfession);
+    int sword = roderick.actualSkillLevel(SKILL_SWORD);
+    int bow = roderick.actualSkillLevel(SKILL_BOW);
+    int plate = roderick.actualSkillLevel(SKILL_PLATE);
+    int shield = roderick.actualSkillLevel(SKILL_SHIELD);
+    hire(Armsmaster, Weaponsmaster);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_SWORD), sword + 5);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_BOW), bow + 5);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_PLATE), plate);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_ARMSMASTER), 0);
+    hire(Squire);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_SWORD), sword + 2);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_PLATE), plate + 2);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_SHIELD), shield + 2);
+
+    // Apprentice/Mystic/Spell Master boost EVERY spell school - the self schools and Light/Dark
+    // too, not just MM7's four elemental ones - and MM7's self-school professions do nothing.
+    hire(NoProfession);
+    int fire = roderick.actualSkillLevel(SKILL_FIRE);
+    int spirit = roderick.actualSkillLevel(SKILL_SPIRIT);
+    int dark = roderick.actualSkillLevel(SKILL_DARK);
+    hire(Apprentice, Spellmaster);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_FIRE), fire + 6);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_SPIRIT), spirit + 6);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_DARK), dark + 6);
+    hire(Prelate);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_SPIRIT), spirit);
+
+    // Negotiator: Merchant +4 on top of its Diplomacy +4.
+    hire(NoProfession);
+    int merchant = roderick.actualSkillLevel(SKILL_MERCHANT);
+    hire(Negotiator);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_MERCHANT), merchant + 4);
+
+    // Scout's Perception +6 and Psychic's Perception +5 are shipped no-ops in MM6.EXE
+    // (Psychic's Luck +10 is real).
+    hire(NoProfession);
+    int perception = roderick.actualSkillLevel(SKILL_PERCEPTION);
+    int luck = roderick.GetActualLuck();
+    hire(Scout, Psychic);
+    EXPECT_EQ(roderick.actualSkillLevel(SKILL_PERCEPTION), perception);
+    EXPECT_EQ(roderick.GetActualLuck(), luck + 10);
+
+    // Enchanter: +20 to the four elemental resistances only - MM6's Magic resistance
+    // (Mind/Spirit/Body here) gets nothing.
+    hire(NoProfession);
+    int fireRes = roderick.GetActualResistance(ATTRIBUTE_RESIST_FIRE);
+    int mindRes = roderick.GetActualResistance(ATTRIBUTE_RESIST_MIND);
+    hire(Enchanter);
+    EXPECT_EQ(roderick.GetActualResistance(ATTRIBUTE_RESIST_FIRE), fireRes + 20);
+    EXPECT_EQ(roderick.GetActualResistance(ATTRIBUTE_RESIST_MIND), mindRes);
+
+    // Experience: Teacher +10 / Instructor +15 are real, the Scholar's documented +5 percent is
+    // a shipped no-op (its unlimited identification is real and separate).
+    hire(NoProfession);
+    int learning = roderick.getLearningPercent();
+    hire(Teacher, Instructor);
+    EXPECT_EQ(roderick.getLearningPercent(), learning + 25);
+    hire(Scholar);
+    EXPECT_EQ(roderick.getLearningPercent(), learning);
+
+    // Disarm hirelings add AFTER the Thievery doubling: novice skill 4 with a Burglar is
+    // 2 x (4 + 8), and with Pendragon equipped 2 x (4 x 2 + 8).
+    CombinedSkillValue disarmBefore = roderick.pActiveSkills[SKILL_TRAP_DISARM];
+    roderick.pActiveSkills[SKILL_TRAP_DISARM] = CombinedSkillValue(4, MASTERY_NOVICE);
+    hire(Burglar);
+    EXPECT_EQ(roderick.GetDisarmTrap(), 24);
+    if (InventoryEntry existing = roderick.inventory.entry(ITEM_SLOT_CLOAK))
+        roderick.inventory.take(existing);
+    InventoryEntry pendragon = roderick.inventory.equip(ITEM_SLOT_CLOAK, Item(ItemId(410)));
+    EXPECT_EQ(roderick.GetDisarmTrap(), 32);
+    roderick.inventory.take(pendragon);
+    roderick.pActiveSkills[SKILL_TRAP_DISARM] = disarmBefore;
+
+    // Acolyte & Piper: their once-a-day action is a fixed whole-party buff - Bless / Heroism at
+    // power 5, Master, 2 hours - not a real spell cast.
+    hire(Acolyte, Piper);
+    Time expectedExpiry = pParty->GetPlayingTime() + Duration::fromHours(2);
+    UseNPCSkill(Acolyte, 0);
+    UseNPCSkill(Piper, 1);
+    for (const Character &character : pParty->pCharacters) {
+        EXPECT_TRUE(character.pCharacterBuffs[CHARACTER_BUFF_BLESS].Active());
+        EXPECT_EQ(character.pCharacterBuffs[CHARACTER_BUFF_BLESS].power, 5);
+        EXPECT_EQ(character.pCharacterBuffs[CHARACTER_BUFF_BLESS].skillMastery, MASTERY_MASTER);
+        EXPECT_EQ(character.pCharacterBuffs[CHARACTER_BUFF_BLESS].expireTime, expectedExpiry);
+        EXPECT_TRUE(character.pCharacterBuffs[CHARACTER_BUFF_HEROISM].Active());
+        EXPECT_EQ(character.pCharacterBuffs[CHARACTER_BUFF_HEROISM].power, 5);
+    }
+
+    pParty->pHirelings[0] = hirelingsBefore0;
+    pParty->pHirelings[1] = hirelingsBefore1;
 }

@@ -189,10 +189,28 @@ int UseNPCSkill(NpcProfession profession, int id) {
         } break;
 
         case Acolyte:
-            pushNPCSpell(SPELL_SPIRIT_BLESS);
+            // MM6.EXE 0x4A2D9C: the hireling's Bless is a fixed whole-party buff - power 5,
+            // Master, 2 hours - applied directly, not a real spell cast. MM6's Bless/Heroism
+            // native ids coincide with MM7's, so the native cast sound is the enum's own.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                for (Character &player : pParty->pCharacters)
+                    player.pCharacterBuffs[CHARACTER_BUFF_BLESS]
+                        .Apply(pParty->GetPlayingTime() + Duration::fromHours(2), MASTERY_MASTER, 5, 0, 0);
+                pAudioPlayer->playSpellSound(SPELL_SPIRIT_BLESS, false, SOUND_MODE_UI);
+            } else {
+                pushNPCSpell(SPELL_SPIRIT_BLESS);
+            }
             break;
         case Piper:
-            pushNPCSpell(SPELL_SPIRIT_HEROISM);
+            // MM6.EXE 0x4A2E36: same fixed model for the Piper's Heroism.
+            if (engine->gameVersion() == GAME_VERSION_MM6) {
+                for (Character &player : pParty->pCharacters)
+                    player.pCharacterBuffs[CHARACTER_BUFF_HEROISM]
+                        .Apply(pParty->GetPlayingTime() + Duration::fromHours(2), MASTERY_MASTER, 5, 0, 0);
+                pAudioPlayer->playSpellSound(SPELL_SPIRIT_HEROISM, false, SOUND_MODE_UI);
+            } else {
+                pushNPCSpell(SPELL_SPIRIT_HEROISM);
+            }
             break;
         case FallenWizard:
             pushNPCSpell(SPELL_LIGHT_HOUR_OF_POWER);
