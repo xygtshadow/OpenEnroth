@@ -866,6 +866,30 @@ std::string GetItemTextureFilename(ItemId item_id, int index, int shoulder) {
 
 //----- (004BDAAF) --------------------------------------------------------
 bool Item::canSellRepairIdentifyAt(HouseId houseId) {
+    if (pItemTable->version == GAME_VERSION_MM6) {
+        // MM6.EXE 0x4A4C30 - the shop-click eligibility check, shared by sell, identify AND
+        // repair exactly like this function. Quest items are refused by raw id (even quest
+        // weapons/armor, and at general stores too), gems stay sellable, and there is no
+        // stolen check - MM6 items have no stolen flag.
+        if (itemId > ITEM_MM6_LAST_RELIC && !(itemId >= ITEM_MM6_FIRST_GEM && itemId <= ITEM_MM6_LAST_GEM))
+            return false;
+
+        switch (houseTable[houseId].uType) {
+            case HOUSE_TYPE_WEAPON_SHOP:
+                return this->isWeapon(); // items.txt equip stat Weapon/Weapon2/Weapon1or2/Missile.
+            case HOUSE_TYPE_ARMOR_SHOP:
+                return this->isArmor(); // Equip stat Armor through Boots - shields, helms, belts...
+            case HOUSE_TYPE_MAGIC_SHOP:
+                // Skill column "Misc": rings, amulets, wands, misc armor pieces, herbs, potions,
+                // scrolls, books, gems - everything without a weapon/armor proficiency.
+                return this->skill() == SKILL_MISC;
+            case HOUSE_TYPE_ALCHEMY_SHOP:
+                return true; // MM6 general stores (the alchemy-shop slot) buy anything - at half price.
+            default:
+                return false;
+        }
+    }
+
     if (this->IsStolen())
         return false;
 
@@ -886,8 +910,6 @@ bool Item::canSellRepairIdentifyAt(HouseId houseId) {
         case HOUSE_TYPE_MAGIC_SHOP:
             return (this->skill() == SKILL_MISC && !isRecipe(this->itemId)) || this->isBook();
         case HOUSE_TYPE_ALCHEMY_SHOP:
-            if (pItemTable->version == GAME_VERSION_MM6)
-                return true; // MM6 general stores (the alchemy-shop slot) buy anything - at half price.
             return this->isReagent() ||
                    this->isPotion() ||
                    (this->isMessageScroll() && isRecipe(this->itemId));

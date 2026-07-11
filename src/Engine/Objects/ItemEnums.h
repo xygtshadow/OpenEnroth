@@ -1034,6 +1034,16 @@ constexpr ItemId ITEM_MM6_RELIC_AEGIS = ItemId(423);        // Shielding and Imm
 // (MM6.EXE actor-death handler @0x4031f1), and the reactor face event 60 trades it for the win.
 constexpr ItemId ITEM_MM6_RITUAL_OF_THE_VOID = ItemId(544);
 
+// MM6 shop sell/identify/repair eligibility (MM6.EXE 0x4A4C30) refuses quest property by raw id:
+// everything above the artifact/relic block (which ends at 429, Hera) - the Leather Pouches,
+// Hourglass of Time, Sacred Chalice and Horn of Ros at 430-435, then Third Eye through the
+// message scrolls at 446-580 - EXCEPT the ten gems Diamond..Sapphire at 436-445, which shops
+// do take. Notably this makes the quest weapons Snergle's Axe (498) and Lord Kilburn's Shield
+// (499) unsellable even at a weapon shop, while artifacts and relics sell fine.
+constexpr ItemId ITEM_MM6_LAST_RELIC = ItemId(429);
+constexpr ItemId ITEM_MM6_FIRST_GEM = ItemId(436);
+constexpr ItemId ITEM_MM6_LAST_GEM = ItemId(445);
+
 enum class ItemType {
     ITEM_TYPE_INVALID = -1, // No items in the game have this type.
     ITEM_TYPE_SINGLE_HANDED = 0, // Also blasters.

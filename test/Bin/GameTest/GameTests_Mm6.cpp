@@ -1127,6 +1127,65 @@ GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
     game.tick(5);
 }
 
+// MM6.EXE 0x4A4C30 is the shop eligibility check shared by the sell, identify and repair clicks:
+// quest property is refused by raw id - 430-435 (Leather Pouches, Hourglass of Time, Sacred
+// Chalice, Horn of Ros) and everything from 446 up (Third Eye, keys, maps, Snergle's Axe,
+// Lord Kilburn's Shield, message scrolls) - while the gems 436-445 remain sellable. The type
+// gates: weapon shops take weapons (items.txt equip stat Weapon/Weapon2/Weapon1or2/Missile),
+// armor shops take Armor through Boots, magic shops take anything with skill column "Misc"
+// (rings, wands, scrolls, books, potions, misc armor pieces, gems), general stores take all.
+GAME_TEST(Mm6, ShopSellRepairIdentifyEligibility) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // MM6 2dEvents rows: 1-14 weapon shops, 15-28 armor shops, 29-41 magic shops, 42-47
+    // general stores - the EXE eligibility check dispatches on these raw id ranges.
+    HouseId weapon = HouseId(1), armor = HouseId(15), magic = HouseId(29), general = HouseId(42);
+    ASSERT_EQ(houseTable[weapon].uType, HOUSE_TYPE_WEAPON_SHOP);
+    ASSERT_EQ(houseTable[armor].uType, HOUSE_TYPE_ARMOR_SHOP);
+    ASSERT_EQ(houseTable[magic].uType, HOUSE_TYPE_MAGIC_SHOP);
+    ASSERT_EQ(houseTable[general].uType, HOUSE_TYPE_ALCHEMY_SHOP);
+
+    auto sellable = [](int id, HouseId house) { return Item(ItemId(id)).canSellRepairIdentifyAt(house); };
+
+    // Weapon shop: weapons only - including artifacts (Mordred 400) but NOT wands.
+    EXPECT_TRUE(sellable(1, weapon));    // Longsword.
+    EXPECT_TRUE(sellable(400, weapon));  // Mordred - MM6 artifacts are ordinary merchandise.
+    EXPECT_FALSE(sellable(135, weapon)); // Wand of Flame - equip stat "WeaponW" is not a weapon-shop ware.
+    EXPECT_FALSE(sellable(89, weapon));  // Helm.
+
+    // Armor shop: equip stats Armor..Boots.
+    EXPECT_TRUE(sellable(66, armor));   // Leather Armor.
+    EXPECT_TRUE(sellable(89, armor));   // Helm.
+    EXPECT_TRUE(sellable(79, armor));   // Kite Shield.
+    EXPECT_FALSE(sellable(1, armor));   // Longsword.
+
+    // Magic shop: everything with skill column "Misc" - including misc armor pieces like helms.
+    EXPECT_TRUE(sellable(120, magic));  // Fine Ring.
+    EXPECT_TRUE(sellable(135, magic));  // Wand of Flame.
+    EXPECT_TRUE(sellable(200, magic));  // Torch Light scroll.
+    EXPECT_TRUE(sellable(300, magic));  // Torch Light book.
+    EXPECT_TRUE(sellable(164, magic));  // Cure Wounds potion.
+    EXPECT_TRUE(sellable(89, magic));   // Helm - skill "Misc", so magic shops DO take it.
+    EXPECT_TRUE(sellable(436, magic));  // Diamond.
+    EXPECT_FALSE(sellable(1, magic));   // Longsword - skill "Sword".
+
+    // The quest-id gate applies at EVERY shop, general stores included, and even to quest
+    // weapons/armor at their own shop type.
+    for (HouseId house : {weapon, armor, magic, general}) {
+        EXPECT_FALSE(sellable(433, house)) << std::to_underlying(house); // Hourglass of Time.
+        EXPECT_FALSE(sellable(449, house)) << std::to_underlying(house); // Candelabra.
+        EXPECT_FALSE(sellable(505, house)) << std::to_underlying(house); // The Letter.
+    }
+    EXPECT_FALSE(sellable(498, weapon)); // Snergle's Axe - a weapon, but quest property.
+    EXPECT_FALSE(sellable(499, armor));  // Lord Kilburn's Shield - armor, but quest property.
+    EXPECT_TRUE(sellable(445, general)); // Sapphire - the gems 436-445 stay sellable.
+    EXPECT_TRUE(sellable(429, general)); // Hera, the last relic - fine at a general store.
+}
+
 // MM6 training halls are 2dEvents rows 79-88 and they ONLY train - the MM6.EXE option factory
 // (type-30 case @0x4984a6) creates the single Train option, and no learn-skill options exist
 // anywhere in MM6 houses outside the guilds. The per-hall level caps come from the EXE's word
