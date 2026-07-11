@@ -260,10 +260,27 @@ class Actor {
     Duration massDistortionTime; // Value of pMiscTimer when mass distortion was cast. This was stored in the buffs table
                                  // in vanilla, which made little sense. Buff table stores game time, putting a value of
                                  // a misc timer in there is very questionable.
-    Time cursedExpireTime; // Game time until which this monster is cursed by MM6's Mass Curse (misses every attack).
-                           // MM6-only, and transient like massDistortionTime: not part of the fixed MM7 save format,
-                           // so it does not survive save/load. Zero (the default) means not cursed. Nothing in MM7
-                           // sets it, so the ActorHitOrMiss curse check is a no-op there.
+    Time cursedExpireTime; // Game time until which this monster is cursed (MM6's Mass Curse / Dark Containment):
+                           // a cursed monster has a flat 50% chance to miss each melee or arrow attack
+                           // (MM6.EXE 0x431c48 - rand()%100 < 50 -> miss). MM6-only, and transient like
+                           // massDistortionTime: not part of the fixed MM7 save format, so it does not survive
+                           // save/load. Zero (the default) means not cursed. Nothing in MM7 sets it, so the
+                           // ActorHitOrMiss curse check is a no-op there.
+    Time mm6FeeblemindExpireTime; // Game time until which this monster is feebleminded (MM6's Dark Containment):
+                                  // a feebleminded monster cannot CAST SPELLS - the cast-state entry falls back
+                                  // to pursuing (MM6.EXE 0x4041e4 in the AI_SpellAttack analog 0x404160); melee
+                                  // and missile attacks are unaffected. Same transient MM6-only storage as
+                                  // cursedExpireTime.
+
+    /**
+     * MM6's saving throw against magic-school spell effects (MM6.EXE 0x421e90 with damage type 1 = magic,
+     * used by Mass Curse per viewport monster and by Dark Containment per debuff): a monster with magic
+     * resistance >= 200 is immune, otherwise the effect sticks iff rand() % (level + magicRes + 30) < 30.
+     * MM6 monster magic resistance lives in the resMind slot of the Mind/Spirit/Body fan-out.
+     *
+     * @return  Whether the effect sticks on this monster. Only meaningful in MM6 sessions.
+     */
+    bool mm6MagicEffectSticks() const;
 };
 
 extern std::deque<Actor> pActors;

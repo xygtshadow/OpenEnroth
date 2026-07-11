@@ -296,14 +296,16 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
         }
 
         case SPELL_DARK_VAMPIRIC_WEAPON: {  // MM6 id 91 = Mass Curse.
-            // Inflicts the cursed condition - miss every attack - on every monster in the caster's line of sight
-            // for 2/3/4 minutes per point of skill at Novice/Expert/Master (MM6.EXE 0x42928b). spells.txt says
-            // "all monsters in the sight of the caster", with no immunity (unlike Dark Containment). The curse is
-            // read in Actor::ActorHitOrMiss.
+            // Inflicts the cursed condition - a 50% chance to miss each attack - on monsters in the caster's
+            // line of sight for 2/3/4 minutes per point of skill at Novice/Expert/Master (MM6.EXE 0x42928b).
+            // Each monster gets a saving throw against its magic resistance (0x429376 -> 0x421e90): immune at
+            // 200+, otherwise the curse sticks with chance 30 / (level + magicRes + 30). The curse is read in
+            // Actor::ActorHitOrMiss.
             int minutesPerSkill = spellMastery >= MASTERY_MASTER ? 4 : spellMastery == MASTERY_EXPERT ? 3 : 2;
             Time expireTime = pParty->GetPlayingTime() + Duration::fromMinutes(minutesPerSkill * spellLevel);
             for (Actor *actor : render->getActorsInViewport(4096))
-                actor->cursedExpireTime = expireTime;
+                if (actor->mm6MagicEffectSticks())
+                    actor->cursedExpireTime = expireTime;
             break;
         }
 

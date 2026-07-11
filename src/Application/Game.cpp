@@ -1703,15 +1703,32 @@ void Game::gameLoop() {
             if (uGameState == GAME_STATE_PARTY_DIED) {
                 pAudioPlayer->stopSounds();
 
+                // Dying in the Hive after the reactor is destroyed (qbit 180) but before handing in the win
+                // (qbit 237, set by hive.evt event 60) is the LOSE ending, not a respawn: MM6.EXE's defeat
+                // handler (0x453bbd / 0x454109) checks the current map against "hive.blv" and runs event 601 -
+                // the lose certificate - instead; the movie, penalties and respawn are all skipped.
+                if (engine->gameVersion() == GAME_VERSION_MM6 &&
+                    engine->_currentLoadedMapId == pMapStats->GetMapInfo("hive.blv") &&
+                    pParty->_questBits[static_cast<QuestBit>(180)] &&
+                    !pParty->_questBits[static_cast<QuestBit>(237)]) {
+                    enterHouse(HOUSE_THRONEROOM_WIN_EVIL); // MM6 house 601 = Lose; queues the game-over window.
+                    uGameState = GAME_STATE_PLAYING;
+                    continue;
+                }
+
                 // MM6's Guardian Angel turns this defeat into a resurrection compact: while the party buff is
-                // active, the party is revived for HALF its gold (not all of it) with HP by mastery, and the
-                // usual week-long time penalty is skipped (so the buff survives to protect against later deaths
-                // until its own timer expires). Captured here, before the resets below clear party state. This
-                // is MM6-only and never fires in MM7 - nothing there sets the field. See castMm6UniqueSpell.
+                // active, the party is revived for HALF its gold (not all of it) with HP by mastery. Captured
+                // here, before the resets below clear party state, and CONSUMED - MM6.EXE's defeat handler
+                // (0x453e11) wipes the whole 16-slot party buff array, Guardian Angel included, after reading
+                // it, so one cast protects against one defeat. The week-long time penalty applies either way
+                // (0x453d70 adds it before the buff is even read). This is MM6-only and never fires in MM7 -
+                // nothing there sets the field. See castMm6UniqueSpell.
                 bool mm6GuardianAngel = engine->gameVersion() == GAME_VERSION_MM6 &&
                                         pParty->_mm6GuardianAngelExpireTime > pParty->GetPlayingTime();
                 Mastery mm6GuardianAngelMastery = pParty->_mm6GuardianAngelMastery;
                 int mm6GoldBeforeDeath = pParty->GetGold();
+                pParty->_mm6GuardianAngelExpireTime = Time();
+                pParty->_mm6GuardianAngelMastery = MASTERY_NONE;
 
                 pParty->pHirelings[0] = NPCData();
                 pParty->pHirelings[1] = NPCData();
@@ -1731,8 +1748,7 @@ void Game::gameLoop() {
                                                          : std::to_underlying(AWARD_DEATHS));
                 }
                 pParty->days_played_without_rest = 0;
-                if (!mm6GuardianAngel)
-                    pParty->GetPlayingTime() += Duration::fromDays(7);  // += 2580480
+                pParty->GetPlayingTime() += Duration::fromDays(7);  // += 2580480
                 pParty->uFlags &= ~(PARTY_FLAG_WATER_DAMAGE | PARTY_FLAG_BURNING);
                 pParty->SetGold(mm6GuardianAngel ? mm6GoldBeforeDeath / 2 : 0);
                 pActiveOverlayList->Reset();

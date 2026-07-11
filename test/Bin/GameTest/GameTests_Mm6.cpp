@@ -2765,6 +2765,55 @@ GAME_TEST(Mm6, DeathRespawnsInNewSorpigal) {
     }
 }
 
+// Dying in the Hive after the reactor is destroyed (qbit 180) but before the win hand-in (qbit 237, set by
+// hive.evt event 60) is the LOSE ending, not a respawn: MM6.EXE's defeat handler (0x453bbd / 0x454109)
+// checks the current map against "hive.blv" and runs event 601 - the lose certificate - instead of the
+// losegame movie, penalties and New Sorpigal respawn.
+GAME_TEST(Mm6, HiveDeathLosesGame) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId hive = pMapStats->GetMapInfo("hive.blv");
+    ASSERT_NE(hive, MAP_INVALID);
+
+    auto enterHive = [&] {
+        game.teleportTo(hive, Vec3f(0, 0, 0), 0);
+        ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+        game.teleportTo(hive, pIndoor->pSpawnPoints[0].position, 0);
+        game.tick(1);
+    };
+    auto killWholeParty = [&] {
+        for (Character &character : pParty->pCharacters)
+            character.conditions.set(CONDITION_DEAD, pParty->GetPlayingTime());
+        game.tick(10);
+    };
+
+    // Control: dying in the Hive BEFORE the reactor is destroyed is an ordinary defeat - respawn in
+    // New Sorpigal like anywhere else.
+    enterHive();
+    killWholeParty();
+    EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
+
+    // Back into the Hive, this time mid-meltdown: reactor destroyed, win not handed in.
+    enterHive();
+    pParty->_questBits.set(static_cast<QuestBit>(180));
+    killWholeParty();
+
+    // The lose certificate shows instead of a respawn - the party is still in the Hive behind it - and
+    // closing it (first click = credits popup, second = release) quits to the main menu.
+    EXPECT_EQ(current_screen_type, SCREEN_GAMEOVER_WINDOW);
+    ASSERT_TRUE(pGameOverWindow);
+    EXPECT_EQ(engine->_currentLoadedMapId, hive);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    for (int i = 0; i < 50 && GetCurrentMenuID() != MENU_MAIN; i++)
+        game.tick(1);
+    EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
+}
+
 GAME_TEST(Mm6, FootTravelAcrossBorders) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -3958,7 +4007,9 @@ GAME_TEST(Mm6, MassCurse) {
     Actor *mon = inView[0];
     Character &target = pParty->pCharacters[0];
 
-    // Effect hook: a cursed monster misses every attack; an un-cursed one lands some over many attempts.
+    // Effect hook: a cursed monster has a flat 50% chance to miss each attack (MM6.EXE 0x431c48 -
+    // rand() % 100 < 50 -> miss), so over many attempts it lands roughly HALF the hits of an un-cursed
+    // one - but it still lands some (it is not an auto-miss).
     mon->cursedExpireTime = Time();
     int hitsWhenUncursed = 0;
     for (int i = 0; i < 500; i++)
@@ -3967,13 +4018,36 @@ GAME_TEST(Mm6, MassCurse) {
     EXPECT_GT(hitsWhenUncursed, 0);
 
     mon->cursedExpireTime = pParty->GetPlayingTime() + Duration::fromMinutes(10);
+    int hitsWhenCursed = 0;
     for (int i = 0; i < 500; i++)
-        EXPECT_FALSE(mon->ActorHitOrMiss(&target));
+        if (mon->ActorHitOrMiss(&target))
+            hitsWhenCursed++;
+    EXPECT_GT(hitsWhenCursed, 0);
+    EXPECT_GT(hitsWhenCursed, hitsWhenUncursed / 5);      // True ratio is 1/2; these bounds are ~5 sigma.
+    EXPECT_LT(hitsWhenCursed, hitsWhenUncursed * 4 / 5);
 
     mon->cursedExpireTime = Time(); // Clear before exercising the real cast.
 
-    // Cast Mass Curse at Novice, skill 10 -> 2 min/skill * 10 = 20 minutes of curse on every monster in sight.
-    // Nothing moves the party or monsters between this snapshot and the cast, so the same actors are in view.
+    // The saving throw (MM6.EXE 0x421e90, damage type 1 = magic): level 0 / res 0 always sticks
+    // (rand() % 30 < 30 is a tautology), and magic resistance >= 200 is outright immune.
+    int monLevel = mon->monsterInfo.level;
+    int monResMind = mon->monsterInfo.resMind;
+    mon->monsterInfo.level = 0;
+    mon->monsterInfo.resMind = 0;
+    EXPECT_TRUE(mon->mm6MagicEffectSticks());
+    mon->monsterInfo.resMind = 200;
+    EXPECT_FALSE(mon->mm6MagicEffectSticks());
+    mon->monsterInfo.level = monLevel;
+    mon->monsterInfo.resMind = monResMind;
+
+    // Cast Mass Curse at Novice, skill 10 -> 2 min/skill * 10 = 20 minutes of curse on every monster in sight
+    // that fails its magic save - zero the in-view monsters' level and magic resistance first so the save
+    // deterministically sticks. Nothing moves the party or monsters between this snapshot and the cast, so the
+    // same actors are in view.
+    for (Actor *actor : inView) {
+        actor->monsterInfo.level = 0;
+        actor->monsterInfo.resMind = 0;
+    }
     Time castStart = pParty->GetPlayingTime();
     pushSpellOrRangedAttack(static_cast<SpellId>(91), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 1);
     game.tick(1);
@@ -3990,7 +4064,124 @@ GAME_TEST(Mm6, MassCurse) {
         }
     }
     ASSERT_NE(cursedMon, nullptr) << "Mass Curse should have cursed at least one monster in view";
-    EXPECT_FALSE(cursedMon->ActorHitOrMiss(&target)); // End to end: the cast cursed it, so it now misses.
+    // End to end: the cast cursed it, so the 50% curse roll now produces misses (100 straight hits would
+    // need every curse coin-flip AND every base to-hit roll to succeed - P < 1e-30).
+    bool anyMiss = false;
+    for (int i = 0; i < 100 && !anyMiss; i++)
+        anyMiss = !cursedMon->ActorHitOrMiss(&target);
+    EXPECT_TRUE(anyMiss);
+}
+
+// MM6's Dark Containment (native id 99, the last Dark spell) deals NO damage at all - MM6.EXE's impact case
+// (0x45d0fc, the object-id 9100 entry of the impact jump table) inflicts monster debuffs instead: each of
+// Shrink/Stoned/Paralyze/Curse/Slow/Charm/Fear/Feeblemind is rolled INDEPENDENTLY against the monster's magic
+// saving throw (immune at res >= 200, otherwise it sticks with chance 30 / (level + res + 30)) for a random
+// (rand() % 30 + 1) * 128 tick (30 game-seconds to 15 minute) duration at power rand() % 3 + 2. Feeblemind is
+// the MM6 condition that blocks monster SPELL-CASTING (the cast-state entry falls back to pursuing, MM6.EXE
+// 0x4041e4); the curse only imposes the 50% attack-miss chance.
+GAME_TEST(Mm6, DarkContainment) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    engine->config->debug.AllMagic.setValue(true);
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // Indoor, so the projectile's sector is defined.
+    game.tick(1);
+
+    int monId = -1;
+    for (size_t i = 0; i < pActors.size(); i++) {
+        if (pActors[i].hp > 0) {
+            monId = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_NE(monId, -1);
+    Actor &mon = pActors[monId];
+
+    static constexpr std::array<ActorBuff, 6> kContainmentBuffs = {
+        ACTOR_BUFF_SHRINK, ACTOR_BUFF_STONED, ACTOR_BUFF_PARALYZED,
+        ACTOR_BUFF_SLOWED, ACTOR_BUFF_CHARM, ACTOR_BUFF_AFRAID};
+
+    // Quick-cast Dark Containment and impact its projectile straight onto the monster (the pattern from
+    // ShiftedSpellDealsImpactDamage - the projectile may clip scenery during its creating tick).
+    auto castAndImpact = [&] {
+        for (SpriteObject &object : pSpriteObjects) // Retire any earlier cast's projectile so the scan
+            if (object.uSpellID == static_cast<SpellId>(99)) // below finds only the fresh one.
+                object.uSpellID = SPELL_NONE;
+        pushSpellOrRangedAttack(static_cast<SpellId>(99), 0, CombinedSkillValue(10, MASTERY_NOVICE), 0, 1);
+        game.tick(1);
+        int proj = -1;
+        for (size_t j = 0; j < pSpriteObjects.size(); j++)
+            if (pSpriteObjects[j].uSpellID == static_cast<SpellId>(99))
+                proj = static_cast<int>(j);
+        ASSERT_NE(proj, -1) << "Dark Containment formed no projectile";
+        SpriteObject &p = pSpriteObjects[proj];
+        p.spriteId = SpellSpriteMapping[static_cast<SpellId>(99)];
+        p.uObjectDescID = pObjectList->ObjectIDByItemID(p.spriteId);
+        processSpellImpact(proj, Pid(OBJECT_Actor, monId));
+    };
+
+    // Deterministic saves: level 0 / magic res 0 makes every effect stick (rand() % 30 < 30 always).
+    mon.monsterInfo.level = 0;
+    mon.monsterInfo.resMind = 0;
+    mon.hp = 500;
+    Time castStart = pParty->GetPlayingTime();
+    castAndImpact();
+    Time castEnd = pParty->GetPlayingTime();
+
+    EXPECT_EQ(mon.hp, 500) << "Dark Containment must deal no damage";
+    for (ActorBuff debuff : kContainmentBuffs) {
+        EXPECT_TRUE(mon.buffs[debuff].Active()) << "debuff " << std::to_underlying(debuff);
+        // The buffs are stamped at impact time (== castEnd; nothing ticks in between): (rand()%30+1)*128.
+        EXPECT_GE(mon.buffs[debuff].expireTime, castStart + Duration::fromTicks(128));
+        EXPECT_LE(mon.buffs[debuff].expireTime, castEnd + Duration::fromTicks(30 * 128));
+        EXPECT_GE(mon.buffs[debuff].power, 2);
+        EXPECT_LE(mon.buffs[debuff].power, 4);
+    }
+    EXPECT_GT(mon.cursedExpireTime, castStart);          // Curse and Feeblemind have no ACTOR_BUFF_* slot -
+    EXPECT_GT(mon.mm6FeeblemindExpireTime, castStart);   // they live in the transient Actor fields.
+
+    // Feeblemind blocks spell-casting: the cast-state entry (AI_SpellAttack1, the analog of MM6.EXE 0x404160)
+    // falls back to pursuing while the buff is active. Establish the control FIRST - find a monster that,
+    // un-feebled, actually enters the cast state (i.e. has line of sight to the party; the first d01 spawn
+    // always has monsters in view) - so the feebleminded outcome below can only be the gate's doing.
+    int casterId = -1;
+    for (size_t i = 0; i < pActors.size() && casterId == -1; i++) {
+        if (pActors[i].aiState == Dead || pActors[i].aiState == Removed)
+            continue;
+        AIDirection dir;
+        Actor::GetDirectionInfo(Pid(OBJECT_Actor, i), Pid(OBJECT_Character, 0), &dir, 0);
+        pActors[i].mm6FeeblemindExpireTime = Time();
+        Actor::AI_SpellAttack1(i, Pid(OBJECT_Character, 0), &dir);
+        if (pActors[i].aiState == AttackingRanged3)
+            casterId = static_cast<int>(i);
+    }
+    ASSERT_NE(casterId, -1) << "no monster with line of sight to the party could enter the cast state";
+    pActors[casterId].mm6FeeblemindExpireTime = pParty->GetPlayingTime() + Duration::fromMinutes(10);
+    AIDirection casterDir;
+    Actor::GetDirectionInfo(Pid(OBJECT_Actor, casterId), Pid(OBJECT_Character, 0), &casterDir, 0);
+    Actor::AI_SpellAttack1(casterId, Pid(OBJECT_Character, 0), &casterDir);
+    // The gate falls back to AI_Pursue1, which picks its own maneuver (Pursuing or Standing) - the
+    // one thing it must NOT do is enter the cast state the un-feebled control just reached.
+    EXPECT_NE(pActors[casterId].aiState, AttackingRanged3);
+    pActors[casterId].mm6FeeblemindExpireTime = Time();
+
+    // Immunity: magic resistance >= 200 shrugs the whole cascade off.
+    for (ActorBuff debuff : kContainmentBuffs)
+        mon.buffs[debuff].Reset();
+    mon.cursedExpireTime = Time();
+    mon.mm6FeeblemindExpireTime = Time();
+    mon.monsterInfo.resMind = 200;
+    mon.hp = 500;
+    castAndImpact();
+    EXPECT_EQ(mon.hp, 500);
+    for (ActorBuff debuff : kContainmentBuffs)
+        EXPECT_FALSE(mon.buffs[debuff].Active()) << "debuff " << std::to_underlying(debuff);
+    EXPECT_EQ(mon.cursedExpireTime, Time());
+    EXPECT_EQ(mon.mm6FeeblemindExpireTime, Time());
 }
 
 // MM6 has no hostile.txt and no monster factions (MMExtension defines HostileTxt and the IsAgainst relation
@@ -4105,17 +4296,22 @@ GAME_TEST(Mm6, GuardianAngel) {
 
     // While Guardian Angel is active, a total party defeat resurrects everyone for HALF the party's gold (not
     // all of it) with HP by mastery, and the game keeps playing. Novice = 1 HP, Expert = half HP, Master =
-    // full HP.
+    // full HP. The week-long time penalty applies either way (MM6.EXE 0x453d70 adds it before the buff is
+    // even read), and the buff is CONSUMED by the resurrect (0x453e11 wipes the whole party buff array,
+    // Guardian Angel included) - one cast protects against one defeat.
     auto expectResurrect = [&](Mastery mastery, auto hpForMax) {
-        pParty->_mm6GuardianAngelExpireTime = pParty->GetPlayingTime() + Duration::fromHours(10);
+        pParty->_mm6GuardianAngelExpireTime = pParty->GetPlayingTime() + Duration::fromDays(30);
         pParty->_mm6GuardianAngelMastery = mastery;
         pParty->SetGold(1000);
         std::array<int, 4> maxHealth;
         for (int i = 0; i < 4; i++)
             maxHealth[i] = pParty->pCharacters[i].GetMaxHealth();
+        Time timeBeforeDeath = pParty->GetPlayingTime();
         killWholeParty();
         EXPECT_EQ(uGameState, GAME_STATE_PLAYING);
         EXPECT_EQ(pParty->GetGold(), 500) << "mastery " << std::to_underlying(mastery);
+        EXPECT_GE(pParty->GetPlayingTime(), timeBeforeDeath + Duration::fromDays(7)); // Penalty is unconditional.
+        EXPECT_EQ(pParty->_mm6GuardianAngelExpireTime, Time()) << "the resurrect should consume the buff";
         for (int i = 0; i < 4; i++) {
             EXPECT_TRUE(pParty->pCharacters[i].CanAct());
             EXPECT_EQ(pParty->pCharacters[i].health, hpForMax(maxHealth[i]))
@@ -4125,10 +4321,6 @@ GAME_TEST(Mm6, GuardianAngel) {
     expectResurrect(MASTERY_NOVICE, [](int) { return 1; });               // Novice: 1 HP each.
     expectResurrect(MASTERY_EXPERT, [](int maxHp) { return maxHp / 2; }); // Expert: half HP.
     expectResurrect(MASTERY_MASTER, [](int maxHp) { return maxHp; });     // Master: full HP.
-
-    // Guardian Angel is a resurrection compact, not the week-long defeat penalty, so it does not advance the
-    // calendar - it survives a resurrect and keeps protecting the party until its own timer expires.
-    EXPECT_GT(pParty->_mm6GuardianAngelExpireTime, pParty->GetPlayingTime());
 
     // Control: with no Guardian Angel active, the same defeat loses ALL the gold and leaves everyone at 1 HP.
     pParty->_mm6GuardianAngelExpireTime = Time();

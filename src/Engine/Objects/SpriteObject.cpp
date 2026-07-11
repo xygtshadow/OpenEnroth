@@ -734,6 +734,54 @@ bool processSpellImpact(unsigned int uLayingItemID, Pid pid) {
             dispatchSprite = SpellSpriteMapping[effect];
     }
 
+    // MM6's Dark Containment (native id 99) deals NO damage at all - MM6.EXE's impact case (0x45d0fc, the
+    // object-id 9100 entry of the impact jump table) only inflicts monster debuffs: each of the eight debuff
+    // conditions is rolled INDEPENDENTLY against the monster's magic saving throw and, when it sticks, applied
+    // for a random (rand() % 30 + 1) * 128 ticks (30 game-seconds to 15 minutes) at power rand() % 3 + 2.
+    // Stoned and Paralyze
+    // additionally interrupt the monster's current action. The EXE's CalcSpellDamage row for id 99
+    // (50 + skill, same handler as Armageddon's) is dead code - the impact never routes through it, and
+    // neither does this branch. Debuff order matches the EXE's fall-through blocks. No monster casts spell 99
+    // (grep over MM6 monsters.txt spell ids), so this projectile is always party-cast.
+    if (engine->gameVersion() == GAME_VERSION_MM6 && object->uSpellID == SPELL_DARK_SOULDRINKER) {
+        if (pid.type() == OBJECT_Actor) {
+            Actor &actor = pActors[pid.id()];
+            Time now = pParty->GetPlayingTime();
+            auto rollDuration = [&] { return Duration::fromTicks((grng->random(30) + 1) * 128); };
+            auto rollPower = [&] { return grng->random(3) + 2; };
+            auto applyBuff = [&](ActorBuff debuff) {
+                if (!actor.mm6MagicEffectSticks())
+                    return;
+                if (debuff == ACTOR_BUFF_STONED || debuff == ACTOR_BUFF_PARALYZED) {
+                    actor.aiState = Standing;
+                    actor.UpdateAnimation();
+                }
+                // The EXE stores rand() % 3 in the buff's skill word, which nothing ever reads; Apply
+                // asserts a real mastery, so pass the lowest one.
+                actor.buffs[debuff].Apply(now + rollDuration(), MASTERY_NOVICE, rollPower(), 0, 0);
+            };
+            // Curse and Feeblemind are MM6 monster buffs with no ACTOR_BUFF_* slot (the fixed 21-slot MM7
+            // save format can't grow) - they live in the transient Actor fields.
+            applyBuff(ACTOR_BUFF_SHRINK);
+            applyBuff(ACTOR_BUFF_STONED);
+            applyBuff(ACTOR_BUFF_PARALYZED);
+            if (actor.mm6MagicEffectSticks())
+                actor.cursedExpireTime = now + rollDuration();
+            applyBuff(ACTOR_BUFF_SLOWED);
+            applyBuff(ACTOR_BUFF_CHARM);
+            applyBuff(ACTOR_BUFF_AFRAID);
+            if (actor.mm6MagicEffectSticks())
+                actor.mm6FeeblemindExpireTime = now + rollDuration();
+            actor.attributes |= ACTOR_AGGRESSOR;
+        }
+        updateSpriteOnImpact(object);
+        if (object->uObjectDescID == 0)
+            SpriteObject::OnInteraction(uLayingItemID);
+        object->spellSpriteStop();
+        pAudioPlayer->playSpellSound(object->uSpellID, true, SOUND_MODE_PID, Pid(OBJECT_Sprite, uLayingItemID));
+        return 0;
+    }
+
     switch (dispatchSprite) {
         case SPRITE_SPELL_FIRE_FIRE_SPIKE:
         case SPRITE_SPELL_AIR_SPARKS:

@@ -1344,6 +1344,13 @@ void Actor::AI_SpellAttack2(unsigned int uActorID, Pid edx0,
 
     v3 = &pActors[uActorID];
     a2 = edx0;
+    // MM6's Feeblemind condition blocks spell-casting only: the EXE's cast-state entry (0x404160, check at
+    // 0x4041e4) falls back to pursuing while the buff is active; melee and missile attacks are not gated.
+    // Set by Dark Containment; nothing in MM7 sets the field, so this is a no-op there.
+    if (v3->mm6FeeblemindExpireTime > pParty->GetPlayingTime()) {
+        Actor::AI_Pursue1(uActorID, edx0, uActorID, 64_ticks, pDir);
+        return;
+    }
     if (edx0.type() == OBJECT_Actor) {
         v6 = edx0.id();
         v4 = pActors[v6].pos.x;
@@ -1419,6 +1426,11 @@ void Actor::AI_SpellAttack1(unsigned int uActorID, Pid sTargetPid,
     Duration pDira;  // [sp+5Ch] [bp+8h]@10
 
     v3 = &pActors[uActorID];
+    // MM6's Feeblemind blocks spell-casting - see the identical gate in AI_SpellAttack2. No-op in MM7.
+    if (v3->mm6FeeblemindExpireTime > pParty->GetPlayingTime()) {
+        Actor::AI_Pursue1(uActorID, sTargetPid, uActorID, 64_ticks, pDir);
+        return;
+    }
     if (sTargetPid.type() == OBJECT_Actor) {
         v6 = sTargetPid.id();
         v4 = pActors[v6].pos.x;
@@ -3878,9 +3890,11 @@ bool Actor::ActorHitOrMiss(Character *pPlayer) {
     signed int v4;  // esi@8
     int v5;         // esi@8
 
-    // MM6's Mass Curse inflicts the cursed condition, which makes a monster miss every attack until it wears
-    // off. Only MM6's castMm6UniqueSpell sets cursedExpireTime, so this is a no-op in MM7.
-    if (this->cursedExpireTime > pParty->GetPlayingTime())
+    // MM6's cursed condition (Mass Curse / Dark Containment) gives the monster a flat 50% chance to miss
+    // each attack that rolls to-hit at all - MM6.EXE 0x431c48 (melee) / 0x431f14 (arrow and laser missiles):
+    // rand() % 100 < 50 -> miss. It is NOT an auto-miss, and it does not suppress spell casts (that is
+    // Feeblemind's job - see AI_SpellAttack). Only MM6 code sets cursedExpireTime, so this is a no-op in MM7.
+    if (this->cursedExpireTime > pParty->GetPlayingTime() && grng->random(100) < 50)
         return false;
 
     v3 = 0;
@@ -3896,6 +3910,16 @@ bool Actor::ActorHitOrMiss(Character *pPlayer) {
     v4 = pPlayer->GetActualAC() + 2 * this->monsterInfo.level + 10;
     v5 = grng->random(v4) + 1;
     return (v3 + v5 > pPlayer->GetActualAC() + 5);
+}
+
+bool Actor::mm6MagicEffectSticks() const {
+    // MM6.EXE 0x421e90 with damage type 1 (magic): resistance >= 200 is immune, otherwise
+    // rand() % (level + resistance + 30) < 30 for the effect to stick (0x421efc). MM6's monsters.txt
+    // magic resistance is stored in the resMind slot of the Mind/Spirit/Body fan-out (see LoadMonsters).
+    int resistance = this->monsterInfo.resMind;
+    if (resistance >= 200)
+        return false;
+    return grng->random(this->monsterInfo.level + resistance + 30) < 30;
 }
 
 //----- (0042756B) --------------------------------------------------------

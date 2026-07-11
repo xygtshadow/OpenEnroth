@@ -1249,11 +1249,16 @@ void GUIWindow_Shop::processStealingResult(int stealingResult, int fineToAdd) { 
     int reputationDelta = 0;
 
     if (stealingResult == 0 || stealingResult == 1) {  // got caught
-        pParty->uFine = std::clamp(pParty->uFine + fineToAdd, 0, 4000000);
-        if (pParty->uFine) {
-            for (Character &player : pParty->pCharacters) {
-                if (!player._achievedAwardsBits[AWARD_FINE]) {
-                    player._achievedAwardsBits.set(AWARD_FINE);
+        // MM6 has no fine ledger - its town halls collect monster bounties only and never offer to pay a
+        // fine off, so accruing uFine there would be a debt nothing can ever clear (and AWARD_FINE is an
+        // unrelated row in MM6's awards.txt). MM7 keeps the fine.
+        if (engine->gameVersion() != GAME_VERSION_MM6) {
+            pParty->uFine = std::clamp(pParty->uFine + fineToAdd, 0, 4000000);
+            if (pParty->uFine) {
+                for (Character &player : pParty->pCharacters) {
+                    if (!player._achievedAwardsBits[AWARD_FINE]) {
+                        player._achievedAwardsBits.set(AWARD_FINE);
+                    }
                 }
             }
         }
