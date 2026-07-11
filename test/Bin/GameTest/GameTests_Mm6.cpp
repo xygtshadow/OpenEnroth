@@ -51,6 +51,7 @@
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 #include "Engine/Spells/Spells.h"
+#include "Engine/Tables/AwardTable.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Tables/MessageScrollTable.h"
@@ -5009,6 +5010,67 @@ GAME_TEST(Mm6, CharacterScreenSkin) {
         active.inventory.take(offhand);
     equipInto(ITEM_SLOT_MAIN_HAND, 6);  // A two-handed weapon (Weapon2 row).
     game.tick(2);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+// Milestone 68: the character-sheet tab CONTENT is MM6-shaped. awards.txt loads despite having
+// no priority column (every row used to be skipped as "truncated"), award colors come from
+// MM6's id bands (MM6.EXE 0x4164a4), the awards arrows sit at MM6's rects (0x4152d8/0x41534a),
+// and the stats tab draws MM6's five-resistance block (0x413938).
+GAME_TEST(Mm6, CharacterSheetTabContent) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // awards.txt parses: two columns only, so the MM7 parse (which requires a third priority
+    // column) would leave every entry empty. Priorities are MM6's id bands.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(1)].pText, "Returned the Prince");
+    EXPECT_EQ(pAwards[static_cast<AwardId>(81)].pText, "Collected %u bounties");
+    EXPECT_EQ(pAwards[static_cast<AwardId>(82)].pText, "%u Deaths");
+    EXPECT_EQ(pAwards[static_cast<AwardId>(83)].pText, "Served %u Prison Terms");
+    EXPECT_EQ(pAwards[static_cast<AwardId>(1)].uPriority, 0);   // Quest awards: Magenta.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(8)].uPriority, 1);   // Promotions: Malibu.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(32)].uPriority, 2);  // Obelisk/specials: MoonRaker.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(37)].uPriority, 3);  // ScreaminGreen.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(64)].uPriority, 4);  // Guild memberships: Canary.
+    EXPECT_EQ(pAwards[static_cast<AwardId>(81)].uPriority, 5);  // Counted awards: Mimosa.
+
+    // Give the party a mix of awards spanning the bands, including counted ones.
+    pParty->uNumDeaths = 3;
+    pParty->uNumBountiesCollected = 2;
+    for (Character &character : pParty->pCharacters) {
+        character._achievedAwardsBits.set(static_cast<AwardId>(1), true);
+        character._achievedAwardsBits.set(static_cast<AwardId>(64), true);
+        character._achievedAwardsBits.set(static_cast<AwardId>(81), true);
+        character._achievedAwardsBits.set(static_cast<AwardId>(82), true);
+    }
+
+    game.pressAndReleaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+
+    // Every tab draws its MM6 content - the stats tab runs the five-resistance MM6 layout, the
+    // awards tab formats the counted rows and colors by band.
+    for (UIMessageType message : {UIMSG_ClickStatsBtn, UIMSG_ClickSkillsBtn, UIMSG_ClickAwardsBtn, UIMSG_ClickInventoryBtn}) {
+        engine->_messageQueue->addMessageCurrentFrame(message, 0, 0);
+        game.tick(2);
+    }
+
+    // The awards scrollbar arrows anchor at MM6's rects and load the palette-0-transparent
+    // arrow art (the strip click zone at (440,62) 16x232 is shared with MM7).
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickAwardsBtn, 0, 0);
+    game.tick(2);
+    ASSERT_NE(pBtn_Up, nullptr);
+    ASSERT_NE(pBtn_Down, nullptr);
+    EXPECT_EQ(pBtn_Up->rect.topLeft(), Pointi(440, 45));
+    EXPECT_EQ(pBtn_Down->rect.topLeft(), Pointi(440, 294));
+    EXPECT_EQ(pBtn_Up->vTextures[0], assets->getImage_Alpha("ar_up_up"));
+    EXPECT_EQ(pBtn_Down->vTextures[1], assets->getImage_Alpha("ar_dn_dn"));
 
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);

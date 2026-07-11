@@ -775,7 +775,7 @@ void Engine::SecondaryInitialization() {
 
     initializeQuests(engine->resources()->eventsData("quests.txt"));
     initializeAutonotes(engine->resources()->eventsData("autonote.txt"));
-    initializeAwards(engine->resources()->eventsData("awards.txt"));
+    initializeAwards(engine->resources()->eventsData("awards.txt"), gameVersion());
     initializeTransitions(engine->resources()->eventsData("trans.txt"));
     initializeMerchants(engine->resources()->eventsData("merchant.txt"));
     initializeMessageScrolls(engine->resources()->eventsData("scroll.txt"));

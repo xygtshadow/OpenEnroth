@@ -630,10 +630,11 @@ static void CharacterUI_LoadPaperdollTexturesMm6() {
     ui_character_inventory_paperdoll_background = assets->getImage_Solid("backdoll");
     ui_character_inventory_paperdoll_rings_background = assets->getImage_Alpha("backhand");
 
-    ui_ar_up_up = assets->getImage_Solid("ar_up_up");
-    ui_ar_up_dn = assets->getImage_Solid("ar_up_dn");
-    ui_ar_dn_up = assets->getImage_Solid("ar_dn_up");
-    ui_ar_dn_dn = assets->getImage_Solid("ar_dn_dn");
+    // MM6.EXE draws the awards arrows with the palette-0-transparent blit (0x40a680).
+    ui_ar_up_up = assets->getImage_Alpha("ar_up_up");
+    ui_ar_up_dn = assets->getImage_Alpha("ar_up_dn");
+    ui_ar_dn_up = assets->getImage_Alpha("ar_dn_up");
+    ui_ar_dn_dn = assets->getImage_Alpha("ar_dn_dn");
 
     for (int i = 0; i < pParty->pCharacters.size(); ++i) {
         std::string prefix = mm6DollPrefix(pParty->pCharacters[i].uCurrentFace);
@@ -926,9 +927,12 @@ void GUIWindow_CharacterRecord::createAwardsScrollBar() {
                 pButton->rect = {};
             }
         }
-        pBtn_Up = pGUIWindow_CurrentMenu->CreateButton({438, 46}, ui_ar_up_up->size(), BUTTON_TYPE_NORMAL, 0,
+        // MM6 anchors the arrows at (440,45)/(440,294) (MM6.EXE 0x4152d8/0x41534a); MM7 moved
+        // them to (438,46)/(438,292).
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        pBtn_Up = pGUIWindow_CurrentMenu->CreateButton(isMm6 ? Pointi(440, 45) : Pointi(438, 46), ui_ar_up_up->size(), BUTTON_TYPE_NORMAL, 0,
                                                        UIMSG_ClickAwardsUpBtn, 0, INPUT_ACTION_INVALID, "", {{ui_ar_up_up, ui_ar_up_dn}});
-        pBtn_Down = pGUIWindow_CurrentMenu->CreateButton({438, 292}, ui_ar_dn_up->size(), BUTTON_TYPE_NORMAL, 0,
+        pBtn_Down = pGUIWindow_CurrentMenu->CreateButton(isMm6 ? Pointi(440, 294) : Pointi(438, 292), ui_ar_dn_up->size(), BUTTON_TYPE_NORMAL, 0,
                                                          UIMSG_ClickAwardsDownBtn, 0, INPUT_ACTION_INVALID, "", {{ui_ar_dn_up, ui_ar_dn_dn}});
         pBtn_Scroll = pGUIWindow_CurrentMenu->CreateButton({440, 62}, {16, 232}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickAwardScrollBar, 0, INPUT_ACTION_INVALID, "");
     }
@@ -1183,16 +1187,20 @@ void GUIWindow_CharacterRecord::CharacterUI_SkillsTab_Draw(Character *player) {
                      player->uSkillPoints);
     GUIWindow::DrawText(assets->pFontArrus.get(), {24, 18}, colorTable.White, str, pGUIWindow_CurrentMenu->frameRect);
 
+    // MM6 seats the second group's header one row lower relative to the previous group's last
+    // row (MM6.EXE 0x4158d0 advances by 2h-6 where MM7 uses 2h-10).
+    int groupGap = 2 * assets->pFontLucida->GetHeight() - (engine->gameVersion() == GAME_VERSION_MM6 ? 6 : 10);
+
     int y = 2 * assets->pFontLucida->GetHeight() + 13;
     y = drawSkillTable(player, 24, y, allWeaponSkills(), 400, localization->str(LSTR_WEAPONS));
 
-    y += 2 * assets->pFontLucida->GetHeight() - 10;
+    y += groupGap;
     drawSkillTable(player, 24, y, allMagicSkills(), 400, localization->str(LSTR_MAGIC));
 
     y = 2 * assets->pFontLucida->GetHeight() + 13;
     y = drawSkillTable(player, 248, y, allArmorSkills(), 177, localization->str(LSTR_ARMOR));
 
-    y += 2 * assets->pFontLucida->GetHeight() - 10;
+    y += groupGap;
     y = drawSkillTable(player, 248, y, allMiscSkills(), 177, localization->str(LSTR_MISC));
 }
 
@@ -1285,9 +1293,12 @@ void GUIWindow_CharacterRecord::clickAwardsScroll(int yPos) {
 void GUIWindow_CharacterRecord::CharacterUI_AwardsTab_Draw(Character *player) {
     Recti window(12, 48, 424, 290);
     int stopPos = 0;
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
-    render->DrawQuad2D(ui_character_awards_background,
-                       engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(17, 14) : Pointi(8, 8));
+    // MM6 packs award rows 4 pixels apart instead of MM7's 8 (MM6.EXE 0x416275).
+    int rowGap = isMm6 ? 4 : 8;
+
+    render->DrawQuad2D(ui_character_awards_background, isMm6 ? Pointi(17, 14) : Pointi(8, 8));
 
     std::string str = fmt::format("{} {::}{}\f00000", localization->str(LSTR_AWARDS_FOR),
                                   ui_character_header_text_color.tag(), NameAndTitle(player->name, player->classType));
@@ -1304,7 +1315,7 @@ void GUIWindow_CharacterRecord::CharacterUI_AwardsTab_Draw(Character *player) {
         std::string str = getAchievedAwardsString(i);
 
         GUIWindow::DrawText(assets->pFontArrus.get(), {0, 0}, ui_character_award_color[pAwards[_achievedAwardsList[i]].uPriority % 6], str, window);
-        window.y = assets->pFontArrus->CalcTextHeight(str, window.w, 0) + window.y + 8;
+        window.y = assets->pFontArrus->CalcTextHeight(str, window.w, 0) + window.y + rowGap;
         currentlyDisplayedElems++;
         if (window.y > window.h) {
             break;
@@ -1312,6 +1323,10 @@ void GUIWindow_CharacterRecord::CharacterUI_AwardsTab_Draw(Character *player) {
     }
 
     _awardLimitReached = (_startAwardElem + currentlyDisplayedElems) == _achievedAwardsList.size();
+
+    // MM6 has no scroll thumb - its awards tab draws only the two arrows.
+    if (isMm6)
+        return;
 
     if (_startAwardElem) {
         if (!_awardLimitReached) {
@@ -1861,10 +1876,152 @@ void GUIWindow_CharacterRecord::CharacterUI_SkillsTab_CreateButtons() {
     }
 }
 
+// MM6's stats tab (MM6.EXE 0x413938): the same row set and format strings as MM7 except the
+// left column starts at y=57 (MM7: 53), the right column sits at x=273 starting y=54
+// (MM7: 266/50), the Luck->HitPoints and Shoot->resistance gaps are 2h+1 (MM7: 2h+5 / 2h-4),
+// Age tabs to 100 unconditionally and Level tabs to 100 unless the base level has three digits
+// (MM7 tabs both to 110 while current and base are below 100), and the resistance block is
+// MM6's five rows - Fire / Electricity / Cold / Poison / Magic - read from the slots the MM6
+// loaders fan them into (Elec->Air, Cold->Water, Poison->Earth, Magic->Mind), with no
+// immunity rows.
+static void CharacterUI_StatsTab_DrawMm6(Character *player) {
+    render->DrawQuad2D(ui_character_stats_background, Pointi(17, 14));
+
+    auto header = fmt::format("{::}{}\f00000\r180{}: {::}{}\f00000\n\n\n",
+                              ui_character_header_text_color.tag(),
+                              NameAndTitle(player->name, player->classType),
+                              localization->str(LSTR_SKILL_POINTS),
+                              player->uSkillPoints ? ui_character_bonus_text_color.tag() : ui_character_default_text_color.tag(),
+                              player->uSkillPoints);
+    GUIWindow::DrawText(assets->pFontArrus.get(), {26, 18}, colorTable.White, header, pGUIWindow_CurrentMenu->frameRect);
+
+    auto formatLeftCol = [] (LstrId lstr, int current, int max) {
+        Color color16 = UI_GetHealthManaAndOtherQualitiesStringColor(current, max);
+        if (max < 1000) {
+            return fmt::format("{}{::}\r424{}\f00000 /\t185{}\n", localization->str(lstr), color16.tag(), current, max);
+        } else {
+            return fmt::format("{}{::}\r388{}\f00000 / {}\n", localization->str(lstr), color16.tag(), current, max);
+        }
+    };
+
+    int fontHeight = assets->pFontArrus->GetHeight();
+
+    struct LeftRow {
+        LstrId label;
+        int current;
+        int max;
+    };
+    std::array<LeftRow, 7> statRows = {{
+        {LSTR_MIGHT, player->GetActualMight(), player->GetBaseMight()},
+        {LSTR_INTELLECT, player->GetActualIntelligence(), player->GetBaseIntelligence()},
+        {LSTR_PERSONALITY, player->GetActualPersonality(), player->GetBasePersonality()},
+        {LSTR_ENDURANCE, player->GetActualEndurance(), player->GetBaseEndurance()},
+        {LSTR_ACCURACY, player->GetActualAccuracy(), player->GetBaseAccuracy()},
+        {LSTR_SPEED, player->GetActualSpeed(), player->GetBaseSpeed()},
+        {LSTR_LUCK, player->GetActualLuck(), player->GetBaseLuck()},
+    }};
+
+    int pY = 57;
+    for (const LeftRow &row : statRows) {
+        GUIWindow::DrawText(assets->pFontArrus.get(), {26, pY}, colorTable.White,
+                            formatLeftCol(row.label, row.current, row.max), pGUIWindow_CurrentMenu->frameRect);
+        pY += fontHeight - 2;
+    }
+
+    pY += fontHeight + 3; // The last stat row already advanced by h-2; the Luck->HitPoints gap is 2h+1.
+    GUIWindow::DrawText(assets->pFontArrus.get(), {26, pY}, colorTable.White,
+                        formatLeftCol(LSTR_HIT_POINTS, player->health, player->GetMaxHealth()), pGUIWindow_CurrentMenu->frameRect);
+    pY += fontHeight - 2;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {26, pY}, colorTable.White,
+                        formatLeftCol(LSTR_SPELL_POINTS, player->mana, player->GetMaxMana()), pGUIWindow_CurrentMenu->frameRect);
+    pY += fontHeight - 2;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {26, pY}, colorTable.White,
+                        formatLeftCol(LSTR_ARMOR_CLASS, player->GetActualAC(), player->GetBaseAC()), pGUIWindow_CurrentMenu->frameRect);
+
+    pY += 2 * fontHeight - 2;
+    auto conditionStr = fmt::format("{}: {::}{}\n",
+                                    localization->str(LSTR_CONDITION),
+                                    GetConditionDrawColor(player->GetMajorConditionIdx()).tag(),
+                                    localization->characterConditionName(player->GetMajorConditionIdx()));
+    pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {26, pY}, colorTable.White, conditionStr, 226, 0);
+
+    pY += fontHeight - 1;
+    std::string spellName = localization->str(LSTR_NONE);
+    if (player->uQuickSpell != SPELL_NONE)
+        spellName = pSpellStats->pInfos[player->uQuickSpell].pShortName;
+    auto quickSpellStr = fmt::format("{}: {}", localization->str(LSTR_QUICK_SPELL), spellName);
+    pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {26, pY}, colorTable.White, quickSpellStr, 226, 0);
+
+    pY = 54;
+    Color ageColor = UI_GetHealthManaAndOtherQualitiesStringColor(player->GetActualAge(), player->GetBaseAge());
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}{::}\t100{}\f00000 / {}\n", localization->str(LSTR_AGE), ageColor.tag(),
+                                    player->GetActualAge(), player->GetBaseAge()), pGUIWindow_CurrentMenu->frameRect);
+
+    pY += fontHeight - 2;
+    Color levelColor = UI_GetHealthManaAndOtherQualitiesStringColor(player->GetActualLevel(), player->GetBaseLevel());
+    const char *levelAlign = player->GetBaseLevel() > 99 ? "\r180" : "\t100";
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}{::}{}{}\f00000 / {}\n", localization->str(LSTR_LEVEL), levelColor.tag(),
+                                    levelAlign, player->GetActualLevel(), player->GetBaseLevel()), pGUIWindow_CurrentMenu->frameRect);
+
+    pY += fontHeight - 2;
+    auto expStr = fmt::format("{}\r180{::}{}\f00000\n\n",
+                              localization->str(player->experience <= 9999999 ? LSTR_EXPERIENCE : LSTR_EXP),
+                              player->GetExperienceDisplayColor().tag(), player->experience);
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White, expStr, pGUIWindow_CurrentMenu->frameRect);
+
+    pY += 2 * fontHeight;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}\t100{:+}\n", localization->str(LSTR_ATTACK), player->GetActualAttack(false)), pGUIWindow_CurrentMenu->frameRect);
+    pY += fontHeight - 2;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}\t100 {}\n", localization->str(LSTR_DAMAGE), player->GetMeleeDamageString()), pGUIWindow_CurrentMenu->frameRect);
+
+    pY += fontHeight - 2;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}\t100{:+}\n", localization->str(LSTR_SHOOT), player->GetRangedAttack()), pGUIWindow_CurrentMenu->frameRect);
+    pY += fontHeight - 2;
+    GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                        fmt::format("{}\t100 {}\n\n", localization->str(LSTR_DAMAGE), player->GetRangedDamageString()), pGUIWindow_CurrentMenu->frameRect);
+
+    auto formatRightCol = [] (LstrId lstr, int current, int max) {
+        Color color16 = UI_GetHealthManaAndOtherQualitiesStringColor(current, max);
+        if (current < 100 && max < 100) {
+            return fmt::format("{}{::}\t110{}\f00000 / {}\n", localization->str(lstr), color16.tag(), current, max);
+        } else {
+            return fmt::format("{}{::}\r180{}\f00000 / {}\n", localization->str(lstr), color16.tag(), current, max);
+        }
+    };
+
+    struct ResistanceRow {
+        LstrId label;
+        Attribute attribute;
+    };
+    std::array<ResistanceRow, 5> resistanceRows = {{
+        {LSTR_FIRE, ATTRIBUTE_RESIST_FIRE},
+        {LSTR_ELECTRICITY, ATTRIBUTE_RESIST_AIR},
+        {LSTR_COLD, ATTRIBUTE_RESIST_WATER},
+        {LSTR_POISON, ATTRIBUTE_RESIST_EARTH},
+        {LSTR_MAGIC, ATTRIBUTE_RESIST_MIND},
+    }};
+
+    pY += fontHeight + 3; // The last damage row already advanced by h-2; the gap is 2h+1.
+    for (const ResistanceRow &row : resistanceRows) {
+        GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
+                            formatRightCol(row.label, player->GetActualResistance(row.attribute),
+                                           player->GetBaseResistance(row.attribute)), pGUIWindow_CurrentMenu->frameRect);
+        pY += fontHeight - 2;
+    }
+}
+
 void GUIWindow_CharacterRecord::CharacterUI_StatsTab_Draw(Character *player) {
-    // MM6's parchment is smaller and sits at (17,14) over the leather (MM6.EXE 0x413938).
-    render->DrawQuad2D(ui_character_stats_background,
-                       engine->gameVersion() == GAME_VERSION_MM6 ? Pointi(17, 14) : Pointi(8, 8));
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        CharacterUI_StatsTab_DrawMm6(player);
+        return;
+    }
+
+    render->DrawQuad2D(ui_character_stats_background, {8, 8});
 
     auto str1 =
         fmt::format("{::}{}\f00000\r180{}: {::}{}\f00000\n\n\n",
@@ -2030,11 +2187,12 @@ void GUIWindow_CharacterRecord::fillAwardsData() {
 
     Recti window(12, 48, 424, 290);
     int y = 0;
+    int rowGap = engine->gameVersion() == GAME_VERSION_MM6 ? 4 : 8; // Keep in sync with CharacterUI_AwardsTab_Draw.
 
     for (int i = (_achievedAwardsList.size() - 1); i >= 0; --i) {
         std::string str = getAchievedAwardsString(i);
 
-        y += assets->pFontArrus->CalcTextHeight(str, window.w, 0) + 8;
+        y += assets->pFontArrus->CalcTextHeight(str, window.w, 0) + rowGap;
         if (y > window.h) {
             _scrollableAwardSteps = i + 2;
             break;
