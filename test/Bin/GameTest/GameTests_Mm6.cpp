@@ -2584,6 +2584,10 @@ GAME_TEST(Mm6, SaveLoadRoundtrip) {
     // Party-state mutations that must survive the .mm6 save.
     pParty->SetGold(1234);
     pParty->_questBits[static_cast<QuestBit>(100)] = true;
+    // Artifact-found flags roundtrip through the version-keyed save window - MM6's artifacts are
+    // ids 400-429, with the 30th flag (429) overflowing MM7's 29-slot array into field_7d7.
+    pParty->pIsArtifactFound[static_cast<ItemId>(400)] = true;
+    pParty->pIsArtifactFound[static_cast<ItemId>(429)] = true;
 
     // Map-delta mutation on New Sorpigal: the first placed peasant of oute3.ddm dies.
     auto isFirstPeasant = [](const Actor &actor) {
@@ -2642,6 +2646,9 @@ GAME_TEST(Mm6, SaveLoadRoundtrip) {
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(81)]); // New-game quest bits are still there.
     EXPECT_TRUE(pParty->hasItem(static_cast<ItemId>(505))); // Roderick still carries The Letter.
     EXPECT_TRUE(vChests[0].flags & CHEST_OPENED); // The current map's delta came from the save.
+    EXPECT_TRUE(pParty->pIsArtifactFound[static_cast<ItemId>(400)]); // Mordred, first save slot.
+    EXPECT_TRUE(pParty->pIsArtifactFound[static_cast<ItemId>(429)]); // Hera, the field_7d7 overflow slot.
+    EXPECT_FALSE(pParty->pIsArtifactFound[static_cast<ItemId>(410)]); // Unfound artifacts stay unfound.
 
     // Returning to New Sorpigal reloads its delta from the save rather than respawning the map:
     // the peasant is still dead.
@@ -2749,6 +2756,13 @@ GAME_TEST(Mm6, DeathRespawnsInNewSorpigal) {
     EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
     EXPECT_EQ(pParty->pos.x, -9728);
     EXPECT_EQ(pParty->pos.y, -11319);
+
+    // The death grants MM6's own counted award row, not MM7's AWARD_DEATHS (85), which is the
+    // "Squire Arena Victories" row in MM6's awards.txt.
+    for (const Character &character : pParty->pCharacters) {
+        EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(82)]); // awards.txt 82 "%u Deaths".
+        EXPECT_FALSE(character._achievedAwardsBits[static_cast<AwardId>(85)]);
+    }
 }
 
 GAME_TEST(Mm6, FootTravelAcrossBorders) {

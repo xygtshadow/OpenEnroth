@@ -536,8 +536,10 @@ struct Party_MM7 {
     int8_t field_7B5_in_arena_quest; // -1 for a win, 0 for initial state, otherwise dialogue id for the
                                      // arena level being fought.
     std::array<uint8_t, 4> numArenaWins;
-    std::array<bool, 29> isArtifactFound;  // 7ba
-    std::array<char, 39> field_7d7;
+    std::array<bool, 29> isArtifactFound;  // 7ba. Slots hold the running game's spawnable-artifact
+                                           // window (MM7 ids 500-528, MM6 ids 400-428).
+    std::array<char, 39> field_7d7;        // Unused in MM7 saves; MM6 saves keep the 30th
+                                           // artifact-found flag (id 429) in the first byte.
     std::array<uint8_t, 26> autonoteBits;
     std::array<char, 60> field_818;
     std::array<char, 32> randomNumbersUnused; // Array of random numbers, was filled during party creation

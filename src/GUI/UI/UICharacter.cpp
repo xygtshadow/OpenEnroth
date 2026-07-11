@@ -1201,13 +1201,16 @@ std::string GUIWindow_CharacterRecord::getAchievedAwardsString(int idx) {
 
     // MM6's awards.txt has its own row numbering, so the MM7 enum cases below would format the wrong
     // rows. Row 81 is MM6's town-hall bounty award ("Collected %u bounties"), counting claims rather
-    // than gold; rows 84-87 are the arena-victor awards ("%u Page/Squire/Knight/Lord Arena
-    // Victories"). The remaining counted MM6 rows (82 deaths, 83 prison terms) are never granted
-    // yet - their grant sites still use the MM7 award ids (see docs/pending).
+    // than gold; 82 is "%u Deaths", 83 is "Served %u Prison Terms", and rows 84-87 are the
+    // arena-victor awards ("%u Page/Squire/Knight/Lord Arena Victories").
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         int awardId = std::to_underlying(_achievedAwardsList[idx]);
         if (awardId == 81)
             return fmt::sprintf(pAwards[_achievedAwardsList[idx]].pText, pParty->uNumBountiesCollected);
+        if (awardId == 82)
+            return fmt::sprintf(pAwards[_achievedAwardsList[idx]].pText, pParty->uNumDeaths);
+        if (awardId == 83)
+            return fmt::sprintf(pAwards[_achievedAwardsList[idx]].pText, pParty->uNumPrisonTerms);
         if (awardId >= 84 && awardId <= 87)
             return fmt::sprintf(pAwards[_achievedAwardsList[idx]].pText,
                                 pParty->uNumArenaWins[static_cast<ArenaLevel>(awardId - 83)]);

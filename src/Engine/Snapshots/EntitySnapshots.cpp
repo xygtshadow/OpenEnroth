@@ -635,11 +635,24 @@ void snapshot(const Party &src, Party_MM7 *dst) {
 
     snapshot(src.uNumArenaWins, &dst->numArenaWins);
 
-    // The save format stores MM7's 29-slot artifact window; the in-memory array spans all item ids
-    // because MM6's artifacts live at 400-429. MM6 artifact-found flags thus don't roundtrip -
-    // saves are MM7-format throughout (see docs/pending/mm6-dlv-model.md).
-    for (ItemId i : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT))
-        dst->isArtifactFound[std::to_underlying(i) - std::to_underlying(ITEM_FIRST_SPAWNABLE_ARTIFACT)] = src.pIsArtifactFound[i];
+    // The save format keeps MM7's 29-slot artifact-found array, but its slots hold the RUNNING
+    // game's own spawnable-artifact window (saves are version-tagged by extension and never cross
+    // games): MM7 ids [500, 528] exactly as vanilla, MM6 ids [400, 429] - whose 30th flag (429,
+    // Hera) overflows into the first byte of the adjacent unused field_7d7. Windows mirror
+    // ItemTable::spawnableArtifacts(), spelled out here because the on-disk meaning is fixed.
+    {
+        Segment<ItemId> artifacts = engine->gameVersion() == GAME_VERSION_MM6
+                                        ? Segment(ItemId(400), ItemId(429))
+                                        : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT);
+        int slot = 0;
+        for (ItemId i : artifacts) {
+            if (slot < static_cast<int>(dst->isArtifactFound.size()))
+                dst->isArtifactFound[slot] = src.pIsArtifactFound[i];
+            else
+                dst->field_7d7[slot - dst->isArtifactFound.size()] = src.pIsArtifactFound[i];
+            slot++;
+        }
+    }
     snapshot(src._autonoteBits, &dst->autonoteBits, tags::reverseBits);
 
     dst->numArcomageWins = src.uNumArcomageWins;
@@ -754,9 +767,21 @@ void reconstruct(const Party_MM7 &src, Party *dst) {
 
     reconstruct(src.numArenaWins, &dst->uNumArenaWins);
 
+    // Version-keyed artifact-found window with MM6's 30th flag in field_7d7 - see the snapshot side.
     dst->pIsArtifactFound.fill(false);
-    for (ItemId i : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT))
-        dst->pIsArtifactFound[i] = src.isArtifactFound[std::to_underlying(i) - std::to_underlying(ITEM_FIRST_SPAWNABLE_ARTIFACT)];
+    {
+        Segment<ItemId> artifacts = engine->gameVersion() == GAME_VERSION_MM6
+                                        ? Segment(ItemId(400), ItemId(429))
+                                        : Segment(ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT);
+        int slot = 0;
+        for (ItemId i : artifacts) {
+            if (slot < static_cast<int>(src.isArtifactFound.size()))
+                dst->pIsArtifactFound[i] = src.isArtifactFound[slot];
+            else
+                dst->pIsArtifactFound[i] = src.field_7d7[slot - src.isArtifactFound.size()];
+            slot++;
+        }
+    }
     reconstruct(src.autonoteBits, &dst->_autonoteBits, tags::reverseBits);
 
     dst->uNumArcomageWins = src.numArcomageWins;

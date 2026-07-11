@@ -341,8 +341,8 @@ struct Party {
     ArenaLevel arenaLevel = ARENA_LEVEL_INVALID;
     IndexedArray<uint8_t, ARENA_LEVEL_FIRST_VALID, ARENA_LEVEL_LAST_VALID> uNumArenaWins;
     // Spans all item ids because artifact ids differ between games (MM7: 500-528, MM6: 400-429).
-    // Only the MM7 window [ITEM_FIRST_SPAWNABLE_ARTIFACT, ITEM_LAST_SPAWNABLE_ARTIFACT] roundtrips
-    // through savegames - see the party snapshot code.
+    // The running game's spawnable-artifact window roundtrips through savegames - see the party
+    // snapshot code for the version-keyed slot mapping.
     IndexedArray<bool, ITEM_FIRST_VALID, ITEM_LAST_VALID> pIsArtifactFound;  // 7ba
     IndexedBitset<1, 208> _autonoteBits;
     int uNumArcomageWins;

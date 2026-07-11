@@ -1724,7 +1724,11 @@ void Game::gameLoop() {
                     pMediaPlayer->Unload();
                 ++pParty->uNumDeaths;
                 for (Character &character : pParty->pCharacters) {
-                    character.SetVariable(VAR_Award, std::to_underlying(AWARD_DEATHS));
+                    // MM6's awards.txt has its own row numbering: 82 is "%u Deaths" (85 is an
+                    // arena-victor row there), like the town-hall bounty (81) and jail (83) grants.
+                    character.SetVariable(VAR_Award, engine->gameVersion() == GAME_VERSION_MM6
+                                                         ? 82
+                                                         : std::to_underlying(AWARD_DEATHS));
                 }
                 pParty->days_played_without_rest = 0;
                 if (!mm6GuardianAngel)
