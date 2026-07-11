@@ -3,6 +3,7 @@
 #include "Engine/PriceCalculator.h"
 
 #include "Engine/Data/HouseData.h"
+#include "Engine/Engine.h"
 #include "Engine/Objects/Item.h"
 #include "Engine/Objects/Character.h"
 #include "Engine/Objects/CharacterEnumFunctions.h"
@@ -140,7 +141,9 @@ int PriceCalculator::playerMerchant(const Character *player) {
         return 100;
     }
 
-    int rep = pParty->GetPartyReputation();
+    // MM6 merchant math (MM6.EXE 0x485340) has no reputation term - and MM6's reputation scale
+    // (+-1000-ish, positive = good) would wreck the MM7 formula anyway.
+    int rep = engine->gameVersion() == GAME_VERSION_MM6 ? 0 : pParty->GetPartyReputation();
     int bonus = multiplier * merchantSkill.level();
 
     if (bonus == 0) {  // no skill so trading on rep alone

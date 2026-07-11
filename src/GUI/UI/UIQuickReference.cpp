@@ -131,7 +131,16 @@ void GUIWindow_QuickReference::Update() {
         pX += 94;
     }
 
-    if (pParty->GetPartyReputation() >= 0) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 is positive = good (MM6.EXE 0x4172DC): bad color below zero, plain up to
+        // Respectable, good color from +200 up.
+        int reputation = pParty->GetPartyReputation();
+        if (reputation < 0) {
+            pTextColor = ui_character_bonus_text_color_neg;
+        } else {
+            pTextColor = (reputation < 200) ? ui_character_default_text_color : ui_character_bonus_text_color;
+        }
+    } else if (pParty->GetPartyReputation() >= 0) {
         pTextColor = (pParty->GetPartyReputation() <= 5) ? ui_character_default_text_color : ui_character_bonus_text_color_neg;
     } else {
         pTextColor = ui_character_bonus_text_color;

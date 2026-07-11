@@ -116,6 +116,8 @@ void Party::Zero() {
     _mm6TavernsDrunkIn.clear();
     _mm6TavernRumors.clear();
     _mm6SeerNextPilgrimageReset = Time();
+    _mm6GlobalReputation = 0;
+    _mm6GlobalReputationPrimed = false;
     bTurnBasedModeOn = false;
     uFlags2 = 0;
     alignment = PartyAlignment_Neutral;
@@ -850,7 +852,9 @@ void Rest(Duration restTime) {
 }
 
 void restAndHeal(Duration restTime) {
+    Time oldTime = pParty->GetPlayingTime();
     pParty->GetPlayingTime() += restTime;
+    pParty->mm6DecayReputationAtDaybreak(oldTime, pParty->GetPlayingTime());
 
     pParty->pHirelings[0].hasUsedAbility = false;
     pParty->pHirelings[1].hasUsedAbility = false;
@@ -911,6 +915,20 @@ bool TestPartyQuestBit(QuestBit bit) {
 int Party::GetPartyReputation() {
     LocationInfo *ddm_dlv = &currentLocationInfo();
 
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x47D600, positive = good: a hired Bard grants "a constant, single category
+        // bonus" (+200, one title band), while the four shady professions each cost a band.
+        // MM6 has no FallenWizard, and its own merchant/steal math never reads this - only
+        // display sites, script compares and the temple/teacher gates do.
+        int npcRep = 0;
+        if (CheckHiredNPCSpeciality(Bard)) npcRep += 200;
+        if (CheckHiredNPCSpeciality(Pirate)) npcRep -= 200;
+        if (CheckHiredNPCSpeciality(Gypsy)) npcRep -= 200;
+        if (CheckHiredNPCSpeciality(Duper)) npcRep -= 200;
+        if (CheckHiredNPCSpeciality(Burglar)) npcRep -= 200;
+        return npcRep + ddm_dlv->reputation;
+    }
+
     int npcRep = 0;
     if (CheckHiredNPCSpeciality(Pirate)) npcRep += 5;
     if (CheckHiredNPCSpeciality(Burglar)) npcRep += 5;
@@ -918,6 +936,19 @@ int Party::GetPartyReputation() {
     if (CheckHiredNPCSpeciality(Duper)) npcRep += 5;
     if (CheckHiredNPCSpeciality(FallenWizard)) npcRep += 5;
     return npcRep + ddm_dlv->reputation;
+}
+
+void Party::mm6DecayReputationAtDaybreak(Time oldTime, Time newTime) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        return;
+
+    // Same "new day dawns at 3am" boundary the hireling-ability reset uses.
+    Time next3am = Time::fromDurationSinceSilence((oldTime.toDurationSinceSilence() - Duration::fromHours(3)).roundedUp(Duration::fromDays(1)) + Duration::fromHours(3));
+    if (!(oldTime < next3am && newTime >= next3am))
+        return;
+
+    int reputation = static_cast<int>(currentLocationInfo().reputation * 0.99);
+    currentLocationInfo().reputation = std::clamp(reputation, -1500, 1500);
 }
 
 // TODO(pskelton): drop unsigned

@@ -132,6 +132,17 @@ struct Party {
     int GetPartyReputation();
 
     /**
+     * MM6 reputation decay: when game time crosses 3 AM, the global reputation decays toward
+     * zero - rep = trunc(rep * 0.99) - and clamps to [-1500, 1500]. Lives in MM6.EXE's party
+     * date recompute (@0x4881E4, multiplier double @0x4B9550). No-op for MM7 and when the
+     * interval does not cross a 3 AM boundary; applied at most once per call, like the original.
+     *
+     * @param oldTime                   Game time before the advance.
+     * @param newTime                   Game time after the advance.
+     */
+    void mm6DecayReputationAtDaybreak(Time oldTime, Time newTime);
+
+    /**
      * @offset 0x420C05
      */
     void partyFindsGold(int amount, GoldReceivePolicy policy);
@@ -391,6 +402,16 @@ struct Party {
     // MM6's own party struct holds it, the MM7 save format OE serializes does not, so it resets on
     // save/load.
     Time _mm6SeerNextPilgrimageReset;
+
+    // MM6's reputation is a single GLOBAL party value (MM6.EXE party+0xD8 @0x908D48, positive =
+    // good), while OE stores a per-map value in LocationInfo::reputation. The current map's slot
+    // stays the working copy that every consumer reads and mutates - and the piece the save format
+    // carries - and this mirror hands it across map switches: DoPrepareWorld captures the outgoing
+    // map's value on entry and stamps it onto the freshly loaded map (or, when loading a savegame,
+    // adopts the loaded value). The primed flag keeps a stale menu-session map from leaking into a
+    // new game's first map load. Runtime-only; not serialized.
+    int _mm6GlobalReputation = 0;
+    bool _mm6GlobalReputationPrimed = false;
 
     /**
      * @return                          1-based index of currently active character. Zero means that there is no

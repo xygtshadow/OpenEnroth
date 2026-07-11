@@ -539,6 +539,12 @@ void PrepareWorld(int _0_box_loading_1_fullscreen) {
 
 //----- (00464866) --------------------------------------------------------
 void DoPrepareWorld(bool bLoading, int _1_fullscreen_loading_2_box) {
+    // MM6 reputation is a global party value; the outgoing map's working copy travels along.
+    // Not primed = a fresh party (new game) whose first map load must not inherit whatever map
+    // the previous menu session still has loaded.
+    if (engine->gameVersion() == GAME_VERSION_MM6 && pParty->_mm6GlobalReputationPrimed && uCurrentlyLoadedLevelType != LEVEL_NULL)
+        pParty->_mm6GlobalReputation = currentLocationInfo().reputation;
+
     engine->ResetCursor_Palettes_LODs_Level_Audio_SFT_Windows();
     pGameLoadingUI_ProgressBar->Initialize(_1_fullscreen_loading_2_box == 1 ? GUIProgressBar::TYPE_Fullscreen : GUIProgressBar::TYPE_Box);
 
@@ -563,6 +569,17 @@ void DoPrepareWorld(bool bLoading, int _1_fullscreen_loading_2_box) {
         loadAndPrepareBLV(engine->_transitionMapId, bLoading);
     else
         loadAndPrepareODM(engine->_transitionMapId, bLoading);
+
+    // The new map's LocationInfo is loaded (or respawned) now: stamp the party's global
+    // reputation onto it - except when loading a savegame, where the save's value is the truth
+    // and the mirror adopts it instead. Runs before onMapLoad so map scripts mutate on top.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (bLoading)
+            pParty->_mm6GlobalReputation = currentLocationInfo().reputation;
+        else
+            currentLocationInfo().reputation = pParty->_mm6GlobalReputation;
+        pParty->_mm6GlobalReputationPrimed = true;
+    }
 
     pNPCStats->setNPCNamesOnLoad();
     engine->_461103_load_level_sub();
@@ -1027,6 +1044,8 @@ void _494035_timed_effects__water_walking_damage__etc(Duration dt) {
     pParty->uCurrentDayOfMonth = time.day - 1;
     pParty->uCurrentMonth = time.month - 1;
     pParty->uCurrentYear = time.year;
+
+    pParty->mm6DecayReputationAtDaybreak(oldTime, newTime);
 
     // New day dawns at 3am.
     Time next3am = Time::fromDurationSinceSilence((oldTime.toDurationSinceSilence() - Duration::fromHours(3)).roundedUp(Duration::fromDays(1)) + Duration::fromHours(3));

@@ -1,5 +1,6 @@
 #include "Temple.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -79,29 +80,66 @@ void GUIWindow_Temple::donateDialogue() {
         pParty->TakeGold(price);
         LocationInfo *ddm = &currentLocationInfo();
 
-        if (ddm->reputation > -5) {
-            ddm->reputation -= 1;
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            // MM6.EXE 0x49DDC6..0x49DF50, positive = good: a donation lifts reputation by 200
+            // up to a cap of +200; on the weekday matching the donation counter the temple
+            // blesses the party with one spell per display-reputation band above 200 (MM6
+            // native ids, cast at day-of-month%7+1 like MM7's); and New Sorpigal's Temple Baa
+            // (house 78) then takes the 200 straight back while above -800 - Baa keeps the
+            // gold. The counter is per character; the buff gates read the hireling-adjusted
+            // display value (the getter at 0x47D600).
+            if (ddm->reputation < 200) {
+                ddm->reputation = std::min(ddm->reputation + 200, 200);
+            }
+            int day = pParty->uCurrentDayOfMonth % 7;
+            int counter = _templeSpellCounter[pParty->activeCharacterIndex() - 1] % 7;
+            if (counter == day) {
+                int displayReputation = pParty->GetPartyReputation();
+                if (displayReputation > 200) {
+                    pushTempleSpell(static_cast<SpellId>(50)); // Guardian Angel
+                }
+                if (displayReputation > 400) {
+                    pushTempleSpell(static_cast<SpellId>(12)); // Wizard Eye
+                }
+                if (displayReputation > 600) {
+                    pushTempleSpell(static_cast<SpellId>(83)); // Day of the Gods
+                }
+                if (displayReputation > 800) {
+                    pushTempleSpell(static_cast<SpellId>(85)); // Hour of Power
+                }
+                if (displayReputation > 1000) {
+                    pushTempleSpell(static_cast<SpellId>(94)); // Day of Protection
+                }
+            }
+            _templeSpellCounter[pParty->activeCharacterIndex() - 1]++;
+            if (houseId() == HouseId(78) && ddm->reputation > -800) {
+                ddm->reputation -= 200;
+            }
+        } else {
+            if (ddm->reputation > -5) {
+                ddm->reputation -= 1;
+            }
+            int day = pParty->uCurrentDayOfMonth % 7;
+            int counter = _templeSpellCounter[pParty->activeCharacterIndex() - 1] % 7;
+            if (counter == day) {
+                if (ddm->reputation <= -5) {
+                    pushTempleSpell(SPELL_AIR_WIZARD_EYE);
+                }
+                if (ddm->reputation <= -10) {
+                    pushTempleSpell(SPELL_SPIRIT_PRESERVATION);
+                }
+                if (ddm->reputation <= -15) {
+                    pushTempleSpell(SPELL_BODY_PROTECTION_FROM_MAGIC);
+                }
+                if (ddm->reputation <= -20) {
+                    pushTempleSpell(SPELL_LIGHT_HOUR_OF_POWER);
+                }
+                if (ddm->reputation <= -25) {
+                    pushTempleSpell(SPELL_LIGHT_DAY_OF_PROTECTION);
+                }
+            }
+            _templeSpellCounter[pParty->activeCharacterIndex() - 1]++;
         }
-        int day = pParty->uCurrentDayOfMonth % 7;
-        int counter = _templeSpellCounter[pParty->activeCharacterIndex() - 1] % 7;
-        if (counter == day) {
-            if (ddm->reputation <= -5) {
-                pushTempleSpell(SPELL_AIR_WIZARD_EYE);
-            }
-            if (ddm->reputation <= -10) {
-                pushTempleSpell(SPELL_SPIRIT_PRESERVATION);
-            }
-            if (ddm->reputation <= -15) {
-                pushTempleSpell(SPELL_BODY_PROTECTION_FROM_MAGIC);
-            }
-            if (ddm->reputation <= -20) {
-                pushTempleSpell(SPELL_LIGHT_HOUR_OF_POWER);
-            }
-            if (ddm->reputation <= -25) {
-                pushTempleSpell(SPELL_LIGHT_DAY_OF_PROTECTION);
-            }
-        }
-        _templeSpellCounter[pParty->activeCharacterIndex() - 1]++;
         pParty->activeCharacter().playReaction(SPEECH_TEMPLE_DONATE);
         engine->_statusBar->setEvent(LSTR_THANK_YOU);
     } else {

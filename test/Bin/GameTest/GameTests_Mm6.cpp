@@ -6584,3 +6584,183 @@ GAME_TEST(Mm6, MonsterProjectiles) {
     EXPECT_EQ(impactTurnsInto(SPRITE_MM6_PROJECTILE_ENERGY), impactSprite(SPRITE_MM6_PROJECTILE_ENERGY));
     EXPECT_EQ(impactTurnsInto(SPRITE_MM6_PROJECTILE_POISON), impactSprite(SPRITE_MM6_PROJECTILE_POISON));
 }
+
+// MM6's reputation is a single GLOBAL party value (MM6.EXE party+0xD8 @0x908D48, positive = good),
+// while the engine stores a per-map value in LocationInfo::reputation. The current map's slot stays
+// the working copy every consumer reads and writes (and the save format carries), and DoPrepareWorld
+// carries it across map switches through a party-side mirror - so reputation earned in one region
+// now follows the party everywhere, including through a save/load.
+GAME_TEST(Mm6, GlobalReputation) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+    EXPECT_EQ(currentLocationInfo().reputation, 0);
+
+    // Reputation earned in New Sorpigal is still there in Ironfist...
+    currentLocationInfo().reputation = 700;
+    MapId ironfist = pMapStats->GetMapInfo("outd3.odm");
+    ASSERT_NE(ironfist, MAP_INVALID);
+    game.teleportTo(ironfist, Vec3f(0, 0, 512), 0);
+    game.tick(1);
+    EXPECT_EQ(currentLocationInfo().reputation, 700);
+
+    // ...and mutations made there follow the party back, even into an indoor map.
+    currentLocationInfo().reputation = -300;
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(0, 0, 0), 0);
+    game.teleportTo(goblinwatch, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+    EXPECT_EQ(currentLocationInfo().reputation, -300);
+
+    // A save carries the value (via the current map's delta), and a load restores it as the
+    // global - after loading, it still follows the party to other maps.
+    currentLocationInfo().reputation = 450;
+    Blob save = game.saveGame();
+    currentLocationInfo().reputation = 0;
+    game.loadGame(save);
+    game.tick(1);
+    EXPECT_EQ(currentLocationInfo().reputation, 450);
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    EXPECT_EQ(currentLocationInfo().reputation, 450);
+}
+
+// The MM6 reputation model proper, reversed from MM6.EXE via an xref sweep over the global
+// (@0x908D48) and its this-relative getter (0x47D600):
+// - Titles (0x489C60): eleven bands over MM6 global.txt rows 510-520, Saintly at +1000 down to
+//   Notorious at -1000, steps of 200 both ways.
+// - Display value (0x47D600): global +200 for a hired Bard, -200 each for Pirate/Gypsy/Duper/
+//   Burglar ("Reputation is decreased by one full category" in npcprof.txt; a category = 200).
+// - Killing a true peasant (monsters.txt hostility 0) costs 100 reputation, with NO fine - MM6
+//   has no fine mechanic - and arena fights are exempt (0x403086, flag 0x908DBD).
+// - Turning a true peasant hostile costs 50 reputation once per actor (0x403778).
+// - Temple donation (0x49DDC6): +200 up to a cap of +200; weekday-matched blessing tiers for
+//   every display band above 200; Temple Baa (house 78) then takes the 200 back (0x49DF3E).
+// - Once per game day, crossing 3 AM, reputation decays toward zero: rep = trunc(rep * 0.99),
+//   clamped to +-1500 (0x4881E4, multiplier double @0x4B9550).
+// - MM6 merchant math (0x485340) has no reputation term - prices must not move with reputation.
+GAME_TEST(Mm6, ReputationModel) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+    LocationInfo &location = currentLocationInfo();
+
+    // Titles: MM6 global.txt rows 510-520, positive = good.
+    auto titleAt = [&](int reputation) {
+        location.reputation = reputation;
+        return GetReputationString(pParty->GetPartyReputation());
+    };
+    EXPECT_EQ(titleAt(1000), localization->str(static_cast<LstrId>(510)));  // Saintly
+    EXPECT_EQ(titleAt(200), localization->str(static_cast<LstrId>(514)));   // Respectable
+    EXPECT_EQ(titleAt(0), localization->str(static_cast<LstrId>(515)));     // Average
+    EXPECT_EQ(titleAt(-1), localization->str(static_cast<LstrId>(516)));    // Bad
+    EXPECT_EQ(titleAt(-300), localization->str(static_cast<LstrId>(517)));  // Vile
+    EXPECT_EQ(titleAt(-1000), localization->str(static_cast<LstrId>(520))); // Notorious
+
+    // Hireling display adjustment: Bard +200, Pirate -200. The raw global is untouched.
+    location.reputation = 100;
+    NPCData hirelingBefore = pParty->pHirelings[0];
+    pParty->pHirelings[0].profession = Bard;
+    EXPECT_EQ(pParty->GetPartyReputation(), 300);
+    pParty->pHirelings[0].profession = Pirate;
+    EXPECT_EQ(pParty->GetPartyReputation(), -100);
+    pParty->pHirelings[0] = hirelingBefore;
+    EXPECT_EQ(location.reputation, 100);
+
+    // Merchant pricing must not move with reputation (the MM7 formula folds -rep in).
+    location.reputation = 1000;
+    int merchantAtSaintly = PriceCalculator::playerMerchant(&pParty->pCharacters[0]);
+    location.reputation = -1000;
+    EXPECT_EQ(PriceCalculator::playerMerchant(&pParty->pCharacters[0]), merchantAtSaintly);
+
+    // Peasant kill: -100, no fine, no fine award; exempt during an arena fight. Monster 123 is a
+    // true peasant row (hostility 0).
+    auto peasant = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return pMonsterStats->infos[actor.monsterId].hostilityType == HOSTILITY_FRIENDLY;
+    });
+    ASSERT_NE(peasant, pActors.end());
+    int peasantId = peasant - pActors.begin();
+    location.reputation = 0;
+    Actor::ApplyFineForKillingPeasant(peasantId);
+    EXPECT_EQ(location.reputation, -100);
+    EXPECT_EQ(pParty->uFine, 0);
+    for (const Character &character : pParty->pCharacters)
+        EXPECT_FALSE(character._achievedAwardsBits[AWARD_FINE]);
+    pParty->arenaState = ARENA_STATE_FIGHTING;
+    Actor::ApplyFineForKillingPeasant(peasantId);
+    EXPECT_EQ(location.reputation, -100);
+    pParty->arenaState = ARENA_STATE_INITIAL;
+
+    // Aggroing a true peasant: -50, once per actor.
+    auto otherPeasant = std::ranges::find_if(pActors, [&](const Actor &actor) {
+        return pMonsterStats->infos[actor.monsterId].hostilityType == HOSTILITY_FRIENDLY &&
+               &actor != &*peasant && !(actor.attributes & ACTOR_AGGRESSOR);
+    });
+    ASSERT_NE(otherPeasant, pActors.end());
+    location.reputation = 0;
+    Actor::AggroSurroundingPeasants(otherPeasant - pActors.begin(), 1);
+    EXPECT_EQ(location.reputation, -50);
+    Actor::AggroSurroundingPeasants(otherPeasant - pActors.begin(), 1);
+    EXPECT_EQ(location.reputation, -50);
+
+    // Daily 3 AM decay: trunc(rep * 0.99), clamped to +-1500, applied once per crossing.
+    location.reputation = 1000;
+    restAndHeal(Duration::fromDays(1));
+    EXPECT_EQ(location.reputation, 990);
+    location.reputation = 2000;
+    restAndHeal(Duration::fromDays(1));
+    EXPECT_EQ(location.reputation, 1500);
+    location.reputation = -50;
+    restAndHeal(Duration::fromDays(1));
+    EXPECT_EQ(location.reputation, -49);
+
+    // Temple donation at a regular temple: +200 while below the +200 cap, then no further growth.
+    pParty->SetGold(20000);
+    pParty->setActiveCharacterIndex(1);
+    location.reputation = 0;
+    ASSERT_TRUE(enterHouse(HouseId(70))); // Temple Stone.
+    createHouseUI(HouseId(70));
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
+    EXPECT_EQ(location.reputation, 200);
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
+    EXPECT_EQ(location.reputation, 200);
+
+    // The weekday-matched blessing: with display reputation above 1000 (990 + Bard's 200) every
+    // tier fires on the donation whose counter matches the day of the month mod 7 - among them
+    // Wizard Eye, the Day of the Gods stat buffs, and Guardian Angel.
+    location.reputation = 990;
+    pParty->pHirelings[0].profession = Bard;
+    for (int i = 0; i < 7 && !pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Active(); i++) {
+        openProprietorDialogue(game);
+        clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
+        game.tick(2);
+    }
+    EXPECT_TRUE(pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Active());
+    EXPECT_TRUE(pParty->pCharacters[0].pCharacterBuffs[CHARACTER_BUFF_STRENGTH].Active());
+    EXPECT_GT(pParty->_mm6GuardianAngelExpireTime, pParty->GetPlayingTime());
+    pParty->pHirelings[0] = hirelingBefore;
+    leaveHouse(game);
+
+    // Temple Baa (house 78) takes the 200 right back: a donation there nets nothing while below
+    // the cap, and bleeds an already-good reputation down by 200 per donation.
+    location.reputation = 0;
+    ASSERT_TRUE(enterHouse(HouseId(78)));
+    createHouseUI(HouseId(78));
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
+    EXPECT_EQ(location.reputation, 0);
+    location.reputation = 300;
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TEMPLE_DONATE);
+    EXPECT_EQ(location.reputation, 100);
+    leaveHouse(game);
+}

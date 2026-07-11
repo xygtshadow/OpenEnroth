@@ -127,6 +127,8 @@ int ActiveOverlayList::addPidOverlay(int uOverlayID, Pid pid, Duration animLengt
             slot.Reset();
             slot.pid = pid;
             slot.indexToOverlayList = overlayListIndexForId(uOverlayID);
+            if (slot.indexToOverlayList >= static_cast<int>(pOverlayList->pOverlays.size()))
+                return 0; // Not in doverlay.bin - e.g. MM6's cast-fx table references 9050/9070, which its shipped data lacks.
             Duration length = animLength;
             if (!length)
                 length = pSpriteFrameTable->pSpriteSFrames[pOverlayList->pOverlays[slot.indexToOverlayList].uSpriteFramesetID].animationLength;
@@ -161,6 +163,8 @@ int ActiveOverlayList::addScreenOverlay(int uOverlayID, int target, Duration ani
                 slot.flags = anchor.flags;
             }
             slot.indexToOverlayList = overlayListIndexForId(uOverlayID);
+            if (slot.indexToOverlayList >= static_cast<int>(pOverlayList->pOverlays.size()))
+                return 0; // Not in doverlay.bin - e.g. MM6's cast-fx table references 9050/9070, which its shipped data lacks.
             Duration length = animLength;
             if (!length)
                 length = pSpriteFrameTable->pSpriteSFrames[pOverlayList->pOverlays[slot.indexToOverlayList].uSpriteFramesetID].animationLength;

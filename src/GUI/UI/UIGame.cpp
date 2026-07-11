@@ -1897,6 +1897,36 @@ Color GetConditionDrawColor(Condition uConditionIdx) {
 
 //----- (00495430) --------------------------------------------------------
 std::string GetReputationString(int reputation) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's scale is positive = good: eleven bands over MM6 global.txt rows 510-520
+        // (Saintly, Angelic, Glorious, Honorable, Respectable, Average, Bad, Vile, Despicable,
+        // Monstrous, Notorious), thresholds from the title selector at MM6.EXE 0x489C60.
+        int row;
+        if (reputation >= 1000)
+            row = 510;      // Saintly
+        else if (reputation >= 800)
+            row = 511;      // Angelic
+        else if (reputation >= 600)
+            row = 512;      // Glorious
+        else if (reputation >= 400)
+            row = 513;      // Honorable
+        else if (reputation >= 200)
+            row = 514;      // Respectable
+        else if (reputation >= 0)
+            row = 515;      // Average
+        else if (reputation > -300)
+            row = 516;      // Bad
+        else if (reputation > -600)
+            row = 517;      // Vile
+        else if (reputation > -800)
+            row = 518;      // Despicable
+        else if (reputation > -1000)
+            row = 519;      // Monstrous
+        else
+            row = 520;      // Notorious
+        return localization->str(static_cast<LstrId>(row));
+    }
+
     if (reputation >= 25)
         return localization->str(LSTR_REPUTATION_HATED);
     else if (reputation >= 6)

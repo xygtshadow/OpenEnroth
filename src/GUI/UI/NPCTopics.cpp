@@ -740,12 +740,14 @@ static std::string mm6MasteryTeacherOptionString() {
             canLearn = isMm6Class(5) || hasAward(23);
             break;
           case SKILL_LIGHT:
-            price = 0; // MM6 reputation is positive = good: Saintly at +1000 (titles @0x489c60).
-            canLearn = currentLocationInfo().reputation >= 1000;
+            // MM6 reputation is positive = good: Saintly at +1000 (titles @0x489c60). The EXE
+            // gates on the hireling-adjusted display value (getter 0x47D600 @0x496faf).
+            price = 0;
+            canLearn = pParty->GetPartyReputation() >= 1000;
             break;
           case SKILL_DARK:
             price = 0;
-            canLearn = currentLocationInfo().reputation <= -1000;
+            canLearn = pParty->GetPartyReputation() <= -1000;
             break;
           case SKILL_ITEM_ID:
             price = 2500;

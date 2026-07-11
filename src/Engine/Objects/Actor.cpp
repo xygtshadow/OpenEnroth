@@ -756,6 +756,15 @@ void Actor::AggroSurroundingPeasants(unsigned int uActorID, int a2) {
     int y = 0;
     y |= 0x80000;
     Actor *victim = &pActors[uActorID];
+
+    // MM6.EXE 0x403778: turning a TRUE peasant (monsters.txt hostility 0) hostile costs 50
+    // reputation, once per actor - the EXE keys on the actor's mutable hostility byte
+    // transitioning to 4; the aggressor flag is the equivalent once-guard here.
+    if (engine->gameVersion() == GAME_VERSION_MM6 && a2 == 1 && !(victim->attributes & ACTOR_AGGRESSOR) &&
+        pMonsterStats->infos[victim->monsterId].hostilityType == HOSTILITY_FRIENDLY) {
+        currentLocationInfo().reputation -= 50;
+    }
+
     if (a2 == 1) victim->attributes |= ACTOR_AGGRESSOR;
 
     for (unsigned i = 0; i < pActors.size(); ++i) {
@@ -1145,6 +1154,19 @@ void Actor::AI_MeleeAttack(unsigned int uActorID, Pid sTargetPid,
 void Actor::ApplyFineForKillingPeasant(unsigned int uActorID) {
     if (engine->_currentLoadedMapId == MAP_INVALID || !pActors[uActorID].IsPeasant())
         return;
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x403086 (actor-death handler): killing a TRUE peasant - a monsters.txt row
+        // with hostility 0; the disguised town hostiles (Cutpurses, Followers of Baa) carry 4 -
+        // costs a flat 100 reputation. MM6 has no fine mechanic at all, and kills during an
+        // arena fight are exempt (the flag at 0x908DBD, mirrored by arenaState here).
+        if (pMonsterStats->infos[pActors[uActorID].monsterId].hostilityType != HOSTILITY_FRIENDLY)
+            return;
+        if (pParty->arenaState == ARENA_STATE_FIGHTING)
+            return;
+        currentLocationInfo().reputation -= 100;
+        return;
+    }
 
     // The alignment exemptions are MM7-only: MM6 map ids collide with MM7's MapId enum.
     if (engine->gameVersion() == GAME_VERSION_MM7) {
@@ -3407,7 +3429,7 @@ void Actor::Arena_summon_actor(MonsterId monster_id, Vec3f pos) {
     //    do
     //    {
     //      v13 = pSoundList->LoadSound(v12 +
-    //      word_4EE088_sound_ids[pMonsterStats->pInfos[monster_id].uSpell1ID],
+    //      word_4EE088_sound_ids[pMonsterStats->infos[monster_id].uSpell1ID],
     //      1); v12++;
     //    }
     //    while ( v13 );
