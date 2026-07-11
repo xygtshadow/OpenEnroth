@@ -1181,12 +1181,24 @@ void UI_Create() {
         game_ui_bar_yellow = assets->getImage_ColorKey("ib-statY");
         game_ui_bar_red = assets->getImage_ColorKey("ib-statR");
     }
-    game_ui_monster_hp_background = assets->getImage_ColorKey("mhp_bg");
-    game_ui_monster_hp_border_left = assets->getImage_ColorKey("mhp_capl");
-    game_ui_monster_hp_border_right = assets->getImage_ColorKey("mhp_capr");
-    game_ui_monster_hp_green = assets->getImage_ColorKey("mhp_grn");
-    game_ui_monster_hp_red = assets->getImage_ColorKey("mhp_red");
-    game_ui_monster_hp_yellow = assets->getImage_ColorKey("mhp_yel");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // Same asset names and identical draw logic (MM6.EXE 0x417ab0: clamp 25..200 wide, 0.34/0.67 color
+        // thresholds, caps at -5/+width), but MM6.EXE blits every piece solid (0x40a4d0/0x40a1d0) - and MM6
+        // bitmaps lack the teal color key anyway.
+        game_ui_monster_hp_background = assets->getImage_Solid("mhp_bg");
+        game_ui_monster_hp_border_left = assets->getImage_Solid("mhp_capl");
+        game_ui_monster_hp_border_right = assets->getImage_Solid("mhp_capr");
+        game_ui_monster_hp_green = assets->getImage_Solid("mhp_grn");
+        game_ui_monster_hp_red = assets->getImage_Solid("mhp_red");
+        game_ui_monster_hp_yellow = assets->getImage_Solid("mhp_yel");
+    } else {
+        game_ui_monster_hp_background = assets->getImage_ColorKey("mhp_bg");
+        game_ui_monster_hp_border_left = assets->getImage_ColorKey("mhp_capl");
+        game_ui_monster_hp_border_right = assets->getImage_ColorKey("mhp_capr");
+        game_ui_monster_hp_green = assets->getImage_ColorKey("mhp_grn");
+        game_ui_monster_hp_red = assets->getImage_ColorKey("mhp_red");
+        game_ui_monster_hp_yellow = assets->getImage_ColorKey("mhp_yel");
+    }
     ui_leather_mm7 = assets->getImage_Solid("LEATHER");
     ui_leather_mm6 = assets->getImage_Solid("ibground");
     dialogue_ui_x_x_u = assets->getImage_ColorKey("x_x_u");

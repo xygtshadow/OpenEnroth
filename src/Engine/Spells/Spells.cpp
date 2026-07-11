@@ -630,7 +630,12 @@ bool SpellBuff::IsBuffExpiredToTime(Time time) {
         expireTime.SetExpired();
         power = 0;
         skillMastery = MASTERY_NONE;
-        overlayId = 0;
+        // Free the owned overlay slot like Reset() does - just zeroing the id would leave a buff-owned
+        // (never-expiring) ActiveOverlay on screen forever when the buff runs out on its own.
+        if (overlayId) {
+            pActiveOverlayList->pOverlays[overlayId - 1].Reset();
+            overlayId = 0;
+        }
         return true;
     }
     return false;

@@ -1430,14 +1430,31 @@ void GameUI_DrawPortraits() {
             }
             render->DrawQuad2D(pPortrait, {kMm6PortraitX[i], kMm6PortraitY}, tint);
             render->DrawQuad2D(game_ui_mm6_facemask, {kMm6PortraitX[i] - 2, kMm6PortraitY - 2}, tint);
+        }
 
-            if (pPlayer->CanAct() && !pPlayer->timeToRecovery) {
-                GraphicsImage *gem = game_ui_player_alert_green;
-                if (pParty->GetRedAlert())
-                    gem = game_ui_player_alert_red;
-                else if (pParty->GetYellowAlert())
-                    gem = game_ui_player_alert_yellow;
-                render->DrawQuad2D(gem, {kMm6AlertGemX[i], kMm6AlertGemY});
+        // The persistent per-character/party buff fx render as part of the portrait pass in MM6.EXE (0x436010).
+        drawMm6PersistentBuffFxOverlays();
+
+        // Ready gems (MM6.EXE 0x486b92): in turn-based mode no gems show during the monsters' turn, and on the
+        // party's turn only the characters still queued get one; in real time a gem shows while a character can
+        // act and is off recovery. The gem color follows the party alert state in both modes.
+        GraphicsImage *gem = game_ui_player_alert_green;
+        if (pParty->GetRedAlert())
+            gem = game_ui_player_alert_red;
+        else if (pParty->GetYellowAlert())
+            gem = game_ui_player_alert_yellow;
+        if (pParty->bTurnBasedModeOn) {
+            if (pTurnEngine->turn_stage != TE_WAIT && pTurnEngine->pQueue[0].uPackedID.type() == OBJECT_Character) {
+                for (unsigned i = 0; i < pTurnEngine->pQueue.size(); ++i) {
+                    if (pTurnEngine->pQueue[i].uPackedID.type() != OBJECT_Character)
+                        break;
+                    render->DrawQuad2D(gem, {kMm6AlertGemX[pTurnEngine->pQueue[i].uPackedID.id()], kMm6AlertGemY});
+                }
+            }
+        } else {
+            for (int i = 0; i < pParty->pCharacters.size(); ++i) {
+                if (pParty->pCharacters[i].CanAct() && !pParty->pCharacters[i].timeToRecovery)
+                    render->DrawQuad2D(gem, {kMm6AlertGemX[i], kMm6AlertGemY});
             }
         }
         return;

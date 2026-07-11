@@ -3,6 +3,7 @@
 #include <array>
 #include <string>
 #include <tuple>
+#include <utility>
 
 #include "Engine/Party.h"
 #include "Engine/Time/Timer.h"
@@ -261,11 +262,61 @@ void drawMm6PartyBuffStatusOverlays() {
     }
 }
 
+//----- mm6: 0x436010 (the buff-gated pass inside the portrait draw) --------
+void drawMm6PersistentBuffFxOverlays() {
+    // MM6 keeps a persistent fx sprite on screen while a buff runs: five per-character rows near the portraits
+    // (targets 310+char .. 350+char, MM6.EXE spawns them buff-owned at cast time and the portrait draw 0x486900
+    // renders them while the character's buff timers are active) and three fixed party anchors (Water Walk 201,
+    // Guardian Angel 202, Fly 203). OpenEnroth draws them statelessly from the live buff state instead of
+    // storing overlay slots in every SpellBuff - the observable result is the same: the fx appears when the
+    // buff lands and vanishes when it expires or is dispelled. Buff-owned overlays freeze on their first frame
+    // (ActiveOverlayList::update skips them), hence the 0-tick frame time.
+    //
+    // MM6's Heroism/Haste/Shield/Stoneskin land in engine party buffs (their per-character rows light up for
+    // the whole party); Bless is per-character. Guardian Angel is the bespoke _mm6GuardianAngelExpireTime.
+    struct RowFx {
+        int overlayId;
+        int targetBase;
+    };
+    static constexpr RowFx kBlessRow = {10000, 310};
+    static constexpr std::array<std::pair<PartyBuff, RowFx>, 4> kPartyRows = {{
+        {PARTY_BUFF_HEROISM, {10001, 320}},
+        {PARTY_BUFF_HASTE, {10002, 330}},
+        {PARTY_BUFF_SHIELD, {10003, 340}},
+        {PARTY_BUFF_STONE_SKIN, {10004, 350}},
+    }};
+
+    auto drawAt = [](int overlayId, int target) {
+        SpriteFrame *frame = overlaySpriteFrame(overlayListIndexForId(overlayId), 0_ticks);
+        if (!frame)
+            return;
+        OverlayScreenAnchor anchor;
+        if (!overlayScreenAnchorForTarget(target, &anchor))
+            return;
+        drawOverlaySprite2D(frame, frame->scale, Pointi(anchor.x, anchor.y));
+    };
+
+    for (int i = 0; i < static_cast<int>(pParty->pCharacters.size()); i++) {
+        if (pParty->pCharacters[i].pCharacterBuffs[CHARACTER_BUFF_BLESS].Active())
+            drawAt(kBlessRow.overlayId, kBlessRow.targetBase + i);
+        for (const auto &[buff, fx] : kPartyRows) {
+            if (pParty->pPartyBuffs[buff].Active())
+                drawAt(fx.overlayId, fx.targetBase + i);
+        }
+    }
+    if (pParty->pPartyBuffs[PARTY_BUFF_WATER_WALK].Active())
+        drawAt(10005, 201);
+    if (pParty->_mm6GuardianAngelExpireTime > pParty->GetPlayingTime())
+        drawAt(10007, 202);
+    if (pParty->pPartyBuffs[PARTY_BUFF_FLY].Active())
+        drawAt(10008, 203);
+}
+
 //----- mm6: the addScreenOverlay sites in the CastSpell dispatch 0x422C93 --
 int mm6SpellCastFxOverlayId(int mm6SpellId) {
     // Native MM6 spell id -> one-shot portrait cast-fx overlay id. Buff/heal/utility spells only; attack
     // spells cast no portrait fx (MM6.EXE has no add site for them). A few spells also spawn a persistent
-    // buff fx (overlays 10000-10014) which is left to the y=254 party-buff status row / tracked as residue.
+    // buff fx (overlays 10000-10008), drawn statelessly by drawMm6PersistentBuffFxOverlays above.
     switch (mm6SpellId) {
         case 3:  return 1020;
         case 5:  return 1040;

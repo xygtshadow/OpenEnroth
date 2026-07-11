@@ -3351,7 +3351,11 @@ void Character::resetTempBonuses() {
 
 //----- (004907E7) --------------------------------------------------------
 Color Character::GetStatColor(Attribute uStat) const {
-    int base_attribute_value = StatTable[GetRace()][uStat].uBaseValue;
+    // MM6 has no races - its creation screen colors a stat against the character's CLASS base
+    // (MM6.EXE stat table 0x4C2668, the same one the point-buy pool is anchored on).
+    int base_attribute_value = engine->gameVersion() == GAME_VERSION_MM6
+        ? mm6ClassBaseStat(classType, uStat)
+        : StatTable[GetRace()][uStat].uBaseValue;
 
     int attribute_value = _stats[uStat];
     if (attribute_value == base_attribute_value)

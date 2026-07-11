@@ -4976,6 +4976,63 @@ GAME_TEST(Mm6, GameHudSkin) {
     game.tick(3);
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
     game.tick(1);
+
+    // Milestone 71: persistent buff fx (MM6.EXE 0x436010, drawn from the portrait pass while the buffs run).
+    // The overlay ids involved resolve to real sprites in MM6's doverlay.bin - unlike MM7, where every
+    // doverlay entry is the null sprite.
+    auto overlayHasRealSprite = [](int overlayId) {
+        for (const OverlayDesc &desc : pOverlayList->pOverlays)
+            if (desc.uOverlayID == overlayId)
+                return desc.uSpriteFramesetID != 0;
+        return false;
+    };
+    for (int overlayId : {10000, 10001, 10002, 10003, 10004, 10005, 10007, 10008})
+        EXPECT_TRUE(overlayHasRealSprite(overlayId)) << "overlay " << overlayId;
+
+    // Light every fx up and run the draw: Bless per character, the four party-level character rows,
+    // and the three fixed anchors (Water Walk / Guardian Angel / Fly).
+    Time buffEnd = pParty->GetPlayingTime() + Duration::fromHours(1);
+    for (Character &character : pParty->pCharacters)
+        character.pCharacterBuffs[CHARACTER_BUFF_BLESS].Apply(buffEnd, MASTERY_MASTER, 10, 0, 0);
+    for (PartyBuff buff : {PARTY_BUFF_HEROISM, PARTY_BUFF_HASTE, PARTY_BUFF_SHIELD, PARTY_BUFF_STONE_SKIN,
+                           PARTY_BUFF_WATER_WALK, PARTY_BUFF_FLY})
+        pParty->pPartyBuffs[buff].Apply(buffEnd, MASTERY_MASTER, 10, 0, 1); // Caster is 1-based; Fly/Water Walk dereference it.
+    pParty->_mm6GuardianAngelExpireTime = buffEnd;
+    pParty->_mm6GuardianAngelMastery = MASTERY_NOVICE;
+    game.tick(3);
+    for (Character &character : pParty->pCharacters)
+        character.pCharacterBuffs[CHARACTER_BUFF_BLESS].Reset();
+    for (PartyBuff buff : {PARTY_BUFF_HEROISM, PARTY_BUFF_HASTE, PARTY_BUFF_SHIELD, PARTY_BUFF_STONE_SKIN,
+                           PARTY_BUFF_WATER_WALK, PARTY_BUFF_FLY})
+        pParty->pPartyBuffs[buff].Reset();
+    pParty->_mm6GuardianAngelExpireTime = Time();
+    pParty->_mm6GuardianAngelMastery = MASTERY_NONE;
+    game.tick(1);
+
+    // Milestone 71: turn-based ready gems follow the turn queue (MM6.EXE 0x486b92) - toggling turn-based
+    // mode exercises that draw branch; the monsters'-turn stage draws none.
+    game.pressAndReleaseKey(PlatformKey::KEY_RETURN);
+    game.tick(3);
+    EXPECT_TRUE(pParty->bTurnBasedModeOn);
+    game.pressAndReleaseKey(PlatformKey::KEY_RETURN);
+    game.tick(3);
+    EXPECT_FALSE(pParty->bTurnBasedModeOn);
+
+    // Milestone 71: creation-screen stat colors anchor on the CLASS base (MM6.EXE table 0x4C2668; MM6 has
+    // no races). Roderick is a Paladin - Might base 14.
+    Character &roderick = pParty->pCharacters[0];
+    ASSERT_EQ(roderick.classType, CLASS_PALADIN);
+    int savedMight = roderick._stats[ATTRIBUTE_MIGHT];
+    roderick._stats[ATTRIBUTE_MIGHT] = 14;
+    Color defaultColor = roderick.GetStatColor(ATTRIBUTE_MIGHT);
+    roderick._stats[ATTRIBUTE_MIGHT] = 15;
+    Color buffedColor = roderick.GetStatColor(ATTRIBUTE_MIGHT);
+    roderick._stats[ATTRIBUTE_MIGHT] = 12;
+    Color debuffedColor = roderick.GetStatColor(ATTRIBUTE_MIGHT);
+    roderick._stats[ATTRIBUTE_MIGHT] = savedMight;
+    EXPECT_EQ(defaultColor, ui_character_stat_default_color);
+    EXPECT_EQ(buffedColor, ui_character_stat_buffed_color);
+    EXPECT_EQ(debuffedColor, ui_character_stat_debuffed_color);
 }
 
 // Milestone 42: the character screen draws from MM6's own skin - leather + fr_* parchments,

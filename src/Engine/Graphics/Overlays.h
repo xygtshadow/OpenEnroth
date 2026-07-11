@@ -95,6 +95,15 @@ struct OverlayList {
 void drawMm6PartyBuffStatusOverlays();
 
 /**
+ * Draws MM6's persistent buff fx: the five per-character rows near the portraits (Bless/Heroism/Haste/Shield/
+ * Stoneskin, targets 310+char..350+char, frozen on their first frame like MM6.EXE's buff-owned overlays) and
+ * the three fixed party anchors (Water Walk 201, Guardian Angel 202, Fly 203). Rendered statelessly from the
+ * live buff state each frame - equivalent to MM6.EXE spawning a buff-owned overlay at cast time (0x422C93)
+ * and rendering it from the portrait draw while the buff timers run (0x486900 -> 0x436010). MM6 sessions only.
+ */
+void drawMm6PersistentBuffFxOverlays();
+
+/**
  * One-shot portrait cast-fx overlay id for a native MM6 spell id, or 0 if the spell casts no portrait fx.
  * Transcribed from MM6.EXE's per-spell `addScreenOverlay` sites in the CastSpell dispatch (0x422C93). Only
  * buff/heal/utility spells have an entry - attack spells (Fire Bolt, Fireball, ...) draw no portrait fx.
