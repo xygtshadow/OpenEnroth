@@ -3102,6 +3102,12 @@ std::string Character::GetRaceName() const {
 
 //----- (00490141) --------------------------------------------------------
 Sex Character::GetSexByVoice() const {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 voices are the 12 creation faces: 0-7 = MaleA..MaleH, 8-11 = GirlA..GirlD.
+        assert(this->uVoiceID <= 11);
+        return this->uVoiceID < 8 ? SEX_MALE : SEX_FEMALE;
+    }
+
     switch (this->uVoiceID) {
         case 0u:
         case 1u:
@@ -3146,6 +3152,11 @@ void Character::SetInitialStats() {
 
 //----- (004901FC) --------------------------------------------------------
 void Character::SetSexByVoice() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        this->uSex = GetSexByVoice();
+        return;
+    }
+
     switch (this->uVoiceID) {
         case 0:
         case 1:
@@ -7019,31 +7030,53 @@ void Character::playReaction(SpeechId speech, int a3) {
     int speechCount = 0;
     int portraitCount = 0;
     int pickedSoundID = 0;
+    bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
 
     if (engine->config->settings.VoiceLevel.value() > 0) {
-        for (int i = 0; i < speechVariants[speech].size(); i++) {
-            if (speechVariants[speech][i]) {
-                speechCount++;
+        if (mm6) {
+            // MM6 speech (MM6.EXE 0x488CA0): the voice is the face id (12 banks - MaleA..MaleH,
+            // GirlA..GirlD), each speech event carries up to 2 sound variants (table @0x4C22F0),
+            // and the sample id is 5000 + 100 * voice + 2 * variant + subvariant. The samples are
+            // ordinary dsounds.bin entries ("MaleA01a"...), so the regular pipeline resolves them.
+            for (int i = 0; i < speechVariantsMm6[speech].size(); i++) {
+                if (speechVariantsMm6[speech][i]) {
+                    speechCount++;
+                }
             }
-        }
-        if (speechCount) {
-            // TODO(captainurist): encapsulate the logic here.
-            int pickedVariant = speechVariants[speech][vrng->random(speechCount)];
-            int numberOfSubvariants = byte_4ECF08[pickedVariant - 1][uVoiceID];
-            if (numberOfSubvariants > 0) {
-                pickedSoundID = vrng->random(numberOfSubvariants) + 2 * (pickedVariant + 50 * uVoiceID) + 4998;
-                pAudioPlayer->playSound((SoundId)pickedSoundID, SOUND_MODE_PID, Pid(OBJECT_Character, getCharacterIndex()));
+            if (speechCount) {
+                int pickedVariant = speechVariantsMm6[speech][vrng->random(speechCount)];
+                int numberOfSubvariants = mm6SpeechSubvariantCounts[pickedVariant - 1][uVoiceID];
+                if (numberOfSubvariants > 0) {
+                    pickedSoundID = vrng->random(numberOfSubvariants) + 2 * pickedVariant + 100 * uVoiceID + 5000;
+                    pAudioPlayer->playSound((SoundId)pickedSoundID, SOUND_MODE_PID, Pid(OBJECT_Character, getCharacterIndex()));
+                }
+            }
+        } else {
+            for (int i = 0; i < speechVariants[speech].size(); i++) {
+                if (speechVariants[speech][i]) {
+                    speechCount++;
+                }
+            }
+            if (speechCount) {
+                // TODO(captainurist): encapsulate the logic here.
+                int pickedVariant = speechVariants[speech][vrng->random(speechCount)];
+                int numberOfSubvariants = byte_4ECF08[pickedVariant - 1][uVoiceID];
+                if (numberOfSubvariants > 0) {
+                    pickedSoundID = vrng->random(numberOfSubvariants) + 2 * (pickedVariant + 50 * uVoiceID) + 4998;
+                    pAudioPlayer->playSound((SoundId)pickedSoundID, SOUND_MODE_PID, Pid(OBJECT_Character, getCharacterIndex()));
+                }
             }
         }
     }
 
-    for (int i = 0; i < portraitVariants[speech].size(); i++) {
-        if (portraitVariants[speech][i] != PORTRAIT_INVALID) {
+    const auto &portraits = mm6 ? portraitVariantsMm6[speech] : portraitVariants[speech];
+    for (int i = 0; i < portraits.size(); i++) {
+        if (portraits[i] != PORTRAIT_INVALID) {
             portraitCount++;
         }
     }
     if (portraitCount) {
-        PortraitId portrait = portraitVariants[speech][vrng->random(portraitCount)];
+        PortraitId portrait = portraits[vrng->random(portraitCount)];
         Duration expressionDuration;
         if (portrait == PORTRAIT_TALK && pickedSoundID) {
             if (pickedSoundID >= 0) {

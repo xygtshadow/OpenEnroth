@@ -7477,3 +7477,40 @@ GAME_TEST(Mm6, HirelingBenefits) {
     pParty->pHirelings[0] = hirelingsBefore0;
     pParty->pHirelings[1] = hirelingsBefore1;
 }
+
+// Character speech comes from MM6's own voice banks: the voice is the face id (12 banks,
+// MaleA..MaleH for faces 0-7, GirlA..GirlD for 8-11), each speech event carries up to 2 sound
+// variants (MM6.EXE table @0x4C22F0), and the sample id is 5000 + 100 * voice + 2 * variant +
+// subvariant (MM6.EXE 0x488CA0), resolved through ordinary dsounds.bin entries ("MaleA01a"...).
+GAME_TEST(Mm6, CharacterVoices) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    auto soundsTape = tapes.sounds();
+
+    game.startNewGame();
+    test.startTaping();
+
+    // The default party: Roderick MaleA(0), Alexis GirlD(11), Serena GirlB(9), Zoltan MaleH(7).
+    // Voice = face, and sex follows the face.
+    std::array<int, 4> expectedVoices = {{0, 11, 9, 7}};
+    std::array<Sex, 4> expectedSexes = {{SEX_MALE, SEX_FEMALE, SEX_FEMALE, SEX_MALE}};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(pParty->pCharacters[i].uVoiceID, expectedVoices[i]);
+        EXPECT_EQ(pParty->pCharacters[i].GetSexByVoice(), expectedSexes[i]);
+        EXPECT_EQ(pParty->pCharacters[i].uSex, expectedSexes[i]);
+    }
+
+    // An "oww" reaction (event 24, sound variants 34/35, one subvariant each in every bank) picks
+    // the sample from the character's own bank: id 5000 + 100 * voice + {68, 70}.
+    for (int i = 0; i < 4; i++) {
+        pParty->pCharacters[i].receiveDamage(10, DAMAGE_PHYSICAL);
+        game.tick(3);
+        int voice = pParty->pCharacters[i].uVoiceID;
+        auto played = soundsTape.flatten();
+        bool heard = std::ranges::any_of(played, [&](SoundId sound) {
+            return sound == static_cast<SoundId>(5068 + 100 * voice) || sound == static_cast<SoundId>(5070 + 100 * voice);
+        });
+        EXPECT_TRUE(heard) << "no MM6 voice reaction for character " << i << " (voice " << voice << ")";
+    }
+}
