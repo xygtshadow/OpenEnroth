@@ -1683,17 +1683,21 @@ static void CharacterUI_DrawItem(int x, int y, Item *item, int id, GraphicsImage
         item_texture = assets->getImage_Alpha(item->GetIconName());
 
     if (item->ItemEnchanted()) { // enchant animation
+        // MM6 has no enchant-aura art: sptext01/sp28a/sp30a/sp91a exist only in MM7's LODs and
+        // MM6.EXE never references them - the item draws plainly while the flags expire.
         GraphicsImage *enchantment_texture = nullptr;
-        if (item->AuraEffectRed())
-            enchantment_texture = assets->getImage_ColorKey("sptext01");
-        else if (item->AuraEffectBlue())
-            enchantment_texture = assets->getImage_ColorKey("sp28a");
-        else if (item->AuraEffectGreen())
-            enchantment_texture = assets->getImage_ColorKey("sp30a");
-        else if (item->AuraEffectPurple())
-            enchantment_texture = assets->getImage_ColorKey("sp91a");
-        else
-            assert(false);
+        if (engine->gameVersion() != GAME_VERSION_MM6) {
+            if (item->AuraEffectRed())
+                enchantment_texture = assets->getImage_ColorKey("sptext01");
+            else if (item->AuraEffectBlue())
+                enchantment_texture = assets->getImage_ColorKey("sp28a");
+            else if (item->AuraEffectGreen())
+                enchantment_texture = assets->getImage_ColorKey("sp30a");
+            else if (item->AuraEffectPurple())
+                enchantment_texture = assets->getImage_ColorKey("sp91a");
+            else
+                assert(false);
+        }
 
         ItemEnchantmentTimer = std::max(0_ticks, ItemEnchantmentTimer - pEventTimer->dt());
         if (!ItemEnchantmentTimer) {
@@ -1701,8 +1705,12 @@ static void CharacterUI_DrawItem(int x, int y, Item *item, int id, GraphicsImage
             ptr_50C9A4_ItemToEnchant = nullptr;
         }
 
-        // TODO(pskelton): #time check tickcount usage here
-        render->BlendTextures(x, y, item_texture, enchantment_texture, platform->tickCount() / 10, 0, 255);
+        if (enchantment_texture) {
+            // TODO(pskelton): #time check tickcount usage here
+            render->BlendTextures(x, y, item_texture, enchantment_texture, platform->tickCount() / 10, 0, 255);
+        } else {
+            render->DrawQuad2D(item_texture, {x, y});
+        }
     } else if (item->IsBroken()) {
         render->DrawQuad2D(item_texture, {x, y}, colorTable.Red);
     } else if (!item->IsIdentified() && (engine->config->gameplay.ShowUndentifiedItem.value() || id)) { // TODO(captainurist): after my changes id==0 is a valid item id

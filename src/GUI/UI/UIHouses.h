@@ -26,14 +26,14 @@ constexpr int SIDE_TEXT_BOX_MAX_SPACING = 32;
 // blit an "evpan###" marble panel (152x353) over the right column, with the portrait / transition
 // picture directly on it (MM6 has no evtnpc portrait frame). The confirm/cancel buttons
 // (buttyes*/buttesc*, 61x28, blit x offsets 0x3CC/0x41C/0x46C = 486/526/566) sit on the panel's
-// bottom row; the row's y comes from a runtime global the disassembly doesn't pin down, placed
-// here 7px above the panel's bottom edge, mirroring the side margins.
+// bottom row at y=313: the "global" the draws read (e.g. 0x4cabfc at 0x43a392) is really entry
+// 313 of the y*640 row-offset lookup table at 0x4ca718, folded into an absolute address.
 constexpr Pointi MM6_DIALOGUE_PANEL_POS = {481, 0};         // evpan###, 152x353.
 constexpr Pointi MM6_DIALOGUE_PORTRAIT_POS = {525, 34};     // npc###, 63x73. == slot [0] of the single-occupant strip.
 constexpr int MM6_DIALOGUE_LABEL_ROW_Y = 108;               // Occupant labels at 94*i+108 (MM6.EXE 0x498312).
-constexpr Pointi MM6_DIALOGUE_YES_BUTTON_POS = {486, 318};  // buttyes*.
-constexpr Pointi MM6_DIALOGUE_ESC_BUTTON_POS = {566, 318};  // buttesc* when paired with a yes-button.
-constexpr Pointi MM6_DIALOGUE_ESC_CENTERED_POS = {526, 318};  // buttesc* when it is the only button.
+constexpr Pointi MM6_DIALOGUE_YES_BUTTON_POS = {486, 313};  // buttyes*.
+constexpr Pointi MM6_DIALOGUE_ESC_BUTTON_POS = {566, 313};  // buttesc* when paired with a yes-button.
+constexpr Pointi MM6_DIALOGUE_ESC_CENTERED_POS = {526, 313};  // buttesc* when it is the only button.
 constexpr Sizei MM6_DIALOGUE_BUTTON_SIZE = {61, 28};
 
 void BackToHouseMenu();

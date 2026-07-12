@@ -614,15 +614,20 @@ bool enterHouse(HouseId uHouseID) {
     }
     std::string_view houseClip = houseAnimDescr(uCurrentHouse_Animation).video_name;
     bool clipLoops = true;
+    bool suppressGreeting = false;
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // The council flag is consumed on whatever house gets entered next, mirroring MM6.EXE's
         // clear-on-teardown (0x4a4ad9) - it only ever survives up to the immediate re-entry.
         bool councilCutscene = std::exchange(mm6CouncilCutsceneQueued, false) && uHouseID == HOUSE_MM6_COUNCIL;
         if (councilCutscene) {
             // MM6.EXE 0x43c6c9: the council re-entry queued by an in-council MoveNPC (Slicker's
-            // conviction) plays the one-shot "Citytrtr" clip instead of the chamber loop.
+            // conviction) plays the one-shot "Citytrtr" clip instead of the chamber loop, and
+            // 0x43c6d9 raises the one-shot flag 0x55bd9c: the per-frame greeting case (0x42b751)
+            // skips the house greeting for this visit (the clip carries its own audio). The flag
+            // resets on the next house-screen init (0x43c316).
             houseClip = "Citytrtr";
             clipLoops = false;
+            suppressGreeting = true;
         } else if (mm6PlayArchie) {
             houseClip = "archie"; // MM6.EXE 0x43c6ea, loop flag cleared at 0x43c6fa.
             clipLoops = false;
@@ -649,7 +654,8 @@ bool enterHouse(HouseId uHouseID) {
         // Type-based check: MM6 transport house ids (48-68) collide with unrelated MM7 id ranges.
         return true;
     }
-    playHouseSound(uHouseID, HOUSE_SOUND_GENERAL_GREETING);
+    if (!suppressGreeting)
+        playHouseSound(uHouseID, HOUSE_SOUND_GENERAL_GREETING);
     return true;
 }
 

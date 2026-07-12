@@ -140,7 +140,13 @@ void GUIWindow_Spellbook::openSpellbookPage(MagicSchool page) {
     onCloseSpellBookPage();
     pParty->activeCharacter().lastOpenedSpellbookPage = page;
     openSpellbook();
-    pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage2 : SOUND_TurnPage1);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x42cc4f: the page-flip pair is sounds 203/204, one below MM7's 204/205
+        // (203 doubles as MM6's TABSPELL/emblem feedback sound).
+        pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage1 : SOUND_fizzle);
+    } else {
+        pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage2 : SOUND_TurnPage1);
+    }
 }
 
 void GUIWindow_Spellbook::openSpellbook() {
@@ -190,11 +196,15 @@ void GUIWindow_Spellbook::openSpellbook() {
                          std::to_underlying(school), INPUT_ACTION_INVALID, localization->spellSchoolName(school));
 
     if (isMm6) {
-        // MM6.EXE 0x40ce30: the quickspell (TABSPELL) and close (TABEXIT) tabs at the page's bottom edge.
+        // MM6.EXE 0x40ce30: the quickspell (TABSPELL) and close (TABEXIT) tabs at the page's bottom edge,
+        // plus a click region on the school emblem (48,18,126x82) that clears the installed quickspell
+        // (same message as TABSPELL with param 1, handler 0x42ca93).
         pBtn_InstallRemoveSpell = CreateButton({301, 332}, ui_spellbook_btn_quckspell->size(), BUTTON_TYPE_NORMAL, UIMSG_HintSelectRemoveQuickSpellBtn,
                                                UIMSG_ClickInstallRemoveQuickSpellBtn, 0, INPUT_ACTION_INVALID, "");
         pBtn_CloseBook = CreateButton({360, 332}, ui_spellbook_btn_close->size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
                                       localization->str(LSTR_EXIT_DIALOGUE));
+        CreateButton("SpellBook_RemoveQuickSpell", {48, 18}, {126, 82}, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_ClickInstallRemoveQuickSpellBtn, 1);
     } else {
         pBtn_InstallRemoveSpell = CreateButton({476, 450}, ui_spellbook_btn_quckspell->size(), BUTTON_TYPE_NORMAL, UIMSG_HintSelectRemoveQuickSpellBtn,
                                                UIMSG_ClickInstallRemoveQuickSpellBtn, 0, INPUT_ACTION_INVALID, "", {ui_spellbook_btn_quckspell_click});
@@ -212,8 +222,7 @@ void GUIWindow_Spellbook::Update() {
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6.EXE 0x40ddc0: school tabs run down (414, 13+35*i) - the current page's tab sits flush at
         // x=414, the others recessed at x=421 - and each KNOWN spell draws its patch plus its name in a
-        // 100px window under the icon. The installed quickspell's name is tinted. (The EXE's exact text
-        // shades come from palette math; a plain white/yellow pair stands in.)
+        // 100px window under the icon.
         for (MagicSchool page : allMagicSchools()) {
             if (!player.pActiveSkills[skillForMagicSchool(page)] && !engine->config->debug.AllMagic.value())
                 continue;
@@ -232,7 +241,15 @@ void GUIWindow_Spellbook::Update() {
 
             Pointi namePos = kMm6SpellNamePos[page][slot];
             Recti nameWindow(namePos.x + 6, namePos.y - 5, 100, 344);
-            Color nameColor = (player.uQuickSpell == spell) ? colorTable.Yellow : colorTable.White;
+            // MM6.EXE 0x40ddc0 composes the name shades from the pixel-format globals: near-black
+            // (the 16-bit literal 1) normally, blue (15,15,255) for the installed quickspell, red
+            // (255,15,15) for the selected slot (a second click casts it), and magenta (235,15,255)
+            // when the selected slot IS the quickspell.
+            Color nameColor = Color(0, 0, 8);
+            if (spellbookSelectedSpell == spell)
+                nameColor = (player.uQuickSpell == spell) ? Color(235, 15, 255) : Color(255, 15, 15);
+            else if (player.uQuickSpell == spell)
+                nameColor = Color(15, 15, 255);
             DrawTitleText(assets->pFontBookLloyds.get(), 0, 0, nameColor, pSpellStats->pInfos[spell].name, 3, nameWindow);
         }
         return;
@@ -291,10 +308,15 @@ GUIWindow_Spellbook::~GUIWindow_Spellbook() {
 
 void GUIWindow_Spellbook::loadSpellbook() {
     MagicSchool page = pParty->activeCharacter().lastOpenedSpellbookPage;
-    if (pParty->activeCharacter().uQuickSpell != SPELL_NONE && magicSchoolForSpell(pParty->activeCharacter().uQuickSpell) == page)
-        spellbookSelectedSpell = pParty->activeCharacter().uQuickSpell;
-    else
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE 0x40ccca zeroes the selected-slot flag (0x4cb214) on every page load - opening
+        // the book or flipping a page always starts with nothing selected, quickspell included.
         spellbookSelectedSpell = SPELL_NONE;
+    } else if (pParty->activeCharacter().uQuickSpell != SPELL_NONE && magicSchoolForSpell(pParty->activeCharacter().uQuickSpell) == page) {
+        spellbookSelectedSpell = pParty->activeCharacter().uQuickSpell;
+    } else {
+        spellbookSelectedSpell = SPELL_NONE;
+    }
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6's patches sit in slot order (slot i = the school's i-th spell, native id order) and there is

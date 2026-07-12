@@ -75,6 +75,7 @@
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
+#include "GUI/UI/UISpellbook.h"
 #include "GUI/UI/UIStatusBar.h"
 #include "GUI/UI/UITransition.h"
 #include "GUI/UI/Houses/Shops.h"
@@ -438,9 +439,9 @@ GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
     ASSERT_NE(transition_ui_icon, nullptr);
     EXPECT_EQ(transition_ui_icon->name(), "castle"); // Event 102 passes exit-pic id 1 = MM6's "castle".
     ASSERT_NE(pBtn_YES, nullptr);
-    EXPECT_EQ(pBtn_YES->rect, Recti(486, 318, 62, 29));
+    EXPECT_EQ(pBtn_YES->rect, Recti(486, 313, 62, 29));
     ASSERT_NE(pBtn_ExitCancel, nullptr);
-    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(566, 318, 62, 29));
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(566, 313, 62, 29));
 
     // Confirming it loads the Abandoned Temple.
     game.pressAndReleaseKey(PlatformKey::KEY_Y);
@@ -941,7 +942,7 @@ GAME_TEST(Mm6, DialogueSkin) {
 
     // The exit button sits on the panel's bottom row (CreateButton stores w+1/h+1).
     ASSERT_NE(pBtn_ExitCancel, nullptr);
-    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 318, 62, 29));
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 313, 62, 29));
 
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
@@ -1306,7 +1307,7 @@ GAME_TEST(Mm6, StreetCitizenDialogueAndHire) {
     EXPECT_EQ(game_ui_dialogue_background->name(), "evpan019");
     EXPECT_EQ(game_ui_dialogue_background->size(), Sizei(152, 353));
     ASSERT_NE(pBtn_ExitCancel, nullptr);
-    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 318, 62, 29));
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 313, 62, 29));
     ASSERT_GE(speakingNpcId, 5000);
     NPCData *citizen = getNPCData(speakingNpcId);
     EXPECT_FALSE(citizen->name.empty());
@@ -5177,23 +5178,53 @@ GAME_TEST(Mm6, SpellbookScreen) {
 
     // The known spell got a button at its MM6 slot position (fire slot 1 icon at (198,32)) and the
     // fire school tab button sits at (410,13).
-    bool foundSpellButton = false, foundSchoolButton = false;
+    GUIButton *spellButton = nullptr;
+    bool foundSchoolButton = false;
     for (GUIButton *button : pGUIWindow_CurrentMenu->vButtons) {
         if (button->msg == UIMSG_SelectSpell && button->msg_param == std::to_underlying(SPELL_FIRE_TORCH_LIGHT)) {
             EXPECT_EQ(button->rect.topLeft(), Pointi(198, 32));
-            foundSpellButton = true;
+            spellButton = button;
         }
         if (button->msg == UIMSG_OpenSpellbookPage && button->msg_param == std::to_underlying(MAGIC_SCHOOL_FIRE)) {
             EXPECT_EQ(button->rect.topLeft(), Pointi(410, 13));
             foundSchoolButton = true;
         }
     }
-    EXPECT_TRUE(foundSpellButton);
+    ASSERT_NE(spellButton, nullptr);
     EXPECT_TRUE(foundSchoolButton);
 
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    // MM6 interaction model (MM6.EXE 0x42cc75/0x42ca8d): opening the book starts with nothing
+    // selected (0x40ccca resets the selected-slot flag, quickspell included); the first click on
+    // a spell selects it, TABSPELL installs the selection as the quickspell and closes the book,
+    // and the school-emblem click region clears the installed quickspell.
+    EXPECT_EQ(spellbookSelectedSpell, SPELL_NONE);
+    Pointi spellCenter = spellButton->rect.center();
+    game.pressAndReleaseButton(BUTTON_LEFT, spellCenter.x, spellCenter.y);
     game.tick(2);
-    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(spellbookSelectedSpell, SPELL_FIRE_TORCH_LIGHT); // First click selects...
+    EXPECT_EQ(current_screen_type, SCREEN_SPELL_BOOK);         // ...it does not cast.
+
+    game.pressAndReleaseButton(BUTTON_LEFT, 301 + 27, 332 + 8); // TABSPELL (301,332,55x17).
+    game.tick(2);
+    EXPECT_EQ(pParty->activeCharacter().uQuickSpell, SPELL_FIRE_TORCH_LIGHT);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME); // Installing the quickspell closes the book.
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_SpellBookWindow, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_SPELL_BOOK);
+    EXPECT_EQ(spellbookSelectedSpell, SPELL_NONE); // Reset on open despite the installed quickspell.
+    game.pressAndReleaseButton(BUTTON_LEFT, 48 + 63, 18 + 41); // The school-emblem click region.
+    game.tick(2);
+    EXPECT_EQ(pParty->activeCharacter().uQuickSpell, SPELL_NONE);
+
+    // A second click on the selected spell casts it and closes the book.
+    game.pressAndReleaseButton(BUTTON_LEFT, spellCenter.x, spellCenter.y);
+    game.tick(2);
+    EXPECT_EQ(spellbookSelectedSpell, SPELL_FIRE_TORCH_LIGHT);
+    game.pressAndReleaseButton(BUTTON_LEFT, spellCenter.x, spellCenter.y);
+    game.tick(5);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_TRUE(pParty->pPartyBuffs[PARTY_BUFF_TORCHLIGHT].Active()); // Torch Light landed.
 }
 
 // Milestone 42: the character screen draws from MM6's own skin - leather + fr_* parchments,

@@ -1242,6 +1242,29 @@ void Game::processQueuedMessages() {
                 continue;
 
             case UIMSG_ClickInstallRemoveQuickSpellBtn: {
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    // MM6.EXE 0x42ca8d (msg 0x4e): param 1 is the school-emblem click region, which
+                    // clears the installed quickspell; param 0 is TABSPELL, which installs the
+                    // selected spell (speech 12, book closes, 0x42cb1c) or, with nothing selected,
+                    // just plays sound 203 - TABSPELL never removes in MM6.
+                    if (!pParty->hasActiveCharacter())
+                        continue;
+                    Character *character = &pParty->activeCharacter();
+                    if (uMessageParam) {
+                        character->uQuickSpell = SPELL_NONE;
+                        spellbookSelectedSpell = SPELL_NONE;
+                        pAudioPlayer->playUISound(SOUND_fizzle); // MM6 sound 203.
+                    } else if (spellbookSelectedSpell == SPELL_NONE) {
+                        pAudioPlayer->playUISound(SOUND_fizzle); // MM6 sound 203.
+                    } else {
+                        character->uQuickSpell = spellbookSelectedSpell;
+                        character->playReaction(SPEECH_SET_QUICK_SPELL);
+                        pGUIWindow_CurrentMenu = nullptr;
+                        pEventTimer->setPaused(false);
+                        current_screen_type = SCREEN_GAME;
+                    }
+                    continue;
+                }
                 new OnButtonClick(pBtn_InstallRemoveSpell->rect.topLeft(), {0, 0}, pBtn_InstallRemoveSpell);
                 if (!pParty->hasActiveCharacter())
                     continue;
@@ -1275,7 +1298,11 @@ void Game::processQueuedMessages() {
                     }
                 }
                 if (!skill_count) {  //нет скиллов
-                    pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage2 : SOUND_TurnPage1);
+                    // MM6's page-flip pair is sounds 203/204 (MM6.EXE 0x42cc4f), one below MM7's.
+                    if (engine->gameVersion() == GAME_VERSION_MM6)
+                        pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage1 : SOUND_fizzle);
+                    else
+                        pAudioPlayer->playUISound(vrng->randomBool() ? SOUND_TurnPage2 : SOUND_TurnPage1);
                 } else {
                     if (keyboardInputHandler->IsSpellBackcycleToggled()) {
                         --uAction;
