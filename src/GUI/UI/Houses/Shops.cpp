@@ -292,7 +292,9 @@ void GUIWindow_Shop::mainDialogue() {
         for (DialogueId option : listDialogueOptions()) {
             switch (option) {
               case DIALOGUE_SHOP_BUY_STANDARD:
-                optionsText.push_back(localization->str(LSTR_STANDARD));
+                // MM6 global.txt row 33 "Buy" (the option-label table @0x4461d8 reads rows
+                // 33/200/113/179/210); MM7 reuses row 33 for "Ranger Lord", so no LSTR_ name.
+                optionsText.push_back(localization->str(static_cast<LstrId>(33)));
                 break;
               case DIALOGUE_SHOP_SELL:
                 optionsText.push_back(localization->str(LSTR_SELL));

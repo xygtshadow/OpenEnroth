@@ -1418,6 +1418,13 @@ void GUIWindow_House::Update() {
         return;
     }
     houseDialogManager();
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE finishes EVERY house screen with the two viewport corner patches (0x417dc0,
+        // called from the room-view tails @0x4a62ab/0x4a6a2a and from each shop wares screen;
+        // the sell/identify/repair screens get them via the leather base draw 0x4167a0).
+        render->DrawQuad2D(game_ui_mm6_border5, {7, 8});
+        render->DrawQuad2D(game_ui_mm6_border6, {461, 8});
+    }
     if (!isShop(houseId())) {
         return;
     }

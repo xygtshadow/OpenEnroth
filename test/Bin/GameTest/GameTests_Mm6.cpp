@@ -814,6 +814,14 @@ GAME_TEST(Mm6, EnterWeaponShop) {
               (std::vector<DialogueId>{DIALOGUE_SHOP_BUY_STANDARD, DIALOGUE_SHOP_SELL, DIALOGUE_SHOP_IDENTIFY,
                                        DIALOGUE_SHOP_REPAIR, DIALOGUE_SHOP_BUY_SPECIAL}));
 
+    // The labels are MM6's own one-word global.txt rows (the option-label table @0x4461d8 reads
+    // rows 33/200/113/179/210) - row 33 is "Buy" in MM6 but "Ranger Lord" in MM7's global.txt.
+    std::vector<std::string> labels;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption)
+            labels.push_back(button->sLabel);
+    EXPECT_EQ(labels, (std::vector<std::string>{"Buy", "Sell", "Identify", "Repair", "Special"}));
+
     // Escape leaves the shop and the game is live again.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
