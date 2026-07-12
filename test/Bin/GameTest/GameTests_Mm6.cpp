@@ -72,6 +72,7 @@
 #include "GUI/UI/UIDialogue.h"
 #include "GUI/UI/UIGame.h"
 #include "GUI/UI/UIHouses.h"
+#include "GUI/UI/UIMainMenu.h"
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
@@ -5414,8 +5415,9 @@ GAME_TEST(Mm6, MainMenuSkin) {
     game.goToMainMenu();
 
     // MM6's title.pcx has the four buttons baked in along the top right; MM6.EXE creates 132x44
-    // hitboxes at x=482, y=9/71/133/195 (CreateButton calls @0x4507bf-0x4508c5). The click textures
-    // are the fully-pressed "start06?" frames (press animation loaded as "start%02d%c" @0x4508f9).
+    // hitboxes at x=482, y=9/71/133/195 (CreateButton calls @0x4507bf-0x4508c5). Each button owns
+    // the seven frames of its glow ramp ("start%02d%c" @0x4508f9), which the menu loop pulses
+    // through while the cursor is over the button.
     auto buttonById = [](std::string_view id) -> GUIButton * {
         for (GUIWindow *window : lWindowList)
             for (GUIButton *button : window->vButtons)
@@ -5423,11 +5425,11 @@ GAME_TEST(Mm6, MainMenuSkin) {
                     return button;
         return nullptr;
     };
-    struct { const char *id; int y; const char *texture; } expected[4] = {
-        {"MainMenu_NewGame", 9, "start06a"},
-        {"MainMenu_LoadGame", 71, "start06b"},
-        {"MainMenu_Credits", 133, "start06c"},
-        {"MainMenu_ExitGame", 195, "start06d"},
+    struct { const char *id; int y; char letter; } expected[4] = {
+        {"MainMenu_NewGame", 9, 'a'},
+        {"MainMenu_LoadGame", 71, 'b'},
+        {"MainMenu_Credits", 133, 'c'},
+        {"MainMenu_ExitGame", 195, 'd'},
     };
     for (const auto &e : expected) {
         GUIButton *button = buttonById(e.id);
@@ -5435,8 +5437,20 @@ GAME_TEST(Mm6, MainMenuSkin) {
         // CreateButton stores w+1/h+1: the original engines (MM6.EXE included, hit test @0x450a81)
         // treated button rects as closed intervals, so a 132x44 button covers 133x45 pixels.
         EXPECT_EQ(button->rect, Recti(482, e.y, 133, 45)) << e.id;
-        ASSERT_EQ(button->vTextures.size(), 1u) << e.id;
-        EXPECT_EQ(button->vTextures[0], assets->getImage_Alpha(e.texture)) << e.id;
+        ASSERT_EQ(button->vTextures.size(), 7u) << e.id;
+        for (int frame = 0; frame < 7; frame++)
+            EXPECT_EQ(button->vTextures[frame], assets->getImage_Alpha(fmt::format("start{:02}{:c}", frame, e.letter))) << e.id << " frame " << frame;
+    }
+
+    // The glow is a free-running triangle wave shared by all four buttons: MM6.EXE steps a single
+    // counter every 50ms and flips its direction below 1 and above 5 (@0x450b52), so the ramp runs
+    // 0..6 and back down over 12 steps.
+    const int expectedFrames[12] = {0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1};
+    for (int step = 0; step < 12; step++) {
+        EXPECT_EQ(mm6MainMenuGlowFrame(50 * step), expectedFrames[step]) << "step " << step;
+        EXPECT_EQ(mm6MainMenuGlowFrame(50 * step + 49), expectedFrames[step]) << "step " << step;
+        // The pulse is periodic, and never restarts - hovering a second button doesn't reset it.
+        EXPECT_EQ(mm6MainMenuGlowFrame(50 * (step + 12)), expectedFrames[step]) << "step " << step;
     }
 
     // A click on MM7's button column (x=495 from y=172) below the MM6 buttons is empty scenery

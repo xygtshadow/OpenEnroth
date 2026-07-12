@@ -1,8 +1,16 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 
 #include "GUI/GUIWindow.h"
+
+/**
+ * @param tickCountMs               Milliseconds since startup.
+ * @return                          Frame of the MM6 main menu glow ramp to draw on the button
+ *                                  under the cursor, in `[0, 6]`.
+ */
+int mm6MainMenuGlowFrame(int64_t tickCountMs);
 
 class GUIWindow_MainMenu : public GUIWindow {
  public:
