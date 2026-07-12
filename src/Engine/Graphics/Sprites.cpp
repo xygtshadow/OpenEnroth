@@ -66,7 +66,13 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                 pSpriteSFrames[iter_uSpriteID].flags |= SPRITE_FRAME_LOADED;
 
                 while (1) {
-                    if (uFlags & SPRITE_FRAME_IMAGE1) {
+                    if (ascii::noCaseEquals(pSpriteSFrames[iter_uSpriteID].textureName, "null")) {
+                        // Both games use the literal texture name "null" to mean "this frame draws nothing".
+                        // It's what the death frame of every monster that leaves no corpse carries, and what
+                        // sprite-less spell frames carry - and neither game's sprites.lod holds a sprite by
+                        // that name. Leave the frame empty; looking it up could only fail.
+                        pSpriteSFrames[iter_uSpriteID].sprites.fill(nullptr);
+                    } else if (uFlags & SPRITE_FRAME_IMAGE1) {
                         Sprite *sprite = pSprites_LOD->loadSprite(pSpriteSFrames[iter_uSpriteID].textureName);
                         if (sprite == nullptr)
                             logger->warning("Sprite {} not loaded!", pSpriteSFrames[iter_uSpriteID].textureName);

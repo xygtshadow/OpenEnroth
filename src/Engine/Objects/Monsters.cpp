@@ -30,21 +30,40 @@ MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str);
 //----- (004548E2) --------------------------------------------------------
 SpellId ParseSpellType(std::string_view name, GameVersion version) {
     if (version == GAME_VERSION_MM6) {
-        // MM6's monster spell names come from MM6's own spells.txt, and the spell that sits at a given id
-        // often differs from MM7's, so the MM7 name map below would resolve them to the wrong id (or miss
-        // them entirely). Resolve the name against the loaded MM6 spell table instead and return the NATIVE
-        // MM6 SpellId; when the monster casts it, Actor::AI_SpellAttack runs the id through translateForCast
-        // to reach the matching MM7 effect. spells.txt is initialized before monsters.txt in
-        // Engine::SecondaryInitialization, so pSpellStats is populated by the time this runs.
-        assert(pSpellStats && "MM6 monster spell names require pSpellStats to be initialized first");
-        for (SpellId spell : pSpellStats->pInfos.indices()) {
-            const SpellInfo &info = pSpellStats->pInfos[spell];
-            if (ascii::noCaseEquals(name, info.name) || ascii::noCaseEquals(name, info.pShortName))
-                return spell;
-        }
-        // A handful of MM6's shipped monsters.txt spell cells carry data typos that match no spells.txt name
-        // ("Dispell Magic" with a doubled L on Beholder C / Lich A / Lich B, and "Psychic Shockt" on Titan B).
-        // Those monsters get no spell attack, exactly as in the original game.
+        // MM6 doesn't resolve monster spell names against spells.txt names. Its monsters.txt parser
+        // (MM6.EXE 0x448022) tokenizes the spell cell and compares only its FIRST WORD, case-insensitively,
+        // against the hardcoded keyword table below. That's why MM6's own data typos still resolve in the
+        // original game: "Dispell Magic" (doubled L, on Maddening Eye / Lich / Greater Lich) and "Psychic
+        // Shockt" (Noble Titan) both match on their first word.
+        //
+        // The values are NATIVE MM6 spell ids. The spell that sits at a given id differs between the games,
+        // so when the monster casts, Actor::AI_SpellAttack runs the id through translateForCast to reach the
+        // matching MM7 effect.
+        static const std::map<std::string, int, ascii::NoCaseLess> mm6MonsterSpellKeywords = {
+            {"Cold",       24}, // Cold Beam.
+            {"Deadly",     37}, // Deadly Swarm.
+            {"Dispell",    80}, // Dispel Magic.
+            {"Finger",     95}, // Finger of Death.
+            {"Fire",        4}, // Fire Bolt.
+            {"Fireball",    6},
+            {"Flame",       2}, // Flame Arrow.
+            {"Flying",     76}, // Flying Fist.
+            {"Harm",       70},
+            {"Ice",        28}, // Ice Bolt.
+            {"Incinerate", 11},
+            {"Lightning",  18}, // Lightning Bolt.
+            {"Mass",       91}, // Mass Curse.
+            {"Meteor",      9}, // Meteor Shower.
+            {"Mind",       58}, // Mind Blast.
+            {"Paralyze",   86},
+            {"Poison",     26}, // Poison Spray.
+            {"Psychic",    65}, // Psychic Shock.
+            {"Toxic",      90}, // Toxic Cloud.
+        };
+
+        auto pos = mm6MonsterSpellKeywords.find(name.substr(0, name.find(' ')));
+        if (pos != mm6MonsterSpellKeywords.end())
+            return static_cast<SpellId>(pos->second);
         logger->warning("Unknown MM6 monster spell {}", name);
         return SPELL_NONE;
     }

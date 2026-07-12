@@ -3469,11 +3469,11 @@ GAME_TEST(Mm6, CastUniqueSpellAnalog) {
     EXPECT_GE(projectiles, 1);
 }
 
-// MM6 monster spell attacks come from MM6's monsters.txt, which names spells by MM6's own spells.txt names -
-// and the spell that sits at a given id differs from MM7's. ParseSpellType resolves each name against the
-// loaded MM6 spell table into a NATIVE MM6 SpellId; castSpell()'s translateForCast then maps it to the matching
-// MM7 effect. Before this wiring the names were matched against MM7's hardcoded name map, resolving them to the
-// wrong id, or (for MM6-unique names) to SPELL_NONE with an "Unknown monster spell" warning.
+// MM6 monster spell attacks come from MM6's monsters.txt, and the spell that sits at a given id differs from
+// MM7's. ParseSpellType resolves each cell the way MM6.EXE does - by matching its FIRST WORD against a
+// hardcoded keyword table - into a NATIVE MM6 SpellId; castSpell()'s translateForCast then maps that id to the
+// matching MM7 effect. Before this wiring the names were matched against MM7's hardcoded name map, resolving
+// them to the wrong id, or (for MM6-unique names) to SPELL_NONE with an "Unknown monster spell" warning.
 GAME_TEST(Mm6, MonsterSpellNamesResolve) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -3496,9 +3496,22 @@ GAME_TEST(Mm6, MonsterSpellNamesResolve) {
     EXPECT_EQ(ooze.spell1Id, SPELL_WATER_ICE_BOLT); // Native MM6 id 26 = "Poison Spray".
     EXPECT_TRUE(isRegularSpell(ooze.spell1Id));
 
-    // Across the whole monster table, every spell-casting monster resolves to a real regular spell, except a
-    // small handful of shipped-data typos ("Dispell Magic" with a doubled L on Beholder C / Lich A / Lich B,
-    // "Psychic Shockt" on Titan B) that match no spells.txt name - those keep no spell, as in the original.
+    // MM6's shipped monsters.txt carries two spell-name typos: "Dispell Magic" (doubled L) and "Psychic
+    // Shockt". They still resolve in the original game, because MM6.EXE matches only the FIRST WORD of the
+    // cell against a hardcoded keyword table - and "Dispell" and "Psychic" are the keywords. ParseSpellType
+    // reproduces that table, so these four monsters keep the spell attack they'd otherwise have lost.
+    // Maddening Eye (Beholder C), Lich (Lich A) and Greater Lich (Lich B) all ship "Dispell Magic,N,10".
+    for (MonsterId id : {MonsterId(12), MonsterId(94), MonsterId(95)}) {
+        const MonsterInfo &caster = pMonsterStats->infos[id];
+        EXPECT_GT(caster.spell1UseChance, 0);
+        EXPECT_EQ(caster.spell1Id, SPELL_LIGHT_DISPEL_MAGIC); // Native MM6 id 80 = "Dispel Magic".
+    }
+    const MonsterInfo &nobleTitan = pMonsterStats->infos[MonsterId(167)]; // Titan B, cell "Psychic Shockt,M,18".
+    EXPECT_GT(nobleTitan.spell1UseChance, 0);
+    EXPECT_EQ(nobleTitan.spell1Id, SPELL_MIND_PSYCHIC_SHOCK); // Native MM6 id 65 = "Psychic Shock".
+
+    // Across the whole monster table, every one of MM6's 55 spell-casting monsters resolves to a real
+    // regular spell - the keyword table covers every spell cell MM6 ships, typos included.
     int resolved = 0;
     int unresolved = 0;
     for (MonsterId id : pMonsterStats->infos.indices()) {
@@ -3510,8 +3523,8 @@ GAME_TEST(Mm6, MonsterSpellNamesResolve) {
         else
             unresolved++;
     }
-    EXPECT_GE(resolved, 50); // 55 casters minus the 4 typo rows.
-    EXPECT_LE(unresolved, 5);
+    EXPECT_EQ(resolved, 55);
+    EXPECT_EQ(unresolved, 0);
 }
 
 // Monsters don't cast through castSpell() - they use Actor::AI_SpellAttack, which switches on the spell id.
@@ -3645,25 +3658,15 @@ GAME_TEST(Mm6, MonsterCastsUncoveredSpell) {
     });
     EXPECT_GE(poisonProjectiles, 1);
 
-    // Still-uncovered effect: some shipped MM6 monsters name their spell with a typo ("Dispell Magic",
-    // "Psychic Shockt") that matches no spells.txt entry and resolves to SPELL_NONE. That has no AI_SpellAttack
-    // case, so the MM6-gated default must no-op it - no abort, no projectile. Reaching the asserts below at all
-    // means it did not abort on the switch's default: assert(false). (Finger of Death used to sit here; it is
-    // now a real monster cast - see Mm6.MonsterCastsFingerOfDeath.)
-    MonsterId typoCaster = MONSTER_INVALID;
-    for (MonsterId id : pMonsterStats->infos.indices()) {
-        const MonsterInfo &info = pMonsterStats->infos[id];
-        if (info.spell1UseChance > 0 && !isRegularSpell(info.spell1Id)) {
-            typoCaster = id;
-            break;
-        }
-    }
-    ASSERT_NE(typoCaster, MONSTER_INVALID);
-    caster.monsterInfo = pMonsterStats->infos[typoCaster];
-    SpellId typoSpell = caster.monsterInfo.spell1Id;
-    ASSERT_FALSE(isRegularSpell(typoSpell));
+    // Still-uncovered effect: a monster whose spell cell doesn't resolve keeps SPELL_NONE, which has no
+    // AI_SpellAttack case - the MM6-gated default must no-op it: no abort, no projectile. Reaching the assert
+    // below at all means it did not abort on the switch's default: assert(false). MM6's shipped data no longer
+    // produces such a monster (ParseSpellType reproduces MM6.EXE's first-word keyword table, which resolves
+    // even the "Dispell Magic" / "Psychic Shockt" typos), so drive the default with SPELL_NONE directly.
+    // (Finger of Death used to sit here; it is now a real monster cast - see Mm6.MonsterCastsFingerOfDeath.)
+    ASSERT_FALSE(isRegularSpell(SPELL_NONE));
     size_t spritesBefore = pSpriteObjects.size();
-    Actor::AI_SpellAttack(0, &dir, typoSpell, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
+    Actor::AI_SpellAttack(0, &dir, SPELL_NONE, ABILITY_SPELL1, caster.monsterInfo.spell1SkillMastery);
     EXPECT_EQ(pSpriteObjects.size(), spritesBefore);
 }
 
