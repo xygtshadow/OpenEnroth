@@ -22,7 +22,14 @@ class Game {
     int run();
 
  private:
-    bool loop();
+    /**
+     * The legacy, pre-fsm game loop. Runs everything from party creation through to the game itself,
+     * and returns when the game is over or when what comes next is an fsm state again.
+     *
+     * @return                      Name of the fsm state to restart the fsm at, or an empty string
+     *                              to leave `run()`'s outer loop and shut the game down.
+     */
+    std::string_view loop();
     void processQueuedMessages();
     void gameLoop();
     void closeTargetedSpellWindow();

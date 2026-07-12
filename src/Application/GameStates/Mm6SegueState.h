@@ -10,12 +10,12 @@
  * Create Party (run the creation screen) or Quick Start (take the default party as-is), plus Escape
  * to go back. MM6 only - MM7 goes from the main menu straight into party creation.
  *
- * Shown when New Game is chosen *from the main menu*. This is NOT every path into a new game, and
- * that's a known deviation: New Game from the *in-game* menu runs `Game_StartNewGameWhilePlaying()`,
- * which sets `GAME_STATE_NEWGAME_OUT_GAMEMENU`, and `Game::loop()` turns that straight into
- * `SetCurrentMenuID(MENU_NEWGAME); continue;` without ever re-entering the fsm - so that path drops
- * MM6 onto party creation, skipping the prologue. What MM6.EXE does there has not been reversed, so
- * the behavior is left alone rather than guessed at.
+ * Shown on *every* path into a new game, which is both of them: New Game from the main menu
+ * (`MainMenuState`'s "newGame" transition) and New Game from the in-game menu. The latter runs
+ * `Game_StartNewGameWhilePlaying()` and never touches the fsm, so `Game::loop()` restarts the fsm
+ * here for it - see `newGameOutOfGameMenuFsmState()` in Game.cpp for the RE that says MM6 shows the
+ * prologue there too (@0x42b3ec sets exit reason 4, which @0x4536aa turns into screen id 1, which
+ * the jump table @0x453854 sends to @0x4535e3, which calls the segue @0x452bd0).
  *
  * @offset 0x452bd0
  */

@@ -5753,6 +5753,42 @@ GAME_TEST(Mm6, SegueQuickStart) {
     EXPECT_TRUE(roderick.inventory.find(static_cast<ItemId>(505)));
 }
 
+GAME_TEST(Mm6, SegueFromInGameMenu) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // New Game from the *in-game* menu shows the prologue too, not just New Game from the main menu.
+    // MM6.EXE's in-game menu handler (@0x42b3ec) sets exit reason 4, which the outer dispatcher turns
+    // into screen id 1 (@0x4536aa -> @0x4536c4), which its jump table @0x453854 sends to @0x4535e3 ->
+    // `call 0x452bd0`, the segue. See newGameOutOfGameMenuFsmState() in Game.cpp. This path used to
+    // drop straight onto party creation - the very bug the prologue screen was built to fix, at a
+    // second entry point. MM7 has no prologue and still goes straight to creation (Issues.Issue790).
+    game.startNewGame();
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+    ASSERT_EQ(findMm6SegueWindow(), nullptr);
+
+    // Escape into the in-game menu, then New Game - which wants confirming, so it takes two clicks.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_MENU);
+    game.pressGuiButton("GameMenu_NewGame");
+    game.tick(1);
+    game.pressGuiButton("GameMenu_NewGame");
+
+    // Tearing the game down and restarting the fsm takes a few frames. Bounded, so a regression here
+    // fails the test instead of hanging it.
+    for (int i = 0; i < 100 && !findMm6SegueWindow(); i++)
+        game.tick(1);
+    ASSERT_NE(findMm6SegueWindow(), nullptr);
+
+    // And it's the real prologue screen, not a husk - Create Party takes us on to party creation,
+    // exactly as it does on the main-menu path.
+    game.pressGuiButton("Mm6Segue_CreateParty");
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+    EXPECT_EQ(findMm6SegueWindow(), nullptr);
+}
+
 GAME_TEST(Mm6, PartyCreationSkin) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

@@ -108,6 +108,29 @@ static MapId startingMapId(const GameConfig *config) {
     return pMapStats->GetMapInfo(startingMap);
 }
 
+/**
+ * New Game from the *in-game* menu takes the same road into a new game as New Game from the main
+ * menu does, prologue screen included - which for MM6 means it goes back through the fsm rather than
+ * dropping straight onto party creation.
+ *
+ * MM6.EXE does exactly that. The in-game menu's New Game handler (@0x42b3ec) sets exit reason 4
+ * (`mov [0x6199c0], 4`), and the outer dispatcher turns that into screen id 1 (@0x4536aa -> @0x4536c4
+ * `mov [0x5f811c], 1` -> `jmp 0x4535b9`), which its jump table @0x453854 sends to @0x4535e3: reset
+ * the party (`call 0x485f40`) and then `call 0x452bd0` - the segue. The table cleanly distinguishes
+ * this from Load, which is reason 3 -> screen id 5 -> @0x453693 -> straight into the game loop; New
+ * Game always routes through the segue.
+ *
+ * @return                          Name of the fsm state to restart the fsm at, or an empty string
+ *                                  to stay on `Game::loop()`'s legacy straight-to-party-creation
+ *                                  path. MM7 has no prologue screen, so it always gets the latter,
+ *                                  and its behavior here is unchanged.
+ */
+static std::string_view newGameOutOfGameMenuFsmState() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return "Mm6Segue";
+    return {};
+}
+
 int Game::run() {
     window->activate();
     ::eventLoop->processMessages(eventHandler);
@@ -137,12 +160,12 @@ int Game::run() {
 
         // Here we're still running the rest of the loops as usual.
         uGameState = GAME_STATE_PLAYING;
-        if (!loop()) {
-            break;
-        } else {
-            startingState = "MainMenu";
-        }
-    } while (true);
+
+        // loop() picks the state the fsm restarts at. It's "MainMenu" for everything MM7 can throw
+        // at it - the only other answer today is MM6's prologue screen, see
+        // newGameOutOfGameMenuFsmState() - and an empty string means we're done.
+        startingState = loop();
+    } while (!startingState.empty());
 
     // Clean up primary window should be the only one left now
     assert(lWindowList.size() == 1);
@@ -151,15 +174,19 @@ int Game::run() {
     return 0;
 }
 
-bool Game::loop() {
+std::string_view Game::loop() {
     while (true) {
         if (uGameState == GAME_FINISHED ||
             GetCurrentMenuID() == MENU_EXIT_GAME) {
-            return false;
+            return {};
         } else if (GetCurrentMenuID() == MENU_LoadingProcInMainMenu) {
             uGameState = GAME_STATE_PLAYING;
             gameLoop();
             if (uGameState == GAME_STATE_NEWGAME_OUT_GAMEMENU) {
+                if (std::string_view fsmState = newGameOutOfGameMenuFsmState(); !fsmState.empty()) {
+                    uGameState = GAME_STATE_PLAYING;
+                    return fsmState;
+                }
                 SetCurrentMenuID(MENU_NEWGAME);
                 uGameState = GAME_STATE_PLAYING;
                 continue;
@@ -194,6 +221,10 @@ bool Game::loop() {
 
             gameLoop();
             if (uGameState == GAME_STATE_NEWGAME_OUT_GAMEMENU) {
+                if (std::string_view fsmState = newGameOutOfGameMenuFsmState(); !fsmState.empty()) {
+                    uGameState = GAME_STATE_PLAYING;
+                    return fsmState;
+                }
                 SetCurrentMenuID(MENU_NEWGAME);
                 uGameState = GAME_STATE_PLAYING;
                 continue;
@@ -211,6 +242,10 @@ bool Game::loop() {
             continue;
         }
         if (uGameState == GAME_STATE_NEWGAME_OUT_GAMEMENU) {
+            if (std::string_view fsmState = newGameOutOfGameMenuFsmState(); !fsmState.empty()) {
+                uGameState = GAME_STATE_PLAYING;
+                return fsmState;
+            }
             SetCurrentMenuID(MENU_NEWGAME);
             uGameState = GAME_STATE_PLAYING;
             continue;
@@ -221,7 +256,7 @@ bool Game::loop() {
         }
     }
 
-    return true;
+    return "MainMenu";
 }
 
 GraphicsImage *gamma_preview_image = nullptr;  // 506E40

@@ -230,7 +230,7 @@ GUIWindow_GameMenu::GUIWindow_GameMenu()
     game_ui_menu_resume = assets->getImage_ColorKey("resume1");
     game_ui_menu_quit = assets->getImage_ColorKey("quit1");
 
-    pBtn_NewGame = CreateButton({0x13u, 0x9Bu}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
+    pBtn_NewGame = CreateButton("GameMenu_NewGame", {0x13u, 0x9Bu}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
         UIMSG_StartNewGame, 0, INPUT_ACTION_NEW_GAME, localization->str(LSTR_NEW_GAME), {game_ui_menu_new});
     pBtn_SaveGame = CreateButton("GameMenu_SaveGame", {0x13u, 0xD1u}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
         UIMSG_Game_OpenSaveGameDialog, 0, INPUT_ACTION_SAVE_GAME, localization->str(LSTR_SAVE_GAME), {game_ui_menu_save});
