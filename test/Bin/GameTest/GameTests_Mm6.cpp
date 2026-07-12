@@ -5308,6 +5308,39 @@ GAME_TEST(Mm6, CharacterScreenSkin) {
     equipInto(ITEM_SLOT_MAIN_HAND, 6);  // A two-handed weapon (Weapon2 row).
     game.tick(2);
 
+    // Every doll-visible artifact/relic draws through its own branch: chain artifacts reuse the
+    // CHN5 doll variant, plates PL3, crowns CROWN3B, and the three dual-wieldable blades use the
+    // EXE's per-id left-hand coords. Fit within BACKDOLL eyeballed via an offline composite of
+    // the same assets at the same coordinates (milestone 77).
+    equipInto(ITEM_SLOT_MAIN_HAND, 403);  // Excalibur.
+    equipInto(ITEM_SLOT_OFF_HAND, 408);   // Valeria shield.
+    equipInto(ITEM_SLOT_ARMOUR, 406);     // Galahad chain -> CHN5.
+    equipInto(ITEM_SLOT_HELMET, 409);     // Arthur crown -> CROWN3B.
+    equipInto(ITEM_SLOT_CLOAK, 410);      // Pendragon cape.
+    equipInto(ITEM_SLOT_BOOTS, 411);      // Lucius boots.
+    equipInto(ITEM_SLOT_BOW, 405);        // Percival bow.
+    game.tick(2);
+    equipInto(ITEM_SLOT_MAIN_HAND, 415);  // Hades sword.
+    equipInto(ITEM_SLOT_OFF_HAND, 423);   // Aegis shield.
+    equipInto(ITEM_SLOT_ARMOUR, 407);     // Pellinore plate -> PL3.
+    equipInto(ITEM_SLOT_HELMET, 424);     // Odin crown -> CROWN3B.
+    game.tick(2);
+    for (int armor : {421, 422}) {        // Apollo chain / Zeus plate.
+        equipInto(ITEM_SLOT_ARMOUR, armor);
+        game.tick(1);
+    }
+    for (int blade : {400, 403, 415}) {   // Dual-wield left-hand coords: Mordred/Excalibur/Hades.
+        equipInto(ITEM_SLOT_OFF_HAND, blade);
+        game.tick(1);
+    }
+    if (InventoryEntry offhand = active.inventory.entry(ITEM_SLOT_OFF_HAND))
+        active.inventory.take(offhand);
+    for (int grip : {402, 404, 419, 417}) {  // Conan/Merlin/Hercules/Poseidon in the grip pose.
+        equipInto(ITEM_SLOT_MAIN_HAND, grip);
+        game.tick(1);
+    }
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
@@ -7913,3 +7946,4 @@ GAME_TEST(Mm6, CharacterVoices) {
         EXPECT_TRUE(heard) << "no MM6 voice reaction for character " << i << " (voice " << voice << ")";
     }
 }
+
