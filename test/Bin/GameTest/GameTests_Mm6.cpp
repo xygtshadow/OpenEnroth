@@ -5465,8 +5465,11 @@ GAME_TEST(Mm6, MainMenuSkin) {
     game.tick(2);
     EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
 
-    // A click dead center on the NEW button opens party creation.
+    // A click dead center on the NEW button opens the new-game prologue screen (MM6.EXE 0x452BD0),
+    // and party creation is one more click away, on its Create Party button.
     game.pressAndReleaseButton(BUTTON_LEFT, 548, 31);
+    game.tick(2);
+    game.pressGuiButton("Mm6Segue_CreateParty");
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
 }
@@ -5560,13 +5563,119 @@ GAME_TEST(Mm6, SegueAssets) {
     EXPECT_LE(textInset + (font->GetHeight() - 3) * lines, scroll->height());
 }
 
+// The prologue ("segue") screen's window, or nullptr if the screen isn't up. It's an fsm-owned
+// window, so it isn't in pGUIWindow_CurrentMenu - only in the window list.
+static GUIWindow *findMm6SegueWindow() {
+    for (GUIWindow *window : lWindowList)
+        if (window->eWindowType == WINDOW_Mm6Segue)
+            return window;
+    return nullptr;
+}
+
+GAME_TEST(Mm6, SegueSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // New Game opens the prologue screen (MM6.EXE 0x452bd0), not party creation.
+    game.goToMainMenu();
+    game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    GUIWindow *segue = findMm6SegueWindow();
+    ASSERT_NE(segue, nullptr);
+
+    auto findButton = [&](UIMessageType msg) -> GUIButton * {
+        for (GUIButton *button : segue->vButtons)
+            if (button->msg == msg)
+                return button;
+        return nullptr;
+    };
+
+    // The two buttons, at MM6.EXE's own hitboxes: Create Party @0x452ec7, Quick Start @0x452ef1,
+    // both 217x41 at y=434. Their resting faces are painted into segue_bg.pcx, so these coordinates
+    // are all the screen has - get them wrong and the buttons are invisibly misplaced. CreateButton
+    // stores w+1/h+1 (closed-interval heritage), hence the 218x42 below.
+    GUIButton *createParty = findButton(UIMSG_Mm6Segue_CreateParty);
+    GUIButton *quickStart = findButton(UIMSG_Mm6Segue_QuickStart);
+    ASSERT_NE(createParty, nullptr);
+    ASSERT_NE(quickStart, nullptr);
+    EXPECT_EQ(createParty->rect, Recti(74, 434, 218, 42));
+    EXPECT_EQ(quickStart->rect, Recti(350, 434, 218, 42));
+
+    // And Create Party is what opens the creation screen.
+    game.pressGuiButton("Mm6Segue_CreateParty");
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+    EXPECT_EQ(findMm6SegueWindow(), nullptr); // The prologue is gone.
+}
+
+GAME_TEST(Mm6, SegueEscape) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // Escape backs out of the prologue to the main menu. MM6 binds Escape on this screen (@0x452f32)
+    // - where its handler goes there wasn't traced, so the destination is our choice, not a port.
+    game.goToMainMenu();
+    game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    ASSERT_NE(findMm6SegueWindow(), nullptr);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
+    EXPECT_EQ(findMm6SegueWindow(), nullptr); // Really gone, not just covered.
+
+    // New Game opens it again.
+    game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    EXPECT_NE(findMm6SegueWindow(), nullptr);
+}
+
+GAME_TEST(Mm6, SegueQuickStart) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // Quick Start skips the creation screen and starts with MM6's default party. MM6.EXE's handler
+    // (@0x42fe0e) sets screen id 10 and its caller (@0x453664) fills the party in from global.txt
+    // rows 506-509; we take the same default party the creation screen would open with, so the
+    // assertions below pin "Quick Start == our own Create Party path", not "== MM6" - the MM6
+    // fidelity of that party is what Mm6.NewGameDefaults pins, against new.lod's template.
+    game.goToMainMenu();
+    game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    ASSERT_NE(findMm6SegueWindow(), nullptr);
+
+    game.pressGuiButton("Mm6Segue_QuickStart");
+    game.skipLoadingScreen();
+    game.tick(2);
+
+    // In the game, in New Sorpigal - no creation screen in between.
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
+    EXPECT_EQ(pParty->pCharacters[0].name, "Roderick");
+    EXPECT_EQ(pParty->pCharacters[3].name, "Zoltan");
+    EXPECT_EQ(pParty->pCharacters[0].classType, CLASS_PALADIN);
+    EXPECT_EQ(pParty->pCharacters[3].classType, CLASS_SORCERER);
+
+    // ...and the starting items are granted, exactly as on the Create Party path: Roderick's
+    // skill-derived longsword and chain armor, plus The Letter for the opening delivery quest.
+    const Character &roderick = pParty->pCharacters[0];
+    ASSERT_TRUE(roderick.inventory.entry(ITEM_SLOT_MAIN_HAND));
+    EXPECT_EQ(roderick.inventory.entry(ITEM_SLOT_MAIN_HAND)->itemId, static_cast<ItemId>(1));
+    ASSERT_TRUE(roderick.inventory.entry(ITEM_SLOT_ARMOUR));
+    EXPECT_EQ(roderick.inventory.entry(ITEM_SLOT_ARMOUR)->itemId, static_cast<ItemId>(71));
+    EXPECT_TRUE(roderick.inventory.find(static_cast<ItemId>(505)));
+}
+
 GAME_TEST(Mm6, PartyCreationSkin) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
-    // Open the creation screen without confirming it.
+    // Open the creation screen without confirming it. New Game now lands on the prologue screen
+    // first (MM6.EXE 0x452bd0), so it takes its Create Party button to get to the creation screen.
     game.goToMainMenu();
     game.pressGuiButton("MainMenu_NewGame");
+    game.tick(2);
+    game.pressGuiButton("Mm6Segue_CreateParty");
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
 

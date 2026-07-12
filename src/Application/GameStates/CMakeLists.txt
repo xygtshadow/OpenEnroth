@@ -6,6 +6,7 @@ set(APPLICATION_GAME_STATES_SOURCES
         LoadSlotState.cpp
         LoadStep2State.cpp
         MainMenuState.cpp
+        Mm6SegueState.cpp
         StartState.cpp
         VideoState.cpp)
 
@@ -15,6 +16,7 @@ set(APPLICATION_GAME_STATES_HEADERS
         LoadSlotState.h
         LoadStep2State.h
         MainMenuState.h
+        Mm6SegueState.h
         StartState.h
         VideoState.h)
 

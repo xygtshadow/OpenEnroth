@@ -10,6 +10,7 @@
 #include "LoadSlotState.h"
 #include "LoadStep2State.h"
 #include "MainMenuState.h"
+#include "Mm6SegueState.h"
 #include "StartState.h"
 #include "VideoState.h"
 
@@ -51,9 +52,14 @@ void GameFsmBuilder::_buildIntroVideoSequence(FsmBuilder &builder) {
 }
 
 void GameFsmBuilder::_buildMainMenu(FsmBuilder &builder) {
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+
     builder
     .state<MainMenuState>("MainMenu")
-        .on("newGame").exitFsm()
+        // MM6 shows its new-game prologue ("segue") screen between the main menu and party creation
+        // (MM6.EXE 0x452bd0). MM7 has no such screen, and its unconditional exitFsm() - the fallback
+        // target, taken whenever the condition above it is false - leaves the fsm for party creation.
+        .on("newGame").jumpTo([isMm6] { return isMm6; }, "Mm6Segue").exitFsm()
         .on("loadGame").jumpTo("LoadSlot")
         .on("quickLoadGame").exitFsm()
         .on("credits").jumpTo("Credits")
@@ -63,9 +69,16 @@ void GameFsmBuilder::_buildMainMenu(FsmBuilder &builder) {
         .on("slotConfirmed").exitFsm()
         .on("back").jumpTo("MainMenu");
 
-    if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6's credits are a movie clip, not MM7's scrolling text window (MM6.EXE 0x4A6C90).
+    if (isMm6) {
+        // Both of the prologue's buttons leave the fsm into Game::loop(), which then either runs the
+        // creation screen (MENU_NEWGAME) or takes the default party as-is (MENU_QUICKSTART).
         builder
+        .state<Mm6SegueState>("Mm6Segue")
+            .on("createParty").exitFsm()
+            .on("quickStart").exitFsm()
+            .on("back").jumpTo("MainMenu")
+
+        // MM6's credits are a movie clip, not MM7's scrolling text window (MM6.EXE 0x4A6C90).
         .state<VideoState>("Credits", VideoState::VIDEO_INTRO, "credits")
             .on("videoEnd").jumpTo("MainMenu");
     } else {

@@ -165,9 +165,15 @@ bool Game::loop() {
                 continue;
             }
             break;
-        } else if (GetCurrentMenuID() == MENU_NEWGAME) {
+        } else if (MenuType menu = GetCurrentMenuID(); menu == MENU_NEWGAME || menu == MENU_QUICKSTART) {
+            // MENU_QUICKSTART is MM6's prologue Quick Start (MM6.EXE 0x42fe0e): the same new-game
+            // tail as MENU_NEWGAME, but the party comes from the default template instead of the
+            // creation screen. It doesn't outlive this block - gameLoop() below resets the menu id
+            // to MENU_NONE on entry - so nothing downstream has to know about it.
             pActiveOverlayList->Reset();
-            if (!PartyCreationUI_Loop()) {
+            if (menu == MENU_QUICKSTART) {
+                mm6QuickStartParty();
+            } else if (!PartyCreationUI_Loop()) {
                 break;
             }
 

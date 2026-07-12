@@ -80,6 +80,7 @@ static std::array<bool, 4> creationMm6NameTyped = {{}};                // A type
 static constexpr std::array<int, 4> kMm6SelectedFlameX = {45, 204, 362, 521};  // MM6.EXE 0x451CC4 jump table.
 
 bool PartyCreationUI_LoopInternal();
+static void givePartyItemsMm6();
 
 bool PlayerCreation_Choose4Skills() {
     for (const auto& character : pParty->pCharacters) {
@@ -269,7 +270,10 @@ void CreateParty_EventLoop() {
     }
 }
 
-bool PartyCreationUI_Loop() {
+// Everything a new game needs before the party exists: the default party, and the engine state it
+// starts from - music stopped, event timer paused, turn-based combat ended, NPC tables restored.
+// Shared by the creation screen and by MM6's Quick Start, which skips that screen.
+static void resetForNewGame() {
     pAudioPlayer->MusicStop();
     pEventTimer->setPaused(true);
 
@@ -284,9 +288,34 @@ bool PartyCreationUI_Loop() {
     pNPCStats->pGroups = pNPCStats->pOriginalGroups;
     if (engine->gameVersion() != GAME_VERSION_MM6)
         pNPCStats->pNPCData[3].flags |= NPC_HIRED; // Lady Margaret. MM6 npc 3 is an unrelated quest NPC.
+}
+
+bool PartyCreationUI_Loop() {
+    resetForNewGame();
 
     pGUIWindow_CurrentMenu = std::make_unique<GUIWindow_PartyCreation>();
     return !PartyCreationUI_LoopInternal();
+}
+
+// What MM6.EXE does: the Quick Start handler (@0x42fe0e) sets screen id 10, and its caller
+// (@0x453664) fills the four characters in from global.txt rows 506-509 - it does not run the
+// creation screen at all.
+//
+// What we do instead: the same default party the creation screen would open with
+// (Party::createDefaultParty -> resetCharactersMm6, itself taken from new.lod's party.bin), plus the
+// skill-derived starting inventory that leaving the creation screen grants (givePartyItemsMm6).
+//
+// Why those agree: new.lod's template party IS MM6's default party, and - as givePartyItemsMm6()'s
+// own comment records - the template's gear is exactly that grant's output for the default skill
+// sets. So the two constructions land on the same party from either end.
+//
+// Note there is no stopSounds() here, unlike the creation screen's MM6 tail (which has one to kill
+// the sounds the screen itself made): the only sound in flight on this path is the Quick Start
+// button's own click, and stopping it here would silence the button.
+void mm6QuickStartParty() {
+    resetForNewGame();
+
+    givePartyItemsMm6();
 }
 
 // The MM6 creation draw, layout verbatim from MM6.EXE 0x450DC0. Character columns: portrait
