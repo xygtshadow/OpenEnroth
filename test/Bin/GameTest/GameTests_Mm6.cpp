@@ -5507,6 +5507,43 @@ GAME_TEST(Mm6, SegueScroll) {
     }
 }
 
+// Also pure, also runs without MM6 data - and this one is the reason the geometry is a function at
+// all. The crawl's draw coordinates used to live in `static constexpr`s inside UIMm6Segue.cpp, which
+// meant nothing could assert them, which is exactly how they came to be off by (10, 20). Pin them.
+GAME_TEST(Mm6, SegueLayout) {
+    // MM6's text routine (@0x443a40) halves the left edge it's handed, and the segue hands it 0x14
+    // (@0x453128) - so the crawl is inset 10px, not 20, and 10px is the margin on *each* side of a
+    // rect that's the full 512 less all 20 (@0x45311d). Top is the literal 0 pushed @0x45312f.
+    EXPECT_EQ(mm6SegueTextWidth(), 492);
+
+    // The viewport is at (64, 104), so the first line of the crawl starts at (64 + 10, 104 + 0)
+    // while the pan is still held at the top.
+    constexpr int spacing = 17; // quick.fnt is 20 tall, and MM6 steps height - 3 (@0x443b0a-0x443b12).
+    EXPECT_EQ(mm6SegueLinePos(0, 0, spacing, 0), Pointi(74, 104));
+
+    // Successive lines step down by the line spacing, and the whole block rides the pan up.
+    EXPECT_EQ(mm6SegueLinePos(1, 0, spacing, 0), Pointi(74, 121));
+    EXPECT_EQ(mm6SegueLinePos(10, 0, spacing, 0), Pointi(74, 274));
+    EXPECT_EQ(mm6SegueLinePos(0, 0, spacing, 580), Pointi(74, -476));
+    EXPECT_EQ(mm6SegueLinePos(10, 0, spacing, 580), Pointi(74, -306));
+
+    // A line's centering offset shifts it right, and only right - the whole point of the x fix is
+    // that a line as wide as the rect sits 10px from the window's left edge, not 20.
+    EXPECT_EQ(mm6SegueLinePos(0, 0, spacing, 0).x, 64 + 10);
+    EXPECT_EQ(mm6SegueLinePos(0, 246, spacing, 0).x, 64 + 10 + 246);
+
+    // And the margins are symmetric: a line of width w centered in the 492-wide rect leaves the same
+    // gap on both sides of the 512-wide window. This is the property the old {20, 20} broke - it put
+    // the crawl's widest line 23px from the left edge and 3px from the right.
+    for (int w : {0, 1, 107, 300, 486, 491, 492}) {
+        int x = mm6SegueLinePos(0, (492 - w) / 2, spacing, 0).x;
+        int leftMargin = x - 64;
+        int rightMargin = 64 + 512 - (x + w);
+        EXPECT_LE(std::abs(leftMargin - rightMargin), 1) << "line width " << w; // Odd widths round.
+        EXPECT_GE(leftMargin, 10) << "line width " << w;
+    }
+}
+
 // Unlike `Mm6.SegueScroll` above, this one does need MM6 data - everything it checks is an asset.
 GAME_TEST(Mm6, SegueAssets) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
@@ -5557,8 +5594,14 @@ GAME_TEST(Mm6, SegueAssets) {
     // We don't hand-roll that arithmetic, we call `GUIFont::AlignText_Center`, so there's no segue
     // helper to test; pin the helper we depend on instead, on the crawl's own line widths. Every
     // centered line has to stay inside the window: offset >= 0, and offset + width <= the rect.
-    constexpr int textInset = 20;                        // MM6.EXE @0x453128 - see kMm6SegueTextOrigin.
-    constexpr int textWidth = viewport.w - textInset;    // @0x45311d.
+    //
+    // The rect is the image width less MM6's 0x14 (@0x45311d), and the crawl is inset by *half* of
+    // that - the text routine halves the left edge it's handed. `Mm6.SegueLayout` pins that; here we
+    // just consume it, on the real line widths.
+    constexpr int textInset = 10;                        // Half of MM6.EXE's 0x14 - see kMm6SegueTextOrigin.
+    const int textWidth = mm6SegueTextWidth();           // @0x45311d: image width less all of the 0x14.
+    const int lineSpacing = font->GetHeight() - 3;
+    EXPECT_EQ(textWidth, viewport.w - 2 * textInset);
     std::string wrapped = font->WrapText(prologue, textWidth, 0);
     int lines = 0;
     int widest = 0;
@@ -5576,7 +5619,7 @@ GAME_TEST(Mm6, SegueAssets) {
         }
         lines++;
     }
-    EXPECT_LE(textInset + (font->GetHeight() - 3) * lines, scroll->height());
+    EXPECT_LE(lineSpacing * lines, scroll->height()); // The crawl starts at row 0 of seg_scrl.pcx.
 
     // The two ends of the range the crawl actually produces: its widest line is nudged by 3px, and
     // its short last line lands near the middle of the window - which is the whole visible effect of
@@ -5585,6 +5628,19 @@ GAME_TEST(Mm6, SegueAssets) {
     EXPECT_EQ(font->AlignText_Center(textWidth, widestLine), 3);
     EXPECT_EQ(font->GetLineWidth("Good Luck"), 107);
     EXPECT_EQ(font->AlignText_Center(textWidth, "Good Luck"), 192);
+
+    // Which is what the crawl's real screen coordinates come out as. The widest line sits 13px in
+    // from *both* edges of the window - 10 of inset plus 3 of centering - and that symmetry is the
+    // clearest confirmation that the inset really is 10 and not the 20 we used to draw it at.
+    constexpr Recti window = {64, 104, viewport.w, viewport.h};
+    int widestX = mm6SegueLinePos(0, font->AlignText_Center(textWidth, widestLine), lineSpacing, 0).x;
+    EXPECT_EQ(widestX - window.x, 13);
+    EXPECT_EQ(window.x + window.w - (widestX + widest), 13);
+
+    // And "Good Luck" - the crawl's last line, the one left in the window when the pan stops - is
+    // centered on the gate's archway, i.e. on the middle of the window, to within a pixel.
+    int goodLuckX = mm6SegueLinePos(0, font->AlignText_Center(textWidth, "Good Luck"), lineSpacing, 0).x;
+    EXPECT_EQ(goodLuckX + font->GetLineWidth("Good Luck") / 2, window.x + window.w / 2 - 1);
 
     // And a line wider than the rect clamps to 0 rather than going negative and drawing off the left
     // edge of the window. WrapText means the crawl never hits this, but the clamp is the reason we

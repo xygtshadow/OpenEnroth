@@ -7,6 +7,8 @@
 
 #include "GUI/GUIWindow.h"
 
+#include "Library/Geometry/Point.h"
+
 class GUIFont;
 
 /**
@@ -18,6 +20,28 @@ class GUIFont;
  *                                  `[0, 580]`.
  */
 int mm6SegueScrollY(int64_t elapsedMs);
+
+/**
+ * Width of the rect that the prologue crawl is wrapped to and centered in. Exposed so that a test
+ * can lay the crawl out exactly like `GUIWindow_Mm6Segue` does.
+ *
+ * @return                          Width in pixels - MM6's image width less the total horizontal
+ *                                  margin.
+ */
+int mm6SegueTextWidth();
+
+/**
+ * Screen position of one line of the prologue crawl. This and `mm6SegueScrollY` are all the geometry
+ * the crawl has, and both are pure - which is what makes the draw coordinates testable.
+ *
+ * @param lineIndex                 0-based index of the line in the wrapped crawl.
+ * @param lineOffsetX               Centering offset of the line inside the crawl's rect, as returned
+ *                                  by `GUIFont::AlignText_Center(mm6SegueTextWidth(), line)`.
+ * @param lineSpacing               Rows between consecutive lines - the font's height less 3.
+ * @param scrollY                   Current scroll position, as returned by `mm6SegueScrollY`.
+ * @return                          Top left corner of the line, in screen coordinates.
+ */
+Pointi mm6SegueLinePos(int lineIndex, int lineOffsetX, int lineSpacing, int scrollY);
 
 /**
  * MM6's new-game prologue ("segue") screen, MM6.EXE @0x452bd0. Sits between the main menu's New

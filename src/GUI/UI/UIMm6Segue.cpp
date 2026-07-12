@@ -36,32 +36,52 @@ static constexpr int kMm6SegueMaxScrollY = 580;
 
 // The window that seg_scrl.pcx shows through, cut into segue_bg.pcx. The original doesn't spell the
 // origin out as coordinates - it blits the scrolled rows straight to framebuffer offset 0x20880
-// (@0x452e6c), and at 16bpp on a 640-wide buffer that's 0x20880 / 2 = 104 * 640 + 64.
+// (`add eax, 0x20880` @0x452f89 for the initial blit, `add edx, 0x20880` @0x453171 for the scrolling
+// one), and at 16bpp on a 640-wide buffer that's 0x20880 / 2 = 104 * 640 + 64.
 static constexpr Recti kMm6SegueViewport = {64, 104, 512, 320};
 
 // MM6 draws the prologue text into its own copy of seg_scrl.pcx and scrolls the result, so on
-// screen the text sits inset from the top left of the viewport and scrolls with it.
+// screen the text scrolls with the bitmap it's drawn into.
 //
-// The x inset is the EXE's: the text pass is a call to the shared text routine @0x443a40, whose
-// `edx` argument is the left edge of the text rect - it's what that routine's `right = edx + w - 1`
-// is built from (@0x443a65) - and the segue passes `edx = 0x14` (@0x453128). The y inset is NOT
-// separately verified: the routine is handed y = 0 plus a destination pointer we didn't trace. But
-// the same call also shortens the rect's height by 20 (`sub eax, 0x14` @0x453125), which only makes
-// sense as the matching top inset.
-static constexpr Pointi kMm6SegueTextOrigin = {20, 20};
-// The rect's width is likewise the image width less the inset (`add ecx, -0x14` @0x45311d): the
-// crawl is inset on the left and runs flush to the right edge of the window.
-static constexpr int kMm6SegueTextWidth = kMm6SegueViewport.w - kMm6SegueTextOrigin.x;
+// The text pass is a call to the shared text routine @0x443a40. That routine's signature is
+// f(ecx = font, edx = left, a1 = top, a2 = width, a3 = height, a4 = color, a5 = str, a6 = buf,
+// a7 = pitch) - `right = left + width - 1` @0x443a65 and `bottom = top + height - 1` @0x443a6d are
+// what pin the four rect arguments. The segue hands it `edx = 0x14` @0x453128, `a1 = ebx` @0x45312f,
+// `a2 = imgWidth - 0x14` @0x45311d and `a3 = imgHeight - 0x14` @0x453125.
+//
+// Careful: neither of those two 0x14s is the origin the call site makes them look like.
+//
+// The 0x14 in `edx` is the *total* horizontal margin, because the routine HALVES it: `mov eax,
+// [esp+0x10]; sar eax, 1` @0x443ac1-0x443ac7 stashes left >> 1, and that stash is what gets added
+// back as each line's x (`add edx, esi` @0x443af9, on top of the clamped centering below). So MM6's
+// per-line x is clamp0((492 - lineWidth) / 2) + 10, i.e. an inset of 10, not 20 - 10 to the left of
+// the rect and 10 to the right of it. The art agrees: the crawl's widest line is 486px, and 10 + 3
+// puts it at [13, 499] in the 512-wide bitmap - symmetric.
+//
+// And the top is the literal 0 in `ebx` (`xor ebx, ebx` @0x452bed, never reassigned), used raw: the
+// routine's first destination row is `buf + top * pitch * 2` (@0x443aa6-0x443abc), and `buf` is the
+// start of seg_scrl.pcx's pixels - the same pointer the scroll blit @0x453171 walks from row 0. So
+// the crawl starts flush with the top of the scroll bitmap. The `sub eax, 0x14` @0x453125 that looks
+// like a matching top inset is the rect's *height* - a bottom margin.
+static constexpr Pointi kMm6SegueTextOrigin = {10, 0};
+// The horizontal margin the routine splits in two - MM6's `edx` argument, before the halving. The
+// rect's width is the image width less all of it (`add ecx, -0x14` @0x45311d).
+static constexpr int kMm6SegueTextMargin = 20;
+static constexpr int kMm6SegueTextWidth = kMm6SegueViewport.w - kMm6SegueTextMargin;
+static_assert(kMm6SegueTextOrigin.x == kMm6SegueTextMargin / 2); // `sar eax, 1` @0x443ac5.
 
 // MM6.EXE creates the two buttons @0x452ec7 and @0x452ef1 (both are call sites of CreateButton,
 // which itself lives @0x41a170). Their resting faces are painted into segue_bg.pcx, so the only
 // button art the screen ships is the pressed frames - creat_dn and quick_dn, which are 218x40
 // against these 217x41 hitboxes: a pixel wider and a pixel shorter.
 //
-// The two click handlers (@0x42fdea Create Party, @0x42fe0e Quick Start) flash that frame by handing
-// the button object to the blitter @0x419320, which takes the button's own stored x/y (`mov ecx,
-// [eax]` / `mov edx, [eax + 4]`) as its origin - so the frame is drawn at the hitbox origin, and
-// these are the draw positions as well as the hitboxes.
+// The two click handlers (@0x42fdea Create Party, @0x42fe0e Quick Start) flash that frame by
+// spawning a transient window through the window factory @0x419320 - the same function the segue
+// itself calls to create its 640x480 window (@0x452eb9). They call it as f(x, y, 0, 0, type = 0x5a,
+// button, 0), reading the origin out of the button object itself (`mov ecx, [eax]` / `mov edx,
+// [eax + 4]`), and 0x5a = 90 is OpenEnroth's `WINDOW_PressedButton2` - i.e. `OnButtonClick`. So the
+// frame is drawn at the hitbox origin, these are the draw positions as well as the hitboxes, and
+// the `new OnButtonClick(...)` in processMessage() below is a structural match for what MM6 does.
 static constexpr Pointi kMm6SegueCreatePartyPos = {74, 434};
 static constexpr Pointi kMm6SegueQuickStartPos = {350, 434};
 static constexpr Sizei kMm6SegueButtonSize = {217, 41};
@@ -74,6 +94,15 @@ int mm6SegueScrollY(int64_t elapsedMs) {
     if (elapsedMs < kMm6SegueHoldMs)
         return 0;
     return static_cast<int>(std::min<int64_t>((elapsedMs - kMm6SegueHoldMs) / kMm6SegueStepMs, kMm6SegueMaxScrollY));
+}
+
+int mm6SegueTextWidth() {
+    return kMm6SegueTextWidth;
+}
+
+Pointi mm6SegueLinePos(int lineIndex, int lineOffsetX, int lineSpacing, int scrollY) {
+    return {kMm6SegueViewport.x + kMm6SegueTextOrigin.x + lineOffsetX,
+            kMm6SegueViewport.y + kMm6SegueTextOrigin.y + lineIndex * lineSpacing - scrollY};
 }
 
 GUIWindow_Mm6Segue::GUIWindow_Mm6Segue() :
@@ -103,11 +132,12 @@ GUIWindow_Mm6Segue::GUIWindow_Mm6Segue() :
     // edges, where DrawText's `maxY` would drop such a line whole.
     //
     // And each line is centered in the crawl's rect. That same routine measures the line (call
-    // @0x443acf) and starts it at `rectLeft + max(0, (rectWidth - lineWidth) / 2)` - the halved
+    // @0x443acf) and starts it at `rectLeft / 2 + max(0, (rectWidth - lineWidth) / 2)` - the halved
     // difference, clamped at zero by a branchless `sar eax, 1; sets dl; dec edx; and edx, eax`
-    // (@0x443ac1-0x443af9). It is unconditional: the `test esi, esi` just above it is the strtok
-    // loop's condition (`esi` is the line pointer), not an alignment flag. `GUIFont::AlignText_Center`
-    // is exactly that expression, clamp included, so that's what we call.
+    // (@0x443ae4-0x443af7), added to the halved left edge (see kMm6SegueTextOrigin). It is
+    // unconditional: the `test esi, esi` just above it is the strtok loop's condition (`esi` is the
+    // line pointer), not an alignment flag. `GUIFont::AlignText_Center` is exactly the clamped
+    // half-difference, so that's what we call, and kMm6SegueTextOrigin.x carries the halved left.
     //
     // Careful - this looks like it contradicts our own font code, and it doesn't. `GUIFont::DrawText`
     // is a port of this very routine, but it left-aligns and leaves centering to `AlignText_Center`
@@ -157,15 +187,16 @@ void GUIWindow_Mm6Segue::Update() {
     // Both color arguments below are the text color: the second one is what a `\f` tag resets to,
     // not a shadow color, and intro.str carries no tags anyway. The shadow is the one baked into
     // the font's glyphs, which `GUIFont` draws black. MM6 shadows differently - it draws the whole
-    // crawl twice, first in color 1 (near-black at 16bpp) offset a pixel down and right
-    // (@0x452e33), then in #ECE69C (@0x453132) - so ours is a drop shadow of the same shape, but
-    // not of the same pixels.
-    int textX = kMm6SegueViewport.x + kMm6SegueTextOrigin.x;
-    int textY = kMm6SegueViewport.y + kMm6SegueTextOrigin.y - scrollY;
-    for (const PrologueLine &line : _prologueLines) {
-        // #ECE69C, @0x4530df-0x453105. `line.offsetX` centers the line, see the constructor.
-        _font->DrawTextLine(line.text, colorTable.Primrose, colorTable.Primrose, {textX + line.offsetX, textY});
-        textY += _lineSpacing;
+    // crawl twice, first in color 1 (near-black at 16bpp) offset a pixel *down only* (@0x452e33),
+    // then in #ECE69C (@0x453132) - so ours is a drop shadow of the same shape, but not of the same
+    // pixels. Down only, not down and right: the shadow pass passes `edx = 0x15` (@0x452e2c) against
+    // the text pass's 0x14, but the routine halves `edx` (see kMm6SegueTextOrigin) and 0x15 >> 1 ==
+    // 0x14 >> 1 == 10, so the x offset collapses. Only `top` differs - 1 (@0x452e2a) against 0.
+    for (int i = 0; i < std::ssize(_prologueLines); i++) {
+        // #ECE69C, @0x4530df-0x453105. `offsetX` centers the line, see the constructor.
+        const PrologueLine &line = _prologueLines[i];
+        _font->DrawTextLine(line.text, colorTable.Primrose, colorTable.Primrose,
+                            mm6SegueLinePos(i, line.offsetX, _lineSpacing, scrollY));
     }
 
     // Text is batched and drawn under whatever clip rect is set when the batch is finally flushed,
