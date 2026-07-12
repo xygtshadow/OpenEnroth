@@ -15,6 +15,7 @@ set(GUI_UI_SOURCES
         UIHouses.cpp
         UIInventory.cpp
         UIMainMenu.cpp
+        UIMm6Segue.cpp
         UIPartyCreation.cpp
         UIPopup.cpp
         UIQuickReference.cpp
@@ -41,6 +42,7 @@ set(GUI_UI_HEADERS
         UIHouses.h
         UIInventory.h
         UIMainMenu.h
+        UIMm6Segue.h
         UIPartyCreation.h
         UIPopup.h
         UIQuickReference.h

@@ -74,6 +74,7 @@
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIMainMenu.h"
 #include "GUI/UI/UIMessageScroll.h"
+#include "GUI/UI/UIMm6Segue.h"
 #include "GUI/UI/UIPartyCreation.h"
 #include "GUI/UI/UISpell.h"
 #include "GUI/UI/UISpellbook.h"
@@ -5466,6 +5467,39 @@ GAME_TEST(Mm6, MainMenuSkin) {
     game.pressAndReleaseButton(BUTTON_LEFT, 548, 31);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+}
+
+// Deliberately NOT guarded on gameVersion(), unlike every other Mm6 test here: mm6SegueScrollY()
+// is a pure function of elapsed time and needs no MM6 data, so it can and should run in upstream
+// CI, which has MM7 assets but no MM6 install. Don't "fix" the odd one out by adding a skip.
+GAME_TEST(Mm6, SegueScroll) {
+    // MM6.EXE holds the crawl still for 29s (start + 0x7148 @0x452fba), then pans it down one
+    // pixel every 50ms (0x32 @0x453217), clamped at 900 - 320 = 580 (@0x4531fd), which parks the
+    // bottom of seg_scrl.pcx - the gate scene - in the window of the static segue_bg.pcx frame.
+    EXPECT_EQ(mm6SegueScrollY(0), 0);
+    EXPECT_EQ(mm6SegueScrollY(28999), 0);
+    EXPECT_EQ(mm6SegueScrollY(29000), 0);
+    EXPECT_EQ(mm6SegueScrollY(29049), 0);
+    EXPECT_EQ(mm6SegueScrollY(29050), 1);
+    EXPECT_EQ(mm6SegueScrollY(29000 + 50 * 100), 100);
+
+    // Negative elapsed is safe (early return), and must stay that way.
+    EXPECT_EQ(mm6SegueScrollY(-1), 0);
+
+    // Clamped at the bottom, and it stays there.
+    EXPECT_EQ(mm6SegueScrollY(58000), 580); // The crawl's full length: 29000 + 580 * 50.
+    EXPECT_EQ(mm6SegueScrollY(29000 + 50 * 580), 580);
+    EXPECT_EQ(mm6SegueScrollY(29000 + 50 * 581), 580);
+    EXPECT_EQ(mm6SegueScrollY(10'000'000), 580);
+
+    // Monotonic, never out of range.
+    int previous = 0;
+    for (int64_t ms = 0; ms <= 70'000; ms += 37) {
+        int y = mm6SegueScrollY(ms);
+        EXPECT_GE(y, previous);
+        EXPECT_LE(y, 580);
+        previous = y;
+    }
 }
 
 GAME_TEST(Mm6, PartyCreationSkin) {
