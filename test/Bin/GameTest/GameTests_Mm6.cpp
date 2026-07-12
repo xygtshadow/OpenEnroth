@@ -843,11 +843,14 @@ GAME_TEST(Mm6, MoviesPlay) {
 
     game.startNewGame();
 
-    // Every clip of MM6's fullscreen sequences resolves and opens through ffmpeg.
-    for (const char *clip : {"3dologo", "jvc", "mm6intro", "losegame", "credits",
-                             "comped", "end_dome", "planetxp", "end_seq1"}) {
+    // Every clip of MM6's fullscreen sequences resolves and opens through ffmpeg. mm6intro and
+    // end_seq1 carry a SECOND simultaneous audio track, which opens into its own streaming track.
+    for (std::string_view clip : {"3dologo", "jvc", "mm6intro", "losegame", "credits",
+                                  "comped", "end_dome", "planetxp", "end_seq1"}) {
         std::unique_ptr<IMovie> movie = pMediaPlayer->loadFullScreenMovie(clip);
-        EXPECT_NE(movie, nullptr) << "clip: " << clip;
+        ASSERT_NE(movie, nullptr) << "clip: " << clip;
+        int expectedAudioTracks = (clip == "mm6intro" || clip == "end_seq1") ? 2 : 1;
+        EXPECT_EQ(movie->audioTrackCount(), expectedAudioTracks) << "clip: " << clip;
     }
 
     // Entering a house loads its room animation ("Blcksmid" for The Knife Shoppe); leaving unloads it.

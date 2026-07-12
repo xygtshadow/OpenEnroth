@@ -13,6 +13,12 @@ class IMovie {
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
 
+    /**
+     * @return  Number of audio tracks opened for this movie. A smacker clip can carry several
+     *          simultaneous tracks (MM6's mm6intro/end_seq1 have two), all of which play.
+     */
+    virtual int audioTrackCount() const = 0;
+
     virtual bool Play(bool loop = false) = 0;
     virtual bool Stop() = 0;
     virtual bool IsPlaying() const = 0;

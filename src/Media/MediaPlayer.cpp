@@ -90,6 +90,22 @@ class AVStreamWrapper {
             return false;
         }
 
+        return openDecoder(format_ctx);
+    }
+
+    bool openByIndex(AVFormatContext *format_ctx, int index) {
+        dec = avcodec_find_decoder(format_ctx->streams[index]->codecpar->codec_id);
+        if (dec == nullptr) {
+            close();
+            logger->warning("ffmpeg: unable to find decoder for stream {}", index);
+            return false;
+        }
+
+        stream_idx = index;
+        return openDecoder(format_ctx);
+    }
+
+    bool openDecoder(AVFormatContext *format_ctx) {
         stream = format_ctx->streams[stream_idx];
         dec_ctx = avcodec_alloc_context3(dec);
         if (dec_ctx == nullptr) {
@@ -128,6 +144,18 @@ class AVAudioStream : public AVStreamWrapper {
             return false;
         }
 
+        return initConverter();
+    }
+
+    bool openByIndex(AVFormatContext *format_ctx, int index) {
+        if (!AVStreamWrapper::openByIndex(format_ctx, index)) {
+            return false;
+        }
+
+        return initConverter();
+    }
+
+    bool initConverter() {
         AVChannelLayout stereoLayout = {};
         av_channel_layout_default(&stereoLayout, 2);
 
@@ -329,10 +357,19 @@ class Movie : public IMovie {
         if (audio_data_in_device) {
             provider->DeleteStreamingTrack(&audio_data_in_device);
         }
+        for (ExtraAudioTrack &extra : _extraAudio) {
+            if (extra.track) {
+                provider->DeleteStreamingTrack(&extra.track);
+            }
+        }
+        _extraAudio.clear();
     }
 
     inline void ReleaseAVCodec() {
         audio.close();
+        for (ExtraAudioTrack &extra : _extraAudio) {
+            extra.stream->close();
+        }
         video.close();
 
         if (format_ctx) {
@@ -376,6 +413,27 @@ class Movie : public IMovie {
             audio_data_in_device = provider->CreateStreamingTrack16(2, audio.dec_ctx->sample_rate, 2);
         }
 
+        // A smacker clip can carry several simultaneous audio tracks (MM6's mm6intro and end_seq1
+        // have two) - each extra track gets its own decoder and OpenAL streaming track, and OpenAL
+        // mixes the playing sources.
+        for (unsigned int i = 0; i < format_ctx->nb_streams; i++) {
+            if (static_cast<int>(i) == audio.stream_idx || static_cast<int>(i) == video.stream_idx) {
+                continue;
+            }
+            if (format_ctx->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+                continue;
+            }
+            ExtraAudioTrack extra;
+            extra.stream = std::make_unique<AVAudioStream>();
+            if (!extra.stream->openByIndex(format_ctx, i)) {
+                logger->warning("ffmpeg: unable to open extra audio stream {} of {}", i, fileName);
+                continue;
+            }
+            extra.track = provider->CreateStreamingTrack16(2, extra.stream->dec_ctx->sample_rate, 2);
+            logger->info("ffmpeg: opened extra audio stream {} of {}", i, fileName);
+            _extraAudio.push_back(std::move(extra));
+        }
+
         return true;
     }
 
@@ -409,6 +467,9 @@ class Movie : public IMovie {
             if (looping) {
                 video.reset();
                 audio.reset();
+                for (ExtraAudioTrack &extra : _extraAudio) {
+                    extra.stream->reset();
+                }
                 int err = av_seek_frame(format_ctx, -1, 0,
                                         AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
                 char err_buf[2048];
@@ -450,9 +511,21 @@ class Movie : public IMovie {
               // Decode video frame
               // video packet - decode & maybe show
               video.decode_frame(avpacket);
+            } else {
+                // Extra audio tracks (a smacker clip can carry several simultaneous ones -
+                // MM6's mm6intro/end_seq1 have two) stream into their own OpenAL sources.
+                for (ExtraAudioTrack &extra : _extraAudio) {
+                    if (avpacket->stream_index == extra.stream->stream_idx) {
+                        Blob buffer = extra.stream->decode_frame(avpacket);
+                        if (buffer) {
+                            provider->Stream16(extra.track,
+                                               buffer.size() / 2,
+                                               buffer.data());
+                        }
+                        break;
+                    }
+                }
             }
-            // Packets from any other stream are dropped - a smacker clip can carry several audio
-            // tracks (MM6's mm6intro/end_seq1 have two) and only the one picked at open time plays.
         } while (avpacket->stream_index != video.stream_idx ||
                  avpacket->pts <= desired_frame_number);
 
@@ -569,6 +642,10 @@ class Movie : public IMovie {
     virtual unsigned int GetWidth() const override { return width; }
 
     virtual unsigned int GetHeight() const override { return height; }
+
+    virtual int audioTrackCount() const override {
+        return (audio.stream_idx >= 0 ? 1 : 0) + static_cast<int>(_extraAudio.size());
+    }
 
     virtual bool Play(bool loop = false) override {
         start_time = std::chrono::system_clock::now();
@@ -702,6 +779,12 @@ class Movie : public IMovie {
 
     AVAudioStream audio;
     OpenALSoundProvider::StreamingTrackBuffer *audio_data_in_device;
+
+    struct ExtraAudioTrack {
+        std::unique_ptr<AVAudioStream> stream;
+        OpenALSoundProvider::StreamingTrackBuffer *track = nullptr;
+    };
+    std::vector<ExtraAudioTrack> _extraAudio;
 
     AVVideoStream video;
     int last_resampled_frame_num;
