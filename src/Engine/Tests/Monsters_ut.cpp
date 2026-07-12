@@ -40,13 +40,16 @@ GAME_TEST(MonstersMm6, ParsesMm6ColumnLayout) {
         {"header2"},
         {"header3"},
         {"header4"},
-        // id 1: a spell-caster with distinct resistances.
+        // id 1: a spell-caster with distinct resistances. Bonus "Affraid" is MM6's fear special
+        // attack - MM6.EXE spells it with a double f (token list @0x4bfba8, id 0x17 = fear).
         {"1", "TestMonA", "Test Monster", "9", " 35 ", "14", " 171 ", "5%3D20+L1Bow", "0", "N",
-         "Short", "Normal", "4", "140", "90", "0", "0", "Phys", "1D6+1", "Arrow", "0", "0", "0", "0",
+         "Short", "Normal", "4", "140", "90", "0", "Affraid", "Phys", "1D6+1", "Arrow", "0", "0", "0", "0",
          "40", "\"Fireball,N,5\"", "11", "22", "33", "44", "55", "66", "0"},
-        // id 2: no spell, magic immunity ("Imm" -> 200), thousand-separated EXP.
+        // id 2: no spell, magic immunity ("Imm" -> 200), thousand-separated EXP. Bonus "Pois2" is a
+        // shipped MM6 data typo: MM6.EXE's parser (exact stricmp chain @0x447768) only knows
+        // "poison1".."poison3", so this cell matched nothing and the monster got NO special attack.
         {"2", "TestMonB", "Big Test", "29", " 171 ", "22", "\" 1,131 \"", "0", "0", "Y", "Long",
-         "Aggress", "4", "160", "80", "0", "0", "Phys", "3D6+3", "0", "0", "0", "0", "0", "0", "0",
+         "Aggress", "4", "160", "80", "0", "Pois2", "Phys", "3D6+3", "0", "0", "0", "0", "0", "0", "0",
          "10", "10", "10", "10", "0", "Imm", "0"},
     });
 
@@ -80,6 +83,7 @@ GAME_TEST(MonstersMm6, ParsesMm6ColumnLayout) {
     EXPECT_EQ(static_cast<int>(a.resBody), 66);
     EXPECT_EQ(static_cast<int>(a.resLight), 0);
     EXPECT_EQ(static_cast<int>(a.resDark), 0);
+    EXPECT_EQ(a.specialAttackType, SPECIAL_ATTACK_FEAR); // "Affraid", MM6 spelling.
 
     const MonsterInfo &b = stats.infos[static_cast<MonsterId>(2)];
     EXPECT_EQ(b.internalName, "TestMonB");
@@ -94,6 +98,7 @@ GAME_TEST(MonstersMm6, ParsesMm6ColumnLayout) {
     EXPECT_EQ(static_cast<int>(b.resBody), 200);
     EXPECT_EQ(static_cast<int>(b.resLight), 0);
     EXPECT_EQ(static_cast<int>(b.resDark), 0);
+    EXPECT_EQ(b.specialAttackType, SPECIAL_ATTACK_NONE); // "Pois2" data typo -> none, as in MM6.EXE.
 }
 
 // Guards the MM7 parse path through the version-parameter refactor: the same parser must still read

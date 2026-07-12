@@ -39,4 +39,4 @@ class OpenALTrack16 : public IAudioTrack {
     std::mutex _mutex;  // Protects pDataSource access.
 };
 
-PAudioTrack CreateAudioTrack(Blob data);
+PAudioTrack CreateAudioTrack(Blob data, float startSeconds = 0.0f);

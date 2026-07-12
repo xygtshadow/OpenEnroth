@@ -249,7 +249,7 @@ MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str) {
         return SPECIAL_ATTACK_WEAK;
     else if (tmp.starts_with("asleep"))
         return SPECIAL_ATTACK_SLEEP;
-    else if (tmp.starts_with("afraid"))
+    else if (tmp.starts_with("afraid") || tmp.starts_with("affraid"))  // MM6.EXE spells it "affraid" (@0x4bfba8, id 0x17 = fear).
         return SPECIAL_ATTACK_FEAR;
     else if (tmp.starts_with("drunk"))
         return SPECIAL_ATTACK_DRUNK;
@@ -289,6 +289,12 @@ MonsterSpecialAttack ParseSpecialAttack(std::string_view spec_att_str) {
         return SPECIAL_ATTACK_AGING;
     else if (tmp.starts_with("drainsp"))
         return SPECIAL_ATTACK_MANA_DRAIN;
+    else if (tmp.starts_with("pois2") || tmp.starts_with("pois3"))
+        // Shipped MM6 monsters.txt data typos ("Pois2" on Wyrm, "Pois3" on Giant/Great Wyrm).
+        // MM6.EXE's parser is an exact-stricmp chain that only knows "poison1".."poison3"
+        // (@0x447768) and silently falls through on no match (@0x447928), so these monsters had
+        // NO special attack in the original game. Keep that behavior, without the warning.
+        return SPECIAL_ATTACK_NONE;
     else if (tmp.starts_with("none") || tmp.starts_with("0"))
         return SPECIAL_ATTACK_NONE;
     else

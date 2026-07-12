@@ -16,4 +16,4 @@ class AudioBufferDataSource : public AudioBaseDataSource {
     FFmpegBlobIoContext _ioContext;
 };
 
-PAudioDataSource CreateAudioBufferDataSource(Blob buffer);
+PAudioDataSource CreateAudioBufferDataSource(Blob buffer, float startSeconds = 0.0f);

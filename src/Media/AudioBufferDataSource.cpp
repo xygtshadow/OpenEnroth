@@ -39,6 +39,8 @@ bool AudioBufferDataSource::Open() {
     return AudioBaseDataSource::Open();
 }
 
-PAudioDataSource CreateAudioBufferDataSource(Blob buffer) {
-    return std::make_shared<AudioBufferDataSource>(std::move(buffer));
+PAudioDataSource CreateAudioBufferDataSource(Blob buffer, float startSeconds) {
+    auto source = std::make_shared<AudioBufferDataSource>(std::move(buffer));
+    source->SetStartSeconds(startSeconds);
+    return source;
 }

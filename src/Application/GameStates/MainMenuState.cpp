@@ -16,7 +16,13 @@ MainMenuState::MainMenuState() {
 
 FsmAction MainMenuState::enter() {
     pAudioPlayer->stopSounds();
-    pAudioPlayer->MusicPlayTrack(MUSIC_MAIN_MENU);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's title sequence plays CD track 13, skipping its 18.5s lead-in section
+        // (MM6.EXE @0x4a6c19: AIL_redbook_play(track_info(13).start + 18500, end)).
+        pAudioPlayer->MusicPlayTrack(MUSIC_MM6_MAIN_MENU, 18.5f);
+    } else {
+        pAudioPlayer->MusicPlayTrack(MUSIC_MAIN_MENU);
+    }
 
     current_screen_type = SCREEN_GAME;
 

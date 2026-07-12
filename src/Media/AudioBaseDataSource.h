@@ -24,6 +24,10 @@ class AudioBaseDataSource : public IAudioDataSource {
 
     virtual float GetDuration() override;
 
+    // Playback starts (and, once the track loops, restarts) this many seconds into the stream.
+    // Must be set before Open().
+    void SetStartSeconds(float startSeconds) { _startSeconds = startSeconds; }
+
  protected:
     AVFormatContext *pFormatContext;
     int iStreamIndex;
@@ -33,4 +37,5 @@ class AudioBaseDataSource : public IAudioDataSource {
     std::queue<Blob> queue;
 
     float _savedDuration;
+    float _startSeconds = 0.0f;
 };

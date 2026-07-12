@@ -75,6 +75,15 @@ bool AudioBaseDataSource::Open() {
         return false;
     }
 
+    if (_startSeconds > 0.0f) {
+        int64_t timestamp = static_cast<int64_t>(_startSeconds / av_q2d(stream->time_base));
+        if (av_seek_frame(pFormatContext, iStreamIndex, timestamp, AVSEEK_FLAG_BACKWARD) < 0) {
+            logger->warning("ffmpeg: Failed to seek audio stream to {}s", _startSeconds);
+        } else {
+            avcodec_flush_buffers(pCodecContext);
+        }
+    }
+
     bOpened = true;
     _savedDuration = static_cast<float>(pFormatContext->duration) / AV_TIME_BASE;
 

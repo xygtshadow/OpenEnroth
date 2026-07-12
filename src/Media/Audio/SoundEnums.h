@@ -177,6 +177,10 @@ enum class MusicId {
 
     MUSIC_MAIN_MENU = MUSIC_CASTLE_GRYPHONHEART_CASTLE_NAVAN,
     MUSIC_CREDITS = MUSIC_CASTLE_LAMBENT,
+
+    // MM6 numbering below. MM6 shipped its soundtrack as CD audio; the GOG release rips the CD
+    // tracks to sounds/N.mp3, keeping the track numbers.
+    MUSIC_MM6_MAIN_MENU = 13,                    // The title theme; the EXE plays it from +18.5s (MM6.EXE @0x4a6c19).
 };
 using enum MusicId;
 

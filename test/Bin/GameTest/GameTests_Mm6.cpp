@@ -5407,6 +5407,50 @@ GAME_TEST(Mm6, CharacterSheetTabContent) {
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
 }
 
+GAME_TEST(Mm6, MainMenuSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.goToMainMenu();
+
+    // MM6's title.pcx has the four buttons baked in along the top right; MM6.EXE creates 132x44
+    // hitboxes at x=482, y=9/71/133/195 (CreateButton calls @0x4507bf-0x4508c5). The click textures
+    // are the fully-pressed "start06?" frames (press animation loaded as "start%02d%c" @0x4508f9).
+    auto buttonById = [](std::string_view id) -> GUIButton * {
+        for (GUIWindow *window : lWindowList)
+            for (GUIButton *button : window->vButtons)
+                if (button->id == id)
+                    return button;
+        return nullptr;
+    };
+    struct { const char *id; int y; const char *texture; } expected[4] = {
+        {"MainMenu_NewGame", 9, "start06a"},
+        {"MainMenu_LoadGame", 71, "start06b"},
+        {"MainMenu_Credits", 133, "start06c"},
+        {"MainMenu_ExitGame", 195, "start06d"},
+    };
+    for (const auto &e : expected) {
+        GUIButton *button = buttonById(e.id);
+        ASSERT_NE(button, nullptr) << e.id;
+        // CreateButton stores w+1/h+1: the original engines (MM6.EXE included, hit test @0x450a81)
+        // treated button rects as closed intervals, so a 132x44 button covers 133x45 pixels.
+        EXPECT_EQ(button->rect, Recti(482, e.y, 133, 45)) << e.id;
+        ASSERT_EQ(button->vTextures.size(), 1u) << e.id;
+        EXPECT_EQ(button->vTextures[0], assets->getImage_Alpha(e.texture)) << e.id;
+    }
+
+    // A click on MM7's button column (x=495 from y=172) below the MM6 buttons is empty scenery
+    // and must do nothing.
+    game.pressAndReleaseButton(BUTTON_LEFT, 550, 300);
+    game.tick(2);
+    EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
+
+    // A click dead center on the NEW button opens party creation.
+    game.pressAndReleaseButton(BUTTON_LEFT, 548, 31);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
+}
+
 GAME_TEST(Mm6, PartyCreationSkin) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

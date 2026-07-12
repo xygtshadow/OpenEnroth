@@ -221,10 +221,10 @@ bool OpenALTrack16::Update() {
     return true;
 }
 
-PAudioTrack CreateAudioTrack(Blob data) {
+PAudioTrack CreateAudioTrack(Blob data, float startSeconds) {
     PAudioTrack track = std::make_shared<OpenALTrack16>();
 
-    PAudioDataSource source = CreateAudioBufferDataSource(std::move(data));
+    PAudioDataSource source = CreateAudioBufferDataSource(std::move(data), startSeconds);
     if (!track->Open(source)) {
         track = nullptr;
     }

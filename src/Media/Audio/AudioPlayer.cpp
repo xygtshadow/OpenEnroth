@@ -44,7 +44,7 @@ extern OpenALSoundProvider *provider;
 
 AudioPlayer::~AudioPlayer() = default;
 
-void AudioPlayer::MusicPlayTrack(MusicId eTrack) {
+void AudioPlayer::MusicPlayTrack(MusicId eTrack, float startSeconds) {
     if (currentMusicTrack == eTrack) {
         return;
     }
@@ -55,15 +55,18 @@ void AudioPlayer::MusicPlayTrack(MusicId eTrack) {
         }
         currentMusicTrack = MUSIC_INVALID;
 
-        std::string file_path = fmt::format("music/{}.mp3", std::to_underlying(eTrack));
+        // MM7 ships its soundtrack as music/N.mp3; MM6 (GOG) rips the CD audio to sounds/N.mp3.
+        bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+        std::string file_path = fmt::format("{}/{}.mp3", isMm6 ? "sounds" : "music", std::to_underlying(eTrack));
         if (!dfs->exists(file_path)) {
             logger->warning("AudioPlayer: {} not found", file_path);
             return;
         }
 
-        pCurrentMusicTrack = CreateAudioTrack(dfs->read(file_path));
+        pCurrentMusicTrack = CreateAudioTrack(dfs->read(file_path), startSeconds);
         if (pCurrentMusicTrack) {
             currentMusicTrack = eTrack;
+            _currentMusicStartSeconds = startSeconds;
 
             pCurrentMusicTrack->SetVolume(uMusicVolume);
             pCurrentMusicTrack->Play();
@@ -103,7 +106,7 @@ void AudioPlayer::MusicResume() {
         MusicId playedMusicTrack = currentMusicTrack;
         if (currentMusicTrack != MUSIC_INVALID) {
             MusicStop();
-            MusicPlayTrack(playedMusicTrack);
+            MusicPlayTrack(playedMusicTrack, _currentMusicStartSeconds);
         }
     }
 }
