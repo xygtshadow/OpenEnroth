@@ -24,6 +24,7 @@
 
 #include "Utility/Math/TrigLut.h"
 #include "Utility/Segment.h"
+#include "Utility/String/Split.h"
 #include "Engine/Graphics/BSPModel.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Indoor.h"
@@ -64,6 +65,7 @@
 
 #include "GUI/GUIButton.h"
 #include "GUI/GUIDialogues.h"
+#include "GUI/GUIFont.h"
 #include "GUI/GUIMessageQueue.h"
 #include "GUI/GUIWindow.h"
 #include "GUI/UI/Books/AutonotesBook.h"
@@ -5500,6 +5502,62 @@ GAME_TEST(Mm6, SegueScroll) {
         EXPECT_LE(y, 580);
         previous = y;
     }
+}
+
+// Unlike `Mm6.SegueScroll` above, this one does need MM6 data - everything it checks is an asset.
+GAME_TEST(Mm6, SegueAssets) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // The window that the crawl shows through, at (64, 104) - see kMm6SegueViewport.
+    constexpr Sizei viewport = {512, 320};
+
+    // The prologue screen's static frame: the MM6 logo banner, the window that the crawl shows
+    // through, and both buttons' resting faces, all painted in.
+    EXPECT_EQ(assets->getImage_PCXFromIconsLOD("segue_bg.pcx")->size(), Sizei(640, 480));
+
+    // The crawl's backdrop, sky at the top and the New Sorpigal gate at the bottom. Its height is
+    // load-bearing: mm6SegueScrollY() hardcodes a clamp of 580, which is this 900 less the viewport.
+    // If the asset ever changes, that clamp is wrong - which is what this assertion guards.
+    GraphicsImage *scroll = assets->getImage_PCXFromIconsLOD("seg_scrl.pcx");
+    EXPECT_EQ(scroll->size(), Sizei(viewport.w, 900));
+    EXPECT_EQ(scroll->height() - viewport.h, mm6SegueScrollY(1'000'000));
+
+    // The two pressed frames - the only button art the screen ships. They're 218x40 against
+    // MM6.EXE's 217x41 hitboxes (@0x452ec7 / @0x452ef1): a pixel wider and a pixel shorter.
+    EXPECT_EQ(assets->getImage_Alpha("creat_dn")->size(), Sizei(218, 40));
+    EXPECT_EQ(assets->getImage_Alpha("quick_dn")->size(), Sizei(218, 40));
+
+    // intro.str is a run of NUL-terminated paragraphs, not a plain string - MM6.EXE rewrites every
+    // NUL into a newline before drawing (@0x452dfe-0x452e0a). Read it as a plain string and the
+    // crawl is one paragraph cut off at the first NUL, so the NULs have to be there.
+    std::string prologue{engine->resources()->eventsData("intro.str").str()};
+    EXPECT_FALSE(prologue.empty());
+    EXPECT_GT(std::ranges::count(prologue, '\0'), 1);
+    EXPECT_TRUE(prologue.contains("Having cheated death"));
+    EXPECT_TRUE(prologue.contains("Good Luck"));
+    std::ranges::replace(prologue, '\0', '\n');
+
+    // quick.fnt is 20 tall, so the crawl steps 20 - 3 = 17px per line - MM6 reads the same height
+    // byte out of the same .fnt header and subtracts the same 3 (@0x443b0a-0x443b12).
+    std::unique_ptr<GUIFont> font = GUIFont::LoadFont("quick.fnt");
+    EXPECT_EQ(font->GetHeight(), 20);
+
+    // GUIFont::WrapText gives up and returns the string *unwrapped* the moment it sees a '\r'
+    // (GUIFont.cpp, "this return is very sus"). Today's intro.str has none, but a localized or
+    // patched one with CRLF paragraph breaks would silently run the crawl off the right edge of
+    // the window, and nothing else in the suite would notice. Pin the wrapped layout instead:
+    // every line fits the width the window wraps to, and the whole crawl fits inside seg_scrl.pcx.
+    // As of MM6 1.0 that's 38 lines, the widest 486px, ending at y = 20 + 17 * 38 = 666.
+    constexpr int textInset = 20;                        // MM6.EXE @0x453128 - see kMm6SegueTextOrigin.
+    constexpr int textWidth = viewport.w - textInset;    // @0x45311d.
+    std::string wrapped = font->WrapText(prologue, textWidth, 0);
+    int lines = 0;
+    for (std::string_view line : split(wrapped).by('\n')) {
+        EXPECT_LE(font->GetLineWidth(line), textWidth) << "unwrapped crawl line: " << line;
+        lines++;
+    }
+    EXPECT_LE(textInset + (font->GetHeight() - 3) * lines, scroll->height());
 }
 
 GAME_TEST(Mm6, PartyCreationSkin) {
