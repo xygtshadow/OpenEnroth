@@ -218,6 +218,9 @@ enum UIMessageType : uint32_t {
     UIMSG_QuickSave = 2000,
     UIMSG_QuickLoad = 2001,
     UIMSG_CreditsFinished = 2002,
+    // The two buttons on MM6's new-game prologue ("segue") screen (MM6.EXE @0x452bd0).
+    UIMSG_Mm6Segue_CreateParty = 2003,
+    UIMSG_Mm6Segue_QuickStart = 2004,
 
     UIMSG_Invalid = 0xffffffff
 };
@@ -236,6 +239,7 @@ enum class MenuType {
     MENU_DebugBLVLevel = 10, // Was used to open a debug blv level in vanilla, not used in OE.
     MENU_CREDITSCLOSE = 11,
     MENU_MMT_MAIN_MENU = 12,
+    MENU_QUICKSTART = 13, // MM6 only: Quick Start on the prologue ("segue") screen (MM6.EXE @0x452bd0) - start with the default party, no creation screen.
     MENU_NONE = -1,
 };
 using enum MenuType;
@@ -340,6 +344,7 @@ enum WindowType {
     WINDOW_GenericCancel,         // new addition, because i wasnt able to find real value for this
     WINDOW_GameUI,                // new addition, because i wasnt able to find real value for this
     WINDOW_Credits,               // new addition, because i wasnt able to find real value for this
+    WINDOW_Mm6Segue,              // new addition, MM6's new-game prologue ("segue") screen (MM6.EXE @0x452bd0).
     WINDOW_Save,                  // new addition, because i wasnt able to find real value for this
     WINDOW_Load,                  // new addition, because i wasnt able to find real value for this
     // =======
