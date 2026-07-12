@@ -1,5 +1,6 @@
 #include "OpenEnrothOptions.h"
 
+#include <filesystem>
 #include <memory>
 #include <utility>
 #include <ranges>
@@ -31,10 +32,11 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
     std::unique_ptr<CliApp> app = std::make_unique<CliApp>();
 
     std::optional<bool> portable;
-    std::string gameVersion = "mm7";
-    app->add_option(
+    std::string gameVersion;
+    CLI::Option *gameVersionOption = app->add_option(
         "--game-version", gameVersion,
-        "Which Might and Magic game to run, one of 'mm6' or 'mm7'. Default is 'mm7'.")->check(CLI::IsMember({"mm6", "mm7"}))->option_text("VERSION");
+        "Which Might and Magic game to run, one of 'mm6' or 'mm7'. "
+        "If not supplied, the game is detected from the data folder, with 'mm7' as the fallback.")->check(CLI::IsMember({"mm6", "mm7"}))->option_text("VERSION");
     app->add_option(
         "--data-path", result.dataPath,
         fmt::format("Path to the game data folder. If not supplied, the path is taken from the '{}' or '{}' "
@@ -92,8 +94,6 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
 
     app->parse(argc, argv, result.helpPrinted);
 
-    result.gameVersion = gameVersion == "mm6" ? GAME_VERSION_MM6 : GAME_VERSION_MM7;
-
     if (!portable && std::filesystem::exists(".portable"))
         portable = true;
     if (portable && *portable) {
@@ -101,6 +101,15 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
             result.userPath = std::filesystem::current_path().generic_string();
         if (result.dataPath.empty())
             result.dataPath = std::filesystem::current_path().generic_string();
+    }
+
+    if (gameVersionOption->count()) {
+        result.gameVersion = gameVersion == "mm6" ? GAME_VERSION_MM6 : GAME_VERSION_MM7;
+    } else {
+        // No explicit --game-version, so detect the game from the data folder. This is what makes
+        // "drop OpenEnroth.exe into the game folder and run it" work for both games.
+        std::string probePath = !result.dataPath.empty() ? result.dataPath : std::filesystem::current_path().generic_string();
+        result.gameVersion = detectGameVersion(probePath).value_or(GAME_VERSION_MM7);
     }
 
     if (result.subcommand == SUBCOMMAND_RETRACE) {

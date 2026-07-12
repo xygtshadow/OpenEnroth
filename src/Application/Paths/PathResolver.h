@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,5 +31,14 @@ std::vector<std::string> resolveGamePaths(Environment *environment, GameVersion 
  * @return                          True if `dataPath` is a valid data folder for `version`.
  */
 bool validateGamePath(std::string_view dataPath, GameVersion version, std::string *missingFile);
+
+/**
+ * Detects which game's data is stored at `dataPath` by validating it against each supported game.
+ * This is what makes dropping OpenEnroth.exe into a game folder and just running it work.
+ *
+ * @return                          The game version whose data set is present at `dataPath`, preferring MM7 in the
+ *                                  unlikely case both are, or `std::nullopt` if there's no complete data set.
+ */
+std::optional<GameVersion> detectGameVersion(std::string_view dataPath);
 
 std::string resolveMm7UserPath(Environment *environment);

@@ -1,6 +1,7 @@
 #include "PathResolver.h"
 
 #include <cassert>
+#include <optional>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -174,6 +175,18 @@ bool validateGamePath(std::string_view dataPath, GameVersion version, std::strin
     }
     assert(false);
     return false;
+}
+
+std::optional<GameVersion> detectGameVersion(std::string_view dataPath) {
+    if (!std::filesystem::exists(dataPath))
+        return std::nullopt;
+
+    std::string missingFile;
+    if (validateMm7Path(dataPath, &missingFile))
+        return GAME_VERSION_MM7;
+    if (validateMm6Path(dataPath, &missingFile))
+        return GAME_VERSION_MM6;
+    return std::nullopt;
 }
 
 std::string resolveMm7UserPath(Environment *environment) {
