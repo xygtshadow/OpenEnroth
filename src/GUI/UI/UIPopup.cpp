@@ -1541,6 +1541,26 @@ void ShowPopupShopItem() {
 
                 case HOUSE_TYPE_ALCHEMY_SHOP:
                 case HOUSE_TYPE_MAGIC_SHOP:
+                    // MM6 general stores show six items standing on the GENSHELF table (MM6.EXE 0x4a1040).
+                    if (engine->gameVersion() == GAME_VERSION_MM6 && houseType == HOUSE_TYPE_ALCHEMY_SHOP) {
+                        testx = pt.x / 75;
+                        if (testx >= 0 && testx < 6) {
+                            if (dialogue == DIALOGUE_SHOP_BUY_STANDARD)
+                                item = &pParty->standartItemsInShops[window_SpeakInHouse->houseId()][testx];
+                            else
+                                item = &pParty->specialItemsInShops[window_SpeakInHouse->houseId()][testx];
+
+                            if (item->itemId != ITEM_NULL) {
+                                Pointi itemPos = mm6GeneralStoreItemPos(testx);
+                                if (pt.x >= itemPos.x && pt.x < itemPos.x + shop_ui_items_in_store[testx]->width() &&
+                                    pt.y >= itemPos.y && pt.y < itemPos.y + shop_ui_items_in_store[testx]->height()) {
+                                    GameUI_DrawItemInfo(item);
+                                }
+                            }
+                        }
+                        break;
+                    }
+
                     testx = (pt.x) / 75;
                     // testx limits check
                     if (testx >= 0 && testx < 6) {

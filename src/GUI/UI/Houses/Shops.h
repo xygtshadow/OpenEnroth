@@ -5,6 +5,8 @@
 #include "GUI/UI/UIHouses.h"
 #include "GUI/UI/UIHouseEnums.h"
 
+#include "Library/Geometry/Point.h"
+
 class GUIWindow_Shop : public GUIWindow_House {
  public:
     explicit GUIWindow_Shop(HouseId houseId) : GUIWindow_House(houseId) {}
@@ -92,3 +94,11 @@ extern GraphicsImage *shop_ui_background;
 
 extern std::array<GraphicsImage *, 12> shop_ui_items_in_store;
 extern std::array<int, 6> weaponYPos;
+
+/**
+ * Top-left corner of a shelf item on the MM6 general-store wares screen, where the six
+ * standard-stock items stand on the GENSHELF table (MM6.EXE 0x4a1040, item loop @0x4a166d).
+ *
+ * @param slot                          Shelf slot, 0-5. `shop_ui_items_in_store[slot]` must be loaded.
+ */
+Pointi mm6GeneralStoreItemPos(int slot);

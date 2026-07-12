@@ -381,8 +381,14 @@ void GUIWindow_MagicGuild::houseDialogueOptionSelected(DialogueId option) {
         HouseId storageId = guildStorageId();
         if (pParty->PartyTimes.guildNextRefreshTime[storageId] >= pParty->GetPlayingTime()) {
             for (int i = 0; i < 12; ++i) {
-                if (pParty->spellBooksInGuilds[storageId][i].itemId != ITEM_NULL)
-                    shop_ui_items_in_store[i] = assets->getImage_ColorKey(pParty->spellBooksInGuilds[storageId][i].GetIconName());
+                if (pParty->spellBooksInGuilds[storageId][i].itemId != ITEM_NULL) {
+                    // MM6 item bitmaps need the palette-0 cut-out - the teal color key never matches.
+                    if (engine->gameVersion() == GAME_VERSION_MM6) {
+                        shop_ui_items_in_store[i] = assets->getImage_Alpha(pParty->spellBooksInGuilds[storageId][i].GetIconName());
+                    } else {
+                        shop_ui_items_in_store[i] = assets->getImage_ColorKey(pParty->spellBooksInGuilds[storageId][i].GetIconName());
+                    }
+                }
             }
         } else {
             // Restock on demand once the 2dEvents interval has elapsed (MM6.EXE 0x4a4630 does the
@@ -520,7 +526,8 @@ void GUIWindow_MagicGuild::generateSpellBooksForGuildMm6() {
         itemSpellbook->itemId = itemId;
         itemSpellbook->SetIdentified();
 
-        shop_ui_items_in_store[i] = assets->getImage_ColorKey(pItemTable->items[itemId].iconName);
+        // MM6 item bitmaps need the palette-0 cut-out - the teal color key never matches.
+        shop_ui_items_in_store[i] = assets->getImage_Alpha(pItemTable->items[itemId].iconName);
     }
 }
 

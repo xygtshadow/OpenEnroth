@@ -1392,7 +1392,16 @@ GUIWindow_House::GUIWindow_House(HouseId houseId) : GUIWindow(WINDOW_HouseInteri
                                    localization->str(LSTR_EXIT_BUILDING), {ui_exit_cancel_button_background});
 
     if (buildingType() <= HOUSE_TYPE_MIRRORED_PATH_GUILD) {
-        shop_ui_background = assets->getImage_ColorKey(shopBackgroundNames[buildingType()]);
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            // MM6.EXE loads the shelf background from its own per-type name table @0x4C3D60; it
+            // matches MM7's except that type 4 - the general store, OE's alchemy-shop slot - has
+            // its own GENSHELF table art. MM6 bitmaps need the solid loader (the palette-0 flag
+            // is unset and the teal color key never matches an MM6 palette).
+            const char *name = buildingType() == HOUSE_TYPE_ALCHEMY_SHOP ? "GENSHELF" : shopBackgroundNames[buildingType()];
+            shop_ui_background = assets->getImage_Solid(name);
+        } else {
+            shop_ui_background = assets->getImage_ColorKey(shopBackgroundNames[buildingType()]);
+        }
     }
 
     for (int i = 0; i < houseNpcs.size(); ++i) {

@@ -1092,12 +1092,23 @@ GAME_TEST(Mm6, GeneralStoreBuyAndSellAnything) {
         EXPECT_EQ(specialStock[i].itemId, ITEM_NULL) << i;
     }
 
-    // Buy shelf slot 1: the top-row hit test centers the icon at x = 75 * slot + 40, bottom at y = 152.
+    // The MM6 wares screen stands the six items ON the GENSHELF table (MM6.EXE 0x4a1040): bottom
+    // edge at y = 308, centered at x = 75 * slot + 40, first/last slots clamped to the table edges.
+    for (int i = 0; i < 6; i++) {
+        Pointi pos = mm6GeneralStoreItemPos(i);
+        EXPECT_GE(pos.x, 18) << i;
+        EXPECT_LE(pos.x + shop_ui_items_in_store[i]->width(), 457) << i; // Bottle/herb/cloak/boots icons are narrow.
+        EXPECT_EQ(pos.y + shop_ui_items_in_store[i]->height(), 308) << i; // ...and stand on the table surface.
+    }
+
+    // Buy shelf slot 1 with a click at its on-table position.
     Item wanted = stock[1];
     int goldBefore = pParty->GetGold();
     int buyPrice = PriceCalculator::itemBuyingPriceForPlayer(&pParty->activeCharacter(), wanted.GetValue(),
                                                              houseTable[HouseId(42)].fPriceMultiplier);
-    game.pressAndReleaseButton(BUTTON_LEFT, 75 + 40, 152 - shop_ui_items_in_store[1]->height() / 2);
+    Pointi slot1 = mm6GeneralStoreItemPos(1);
+    game.pressAndReleaseButton(BUTTON_LEFT, slot1.x + shop_ui_items_in_store[1]->width() / 2,
+                               slot1.y + shop_ui_items_in_store[1]->height() / 2);
     game.tick(2);
     EXPECT_EQ(pParty->GetGold(), goldBefore - buyPrice);
     EXPECT_EQ(stock[1].itemId, ITEM_NULL); // The shelf slot sold out.

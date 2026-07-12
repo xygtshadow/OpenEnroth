@@ -224,6 +224,22 @@ GraphicsImage *shop_ui_background = nullptr;
 std::array<GraphicsImage *, 12> shop_ui_items_in_store;
 std::array<int, 6> weaponYPos;
 
+Pointi mm6GeneralStoreItemPos(int slot) {
+    // MM6 general stores have their own wares screen (MM6.EXE 0x4a1040, item loop @0x4a166d): the six
+    // standard-stock items stand ON the GENSHELF table - bottom edge at y = 308, centered at
+    // x = 75 * slot + 40, with the first/last slots clamped to the table edges at 18 and 457.
+    GraphicsImage *icon = shop_ui_items_in_store[slot];
+    int x = 75 * slot + 40 - icon->width() / 2;
+    if (slot == 0 && x < 18)
+        x = 18;
+    if (slot == 5 && x > 457 - icon->width())
+        x = 457 - icon->width();
+    int y = 308 - icon->height();
+    if (y < 0)
+        y = 0;
+    return {x, y};
+}
+
 bool isStealingModeActive() {
     return keyboardInputHandler->IsStealingToggled() && pParty->activeCharacter().CanSteal();
 }
@@ -574,6 +590,46 @@ void GUIWindow_MagicAlchemyShop::shopWaresDialogue(bool isSpecial) {
 
     render->DrawQuad2D(shop_ui_background, {8, 8});
 
+    // MM6 general stores (the alchemy-shop slot) have their own wares screen (MM6.EXE 0x4a1040):
+    // six standard-stock items standing on the GENSHELF table, not the 12-slot magic shelf rows.
+    // MM6 has no steal-from-shop mode, and the special stock is unreachable (no Buy Special option).
+    if (engine->gameVersion() == GAME_VERSION_MM6 && buildingType() == HOUSE_TYPE_ALCHEMY_SHOP) {
+        const std::array<Item, 12> &stock = isSpecial ? pParty->specialItemsInShops[houseId()] : pParty->standartItemsInShops[houseId()];
+
+        for (int i = 0; i < 6; ++i)
+            if (stock[i].itemId != ITEM_NULL)
+                render->DrawQuad2D(shop_ui_items_in_store[i], mm6GeneralStoreItemPos(i));
+
+        if (!checkIfPlayerCanInteract())
+            return;
+
+        int itemCount = 0;
+        for (int i = 0; i < 6; ++i)
+            itemCount += stock[i].itemId != ITEM_NULL;
+
+        engine->_statusBar->drawForced(localization->str(LSTR_SELECT_THE_ITEM_TO_BUY), colorTable.White);
+
+        if (!itemCount) {
+            DrawShops_next_generation_time_string(pParty->PartyTimes.shopNextRefreshTime[houseId()] - pParty->GetPlayingTime(), dialogwin);
+            return;
+        }
+
+        Pointi pt = EngineIocContainer::ResolveMouse()->position();
+        int testx = pt.x / 75;
+        if (testx >= 0 && testx < 6 && stock[testx].itemId != ITEM_NULL) {
+            Pointi itemPos = mm6GeneralStoreItemPos(testx);
+            if (pt.x >= itemPos.x && pt.x < itemPos.x + shop_ui_items_in_store[testx]->width() &&
+                pt.y >= itemPos.y && pt.y < itemPos.y + shop_ui_items_in_store[testx]->height()) {
+                Item *item = isSpecial ? &pParty->specialItemsInShops[houseId()][testx] : &pParty->standartItemsInShops[houseId()][testx];
+                MerchantPhrase phrase = pParty->activeCharacter().SelectPhrasesTransaction(item, buildingType(), houseId(), SHOP_SCREEN_BUY);
+                std::string str = BuildDialogueString(pMerchantsBuyPhrases[phrase], pParty->activeCharacterIndex() - 1, houseNpcs[currentHouseNpc].npc, item, houseId(), SHOP_SCREEN_BUY);
+                int vertMargin = (SIDE_TEXT_BOX_BODY_TEXT_HEIGHT - assets->pFontArrus->CalcTextHeight(str, dialogwin.w, 0)) / 2 + SIDE_TEXT_BOX_BODY_TEXT_OFFSET;
+                DrawTitleText(assets->pFontArrus.get(), 0, vertMargin, colorTable.White, str, 3, dialogwin);
+            }
+        }
+        return;
+    }
+
     for (int i = 0; i < 12; ++i) {
         bool itemPresent = (isSpecial ? pParty->specialItemsInShops[houseId()][i].itemId : pParty->standartItemsInShops[houseId()][i].itemId) != ITEM_NULL;
         int itemx, itemy;
@@ -864,7 +920,13 @@ void GUIWindow_Shop::houseDialogueOptionSelected(DialogueId option) {
         const std::array<Item, 12> &itemArray = (option == DIALOGUE_SHOP_BUY_STANDARD) ? pParty->standartItemsInShops[houseId()] : pParty->specialItemsInShops[houseId()];
         for (int i = 0; i < itemAmountInShop[shopType]; ++i) {
             if (itemArray[i].itemId != ITEM_NULL) {
-                shop_ui_items_in_store[i] = assets->getImage_ColorKey(itemArray[i].GetIconName());
+                // MM6 item bitmaps almost never set the palette-0-transparent flag and their palettes
+                // are VGA-scaled, so the teal color key never matches - cut them out via palette 0.
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    shop_ui_items_in_store[i] = assets->getImage_Alpha(itemArray[i].GetIconName());
+                } else {
+                    shop_ui_items_in_store[i] = assets->getImage_ColorKey(itemArray[i].GetIconName());
+                }
             }
         }
         if (shopType == HOUSE_TYPE_WEAPON_SHOP) {
@@ -1163,6 +1225,26 @@ void GUIWindow_Shop::houseScreenClick() {
 
               case HOUSE_TYPE_ALCHEMY_SHOP:
               case HOUSE_TYPE_MAGIC_SHOP:
+                // MM6 general stores show six items standing on the GENSHELF table (MM6.EXE 0x4a1040).
+                if (engine->gameVersion() == GAME_VERSION_MM6 && buildingType() == HOUSE_TYPE_ALCHEMY_SHOP) {
+                    testx = pt.x / 75;
+                    if (testx >= 0 && testx < 6) {
+                        if (_currentDialogue == DIALOGUE_SHOP_BUY_STANDARD)
+                            boughtItem = &pParty->standartItemsInShops[houseId()][testx];
+                        else
+                            boughtItem = &pParty->specialItemsInShops[houseId()][testx];
+
+                        if (boughtItem->itemId != ITEM_NULL) {
+                            Pointi itemPos = mm6GeneralStoreItemPos(testx);
+                            if (pt.x >= itemPos.x && pt.x < itemPos.x + shop_ui_items_in_store[testx]->width() &&
+                                pt.y >= itemPos.y && pt.y < itemPos.y + shop_ui_items_in_store[testx]->height()) {
+                                break;  // good
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 testx = (pt.x) / 75;
                 if (testx >= 0 && testx < 6) {
                     if (pt.y > 152) {
