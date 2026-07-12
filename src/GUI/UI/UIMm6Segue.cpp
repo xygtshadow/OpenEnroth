@@ -102,15 +102,26 @@ GUIWindow_Mm6Segue::GUIWindow_Mm6Segue() :
     // per frame, and it lets the clip rect cut the lines that straddle the window's top and bottom
     // edges, where DrawText's `maxY` would drop such a line whole.
     //
-    // OPEN QUESTION: the lines are left-aligned here, matching `GUIFont::DrawText`, which keeps
-    // centering in a separate `AlignText_Center` helper for callers that want it. But MM6's routine
-    // has what looks like an ungated per-line `max(0, (rectWidth - lineWidth) / 2)` (@0x443ac1),
-    // which would mean the original centers the crawl. The stack arithmetic there did not resolve
-    // cleanly enough to call it, so this is left as-is until someone eyeballs the real game: the
-    // tell is the short final line, "Good Luck" - centered in MM6, hard left here.
+    // And each line is centered in the crawl's rect. That same routine measures the line (call
+    // @0x443acf) and starts it at `rectLeft + max(0, (rectWidth - lineWidth) / 2)` - the halved
+    // difference, clamped at zero by a branchless `sar eax, 1; sets dl; dec edx; and edx, eax`
+    // (@0x443ac1-0x443af9). It is unconditional: the `test esi, esi` just above it is the strtok
+    // loop's condition (`esi` is the line pointer), not an alignment flag. `GUIFont::AlignText_Center`
+    // is exactly that expression, clamp included, so that's what we call.
+    //
+    // Careful - this looks like it contradicts our own font code, and it doesn't. `GUIFont::DrawText`
+    // is a port of this very routine, but it left-aligns and leaves centering to `AlignText_Center`
+    // for callers that ask for it, so matching DrawText here would mean *not* matching MM6. Don't
+    // "fix" it back. The art corroborates the disassembly: composited offline at the pan's resting
+    // position (`scrollY` = 580), centering lands the crawl's last line, "Good Luck", above the New
+    // Sorpigal gate's archway between its two pillars - the composition's focal point - while
+    // left-aligned it sits in the corner of the window over a tree.
+    //
+    // The offsets are a pure function of the line and the font, both fixed here, so they're measured
+    // once alongside the wrapping and `Update()` stays pure drawing.
     std::string wrapped = _font->WrapText(prologue, kMm6SegueTextWidth, 0);
     for (std::string_view line : split(wrapped).by('\n'))
-        _prologueLines.emplace_back(line);
+        _prologueLines.push_back({std::string(line), _font->AlignText_Center(kMm6SegueTextWidth, line)});
     _lineSpacing = _font->GetHeight() - 3;
 
     _startedMs = platform->tickCount();
@@ -151,8 +162,9 @@ void GUIWindow_Mm6Segue::Update() {
     // not of the same pixels.
     int textX = kMm6SegueViewport.x + kMm6SegueTextOrigin.x;
     int textY = kMm6SegueViewport.y + kMm6SegueTextOrigin.y - scrollY;
-    for (const std::string &line : _prologueLines) {
-        _font->DrawTextLine(line, colorTable.Primrose, colorTable.Primrose, {textX, textY}); // #ECE69C, @0x4530df-0x453105.
+    for (const PrologueLine &line : _prologueLines) {
+        // #ECE69C, @0x4530df-0x453105. `line.offsetX` centers the line, see the constructor.
+        _font->DrawTextLine(line.text, colorTable.Primrose, colorTable.Primrose, {textX + line.offsetX, textY});
         textY += _lineSpacing;
     }
 

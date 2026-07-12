@@ -5552,15 +5552,46 @@ GAME_TEST(Mm6, SegueAssets) {
     // the window, and nothing else in the suite would notice. Pin the wrapped layout instead:
     // every line fits the width the window wraps to, and the whole crawl fits inside seg_scrl.pcx.
     // As of MM6 1.0 that's 38 lines, the widest 486px, ending at y = 20 + 17 * 38 = 666.
+    //
+    // The lines are centered in that rect, not left-aligned - MM6.EXE @0x443ac1, see UIMm6Segue.cpp.
+    // We don't hand-roll that arithmetic, we call `GUIFont::AlignText_Center`, so there's no segue
+    // helper to test; pin the helper we depend on instead, on the crawl's own line widths. Every
+    // centered line has to stay inside the window: offset >= 0, and offset + width <= the rect.
     constexpr int textInset = 20;                        // MM6.EXE @0x453128 - see kMm6SegueTextOrigin.
     constexpr int textWidth = viewport.w - textInset;    // @0x45311d.
     std::string wrapped = font->WrapText(prologue, textWidth, 0);
     int lines = 0;
+    int widest = 0;
+    std::string widestLine;
     for (std::string_view line : split(wrapped).by('\n')) {
-        EXPECT_LE(font->GetLineWidth(line), textWidth) << "unwrapped crawl line: " << line;
+        int lineWidth = font->GetLineWidth(line);
+        int offsetX = font->AlignText_Center(textWidth, line);
+        EXPECT_LE(lineWidth, textWidth) << "unwrapped crawl line: " << line;
+        EXPECT_EQ(offsetX, (textWidth - lineWidth) / 2) << "off-center crawl line: " << line;
+        EXPECT_GE(offsetX, 0) << "crawl line drawn off the left edge: " << line;
+        EXPECT_LE(textInset + offsetX + lineWidth, viewport.w) << "crawl line drawn off the right edge: " << line;
+        if (lineWidth > widest) {
+            widest = lineWidth;
+            widestLine = line;
+        }
         lines++;
     }
     EXPECT_LE(textInset + (font->GetHeight() - 3) * lines, scroll->height());
+
+    // The two ends of the range the crawl actually produces: its widest line is nudged by 3px, and
+    // its short last line lands near the middle of the window - which is the whole visible effect of
+    // the centering, "Good Luck" resting above the gate's archway instead of off in the corner.
+    EXPECT_EQ(widest, 486);
+    EXPECT_EQ(font->AlignText_Center(textWidth, widestLine), 3);
+    EXPECT_EQ(font->GetLineWidth("Good Luck"), 107);
+    EXPECT_EQ(font->AlignText_Center(textWidth, "Good Luck"), 192);
+
+    // And a line wider than the rect clamps to 0 rather than going negative and drawing off the left
+    // edge of the window. WrapText means the crawl never hits this, but the clamp is the reason we
+    // can call `AlignText_Center` without checking its result.
+    std::string overflowing(200, 'W');
+    EXPECT_GT(font->GetLineWidth(overflowing), textWidth);
+    EXPECT_EQ(font->AlignText_Center(textWidth, overflowing), 0);
 }
 
 // The prologue ("segue") screen's window, or nullptr if the screen isn't up. It's an fsm-owned

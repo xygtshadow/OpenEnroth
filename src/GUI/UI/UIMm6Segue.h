@@ -51,6 +51,16 @@ class GUIWindow_Mm6Segue : public GUIWindow {
     void processMessage(UIMessageType message);
 
  private:
+    /**
+     * One wrapped line of the crawl. Both fields are fixed for the life of the window - the crawl is
+     * laid out once, in the constructor, so that `Update` does nothing but draw.
+     */
+    struct PrologueLine {
+        std::string text;
+        int offsetX = 0; // Centers the line in the crawl's rect, see `GUIFont::AlignText_Center`.
+    };
+
+ private:
     std::unique_ptr<GUIFont> _font;
 
     GraphicsImage *_background = nullptr;   // segue_bg.pcx - frame, banner, and both button faces.
@@ -58,7 +68,7 @@ class GUIWindow_Mm6Segue : public GUIWindow {
     GraphicsImage *_createPressed = nullptr;
     GraphicsImage *_quickPressed = nullptr;
 
-    std::vector<std::string> _prologueLines; // intro.str, wrapped to the crawl's width once, at construction.
+    std::vector<PrologueLine> _prologueLines; // intro.str, wrapped and centered once, at construction.
     int _lineSpacing = 0;
     int64_t _startedMs = 0;
 
