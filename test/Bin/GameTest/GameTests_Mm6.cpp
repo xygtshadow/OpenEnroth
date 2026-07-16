@@ -88,6 +88,8 @@
 
 #include "Io/Mouse.h"
 
+#include "Library/Color/ColorTable.h"
+
 #include "Media/MediaPlayer.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
@@ -5825,6 +5827,18 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     EXPECT_EQ(knightIcon->rgba()[0][0].a, 0);
     EXPECT_EQ(assets->getImage_Alpha("fl1")->size(), Sizei(33, 79));
     EXPECT_EQ(assets->getImage_Alpha("fr29")->size(), Sizei(40, 80));
+    // The focus arrows blit through MM6.EXE 0x40b0c0, which skips pixels whose 16-bit color is 0 -
+    // a BLACK colorkey. Their background is palette index 3 (the only black entry); index 0 is an
+    // unused magenta sentinel, so palette-0 alpha leaves an opaque black box around the arrow.
+    // arrowl1 has exactly 269 background pixels of 20x16, and no black pixels inside the art.
+    GraphicsImage *arrow = assets->getImage_ColorKey("arrowl1", colorTable.Black, true);
+    ASSERT_EQ(arrow->size(), Sizei(20, 16));
+    int transparentPixels = 0;
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 20; x++)
+            transparentPixels += arrow->rgba()[y][x].a == 0;
+    EXPECT_EQ(arrow->rgba()[0][0].a, 0);
+    EXPECT_EQ(transparentPixels, 269);
     EXPECT_GT(pSpriteFrameTable->FastFindSprite("aframe1"), 0); // The selected-portrait flame frameset.
 
     // MM6 buttons (MM6.EXE 0x451ff4-0x452670): a lone BUTTMAKE OK scroll at (511,438) - no Clear

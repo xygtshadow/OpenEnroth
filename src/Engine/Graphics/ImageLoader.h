@@ -36,9 +36,10 @@ class Paletted_Img_Loader : public ImageLoader {
 
 class ColorKey_LOD_Loader : public ImageLoader {
  public:
-    inline ColorKey_LOD_Loader(LodTextureCache *lod, std::string_view filename, Color colorkey) {
+    inline ColorKey_LOD_Loader(LodTextureCache *lod, std::string_view filename, Color colorkey, bool forceColorkey = false) {
         this->resource_name = filename;
         this->colorkey = colorkey;
+        this->forceColorkey = forceColorkey;
         this->lod = lod;
     }
 
@@ -46,6 +47,7 @@ class ColorKey_LOD_Loader : public ImageLoader {
 
  protected:
     Color colorkey;
+    bool forceColorkey = false;
     LodTextureCache *lod;
 };
 

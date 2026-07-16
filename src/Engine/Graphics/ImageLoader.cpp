@@ -71,7 +71,7 @@ bool ColorKey_LOD_Loader::Load(RgbaImage *rgbaImage) {
         return false;
 
     Palette palette;
-    if (tex->zeroIsTransparent) {
+    if (tex->zeroIsTransparent && !forceColorkey) {
         palette = MakePaletteAlpha(tex->palette);
     } else {
         palette = MakePaletteColorKey(tex->palette, colorkey);

@@ -20,7 +20,9 @@ class AssetsManager {
     bool releaseSprite(std::string_view name);
     bool releaseBitmap(std::string_view name);
 
-    GraphicsImage *getImage_ColorKey(std::string_view name, Color colorkey = colorTable.TealMask);
+    // forceColorkey applies the colorkey even for images whose header requests palette-0 alpha
+    // (flag 0x200) - MM6's transparent 2D blit keys on the black COLOR, not on palette index 0.
+    GraphicsImage *getImage_ColorKey(std::string_view name, Color colorkey = colorTable.TealMask, bool forceColorkey = false);
     GraphicsImage *getImage_Paletted(std::string_view name);
     GraphicsImage *getImage_Solid(std::string_view name);
     GraphicsImage *getImage_Alpha(std::string_view name);

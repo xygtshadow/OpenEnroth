@@ -82,12 +82,12 @@ GraphicsImage *AssetsManager::getImage_Paletted(std::string_view name) {
 }
 
 
-GraphicsImage *AssetsManager::getImage_ColorKey(std::string_view name, Color colorkey) {
+GraphicsImage *AssetsManager::getImage_ColorKey(std::string_view name, Color colorkey, bool forceColorkey) {
     std::string filename = ascii::toLower(name);
 
     auto i = images.find(filename);
     if (i == images.end()) {
-        auto image = GraphicsImage::Create(std::make_unique<ColorKey_LOD_Loader>(pIcons_LOD, filename, colorkey));
+        auto image = GraphicsImage::Create(std::make_unique<ColorKey_LOD_Loader>(pIcons_LOD, filename, colorkey, forceColorkey));
         images[filename] = image;
         return image;
     }

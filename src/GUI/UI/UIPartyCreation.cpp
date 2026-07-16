@@ -828,10 +828,15 @@ void GUIWindow_PartyCreation::initializeMm6() {
         creationMm6Portraits[face] = assets->getImage_Solid(
             face < 8 ? fmt::format("ccmale{:c}", 'a' + face) : fmt::format("ccgirl{:c}", 'a' + face - 8));
 
+    // The focus arrows draw through MM6's transparent blit (MM6.EXE 0x40b0c0), which skips pixels
+    // whose 16-bit color is 0 - a BLACK colorkey, palette indices don't matter. The arrows keep
+    // their background at palette index 3 (their only black entry, no black inside the art); index
+    // 0 is an unused magenta sentinel, so palette-0 alpha would leave an opaque black box, and the
+    // colorkey must be forced past the images' palette-0-transparent header flag (0x200).
     assert(ui_partycreation_arrow_l.size() == 19);
     for (int i = 0; i < ui_partycreation_arrow_l.size(); ++i) {
-        ui_partycreation_arrow_l[i] = assets->getImage_Alpha(fmt::format("arrowl{}", i + 1));
-        ui_partycreation_arrow_r[i] = assets->getImage_Alpha(fmt::format("arrowr{}", i + 1));
+        ui_partycreation_arrow_l[i] = assets->getImage_ColorKey(fmt::format("arrowl{}", i + 1), colorTable.Black, true);
+        ui_partycreation_arrow_r[i] = assets->getImage_ColorKey(fmt::format("arrowr{}", i + 1), colorTable.Black, true);
     }
     for (int i = 0; i < creationMm6FlamesLeft.size(); ++i) {
         creationMm6FlamesLeft[i] = assets->getImage_Alpha(fmt::format("fl{}", i + 1));
