@@ -5818,7 +5818,11 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     EXPECT_EQ(assets->getImage_PCXFromIconsLOD("makeme.pcx")->size(), Sizei(640, 457));
     EXPECT_EQ(assets->getImage_Solid("ccmalea")->size(), Sizei(59, 79));
     EXPECT_EQ(assets->getImage_Solid("ccgirld")->size(), Sizei(59, 79));
-    EXPECT_EQ(assets->getImage_ColorKey("IC_KNIG")->size(), Sizei(44, 44));
+    GraphicsImage *knightIcon = assets->getImage_Alpha("IC_KNIG");
+    EXPECT_EQ(knightIcon->size(), Sizei(44, 44));
+    // The icon background is palette index 0 holding MM6's VGA-scaled teal (0,252,252), which the
+    // (0,255,255) colorkey misses - the icons must load as Alpha or draw as sky-blue boxes.
+    EXPECT_EQ(knightIcon->rgba()[0][0].a, 0);
     EXPECT_EQ(assets->getImage_Alpha("fl1")->size(), Sizei(33, 79));
     EXPECT_EQ(assets->getImage_Alpha("fr29")->size(), Sizei(40, 80));
     EXPECT_GT(pSpriteFrameTable->FastFindSprite("aframe1"), 0); // The selected-portrait flame frameset.

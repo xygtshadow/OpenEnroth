@@ -808,14 +808,16 @@ void GUIWindow_PartyCreation::initializeMm6() {
     int v0 = assets->pFontCreate->GetHeight() - 2;
 
     // Class icons keyed by the engine's base-class index; only MM6's six classes exist
-    // (IC_KNIG etc. - shorter names than MM7's IC_KNIGHT).
+    // (IC_KNIG etc. - shorter names than MM7's IC_KNIGHT). Their teal background is palette
+    // index 0 but VGA-scaled to (0,252,252), which the (0,255,255) colorkey misses - so Alpha,
+    // or they draw as sky-blue boxes.
     ui_partycreation_class_icons.fill(nullptr);
-    ui_partycreation_class_icons[std::to_underlying(CLASS_KNIGHT) / 4] = assets->getImage_ColorKey("IC_KNIG");
-    ui_partycreation_class_icons[std::to_underlying(CLASS_PALADIN) / 4] = assets->getImage_ColorKey("IC_PALAD");
-    ui_partycreation_class_icons[std::to_underlying(CLASS_ARCHER) / 4] = assets->getImage_ColorKey("IC_ARCH");
-    ui_partycreation_class_icons[std::to_underlying(CLASS_CLERIC) / 4] = assets->getImage_ColorKey("IC_CLER");
-    ui_partycreation_class_icons[std::to_underlying(CLASS_DRUID) / 4] = assets->getImage_ColorKey("IC_DRUID");
-    ui_partycreation_class_icons[std::to_underlying(CLASS_SORCERER) / 4] = assets->getImage_ColorKey("IC_SORC");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_KNIGHT) / 4] = assets->getImage_Alpha("IC_KNIG");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_PALADIN) / 4] = assets->getImage_Alpha("IC_PALAD");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_ARCHER) / 4] = assets->getImage_Alpha("IC_ARCH");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_CLERIC) / 4] = assets->getImage_Alpha("IC_CLER");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_DRUID) / 4] = assets->getImage_Alpha("IC_DRUID");
+    ui_partycreation_class_icons[std::to_underlying(CLASS_SORCERER) / 4] = assets->getImage_Alpha("IC_SORC");
 
     // MM6 loader convention: cut-outs load as Alpha (the palette-0-transparent header flag is
     // rarely set and TealMask never matches MM6's VGA palettes), opaque plates as Solid.
