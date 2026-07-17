@@ -5799,6 +5799,49 @@ GAME_TEST(Mm6, SegueFromInGameMenu) {
     EXPECT_EQ(findMm6SegueWindow(), nullptr);
 }
 
+GAME_TEST(Mm6, GameMenuSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // MM6's escape menu is laid out differently from MM7's: Resume/New/Save down the left column,
+    // Controls/Load/Quit down the right - that's what the `options` background art shows. MM6.EXE's
+    // button setup (@0x42bf29..0x42c018) puts the left column at x=18 sized 219x39, the right column
+    // at x=242 sized 215x39, on rows y=160/213/266. MM7's hitboxes over MM6's background left five
+    // of six buttons on the wrong labels.
+    game.startNewGame();
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_MENU);
+
+    // CreateButton takes the originals' closed-interval sizes and stores w+1/h+1, hence 220x40/216x40.
+    EXPECT_EQ(pBtn_Resume->rect, Recti(18, 160, 220, 40));
+    EXPECT_EQ(pBtn_NewGame->rect, Recti(18, 213, 220, 40));
+    EXPECT_EQ(pBtn_SaveGame->rect, Recti(18, 266, 220, 40));
+    EXPECT_EQ(pBtn_GameControls->rect, Recti(242, 160, 216, 40));
+    EXPECT_EQ(pBtn_LoadGame->rect, Recti(242, 213, 216, 40));
+    EXPECT_EQ(pBtn_QuitGame->rect, Recti(242, 266, 216, 40));
+
+    // Each button carries its own pressed image. MM6's controls art is "control1", not MM7's
+    // "controls1" - that name isn't in MM6's icons.lod and came back as the pending placeholder.
+    ASSERT_EQ(pBtn_Resume->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_Resume->vTextures[0]->name(), "resume1");
+    ASSERT_EQ(pBtn_NewGame->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_NewGame->vTextures[0]->name(), "new1");
+    ASSERT_EQ(pBtn_SaveGame->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_SaveGame->vTextures[0]->name(), "save1");
+    ASSERT_EQ(pBtn_GameControls->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_GameControls->vTextures[0]->name(), "control1");
+    ASSERT_EQ(pBtn_LoadGame->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_LoadGame->vTextures[0]->name(), "load1");
+    ASSERT_EQ(pBtn_QuitGame->vTextures.size(), 1u);
+    EXPECT_EQ(pBtn_QuitGame->vTextures[0]->name(), "quit1");
+
+    // Resume closes the menu.
+    game.pressGuiButton("GameMenu_Resume");
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
 GAME_TEST(Mm6, PartyCreationSkin) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

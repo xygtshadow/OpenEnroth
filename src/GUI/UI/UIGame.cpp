@@ -222,26 +222,45 @@ extern std::unordered_map<InputAction, PlatformKey> curr_key_map;
 
 GUIWindow_GameMenu::GUIWindow_GameMenu()
     : GUIWindow(WINDOW_GameMenu, {0, 0}, render->GetRenderDimensions()) {
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
     game_ui_menu_options = assets->getImage_ColorKey("options");
     game_ui_menu_new = assets->getImage_ColorKey("new1");
     game_ui_menu_load = assets->getImage_ColorKey("load1");
     game_ui_menu_save = assets->getImage_ColorKey("save1");
-    game_ui_menu_controls = assets->getImage_ColorKey("controls1");
+    game_ui_menu_controls = assets->getImage_ColorKey(isMm6 ? "control1" : "controls1");
     game_ui_menu_resume = assets->getImage_ColorKey("resume1");
     game_ui_menu_quit = assets->getImage_ColorKey("quit1");
 
-    pBtn_NewGame = CreateButton("GameMenu_NewGame", {0x13u, 0x9Bu}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_StartNewGame, 0, INPUT_ACTION_NEW_GAME, localization->str(LSTR_NEW_GAME), {game_ui_menu_new});
-    pBtn_SaveGame = CreateButton("GameMenu_SaveGame", {0x13u, 0xD1u}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_Game_OpenSaveGameDialog, 0, INPUT_ACTION_SAVE_GAME, localization->str(LSTR_SAVE_GAME), {game_ui_menu_save});
-    pBtn_LoadGame = CreateButton("GameMenu_LoadGame", {19, 263}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_Game_OpenLoadGameDialog, 0, INPUT_ACTION_LOAD_GAME, localization->str(LSTR_LOAD_GAME), {game_ui_menu_load});
-    pBtn_GameControls = CreateButton({241, 155}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_Game_OpenOptionsDialog, 0, INPUT_ACTION_OPEN_OPTIONS, localization->str(LSTR_SOUND_KEYBOARD_GAME_OPTIONS), {game_ui_menu_controls});
-    pBtn_QuitGame = CreateButton("GameMenu_Quit", {241, 209}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_Quit, 0, INPUT_ACTION_EXIT_GAME, localization->str(LSTR_QUIT), {game_ui_menu_quit});
-    pBtn_Resume = CreateButton({241, 263}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
-        UIMSG_GameMenu_ReturnToGame, 0, INPUT_ACTION_BACK_TO_GAME, localization->str(LSTR_RETURN_TO_GAME), {game_ui_menu_resume});
+    if (isMm6) {
+        // MM6's menu is laid out differently: Resume/New/Save down the left column, Controls/Load/Quit
+        // down the right. MM6.EXE's button setup (@0x42bf29..0x42c018, in this creation order) puts the
+        // left column at x=18 sized 219x39 and the right column at x=242 sized 215x39, rows y=160/213/266.
+        pBtn_Resume = CreateButton("GameMenu_Resume", {18, 160}, {219, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_GameMenu_ReturnToGame, 0, INPUT_ACTION_BACK_TO_GAME, localization->str(LSTR_RETURN_TO_GAME), {game_ui_menu_resume});
+        pBtn_NewGame = CreateButton("GameMenu_NewGame", {18, 213}, {219, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_StartNewGame, 0, INPUT_ACTION_NEW_GAME, localization->str(LSTR_NEW_GAME), {game_ui_menu_new});
+        pBtn_LoadGame = CreateButton("GameMenu_LoadGame", {242, 213}, {215, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenLoadGameDialog, 0, INPUT_ACTION_LOAD_GAME, localization->str(LSTR_LOAD_GAME), {game_ui_menu_load});
+        pBtn_SaveGame = CreateButton("GameMenu_SaveGame", {18, 266}, {219, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenSaveGameDialog, 0, INPUT_ACTION_SAVE_GAME, localization->str(LSTR_SAVE_GAME), {game_ui_menu_save});
+        pBtn_GameControls = CreateButton({242, 160}, {215, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenOptionsDialog, 0, INPUT_ACTION_OPEN_OPTIONS, localization->str(LSTR_SOUND_KEYBOARD_GAME_OPTIONS), {game_ui_menu_controls});
+        pBtn_QuitGame = CreateButton("GameMenu_Quit", {242, 266}, {215, 39}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Quit, 0, INPUT_ACTION_EXIT_GAME, localization->str(LSTR_QUIT), {game_ui_menu_quit});
+    } else {
+        pBtn_NewGame = CreateButton("GameMenu_NewGame", {0x13u, 0x9Bu}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_StartNewGame, 0, INPUT_ACTION_NEW_GAME, localization->str(LSTR_NEW_GAME), {game_ui_menu_new});
+        pBtn_SaveGame = CreateButton("GameMenu_SaveGame", {0x13u, 0xD1u}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenSaveGameDialog, 0, INPUT_ACTION_SAVE_GAME, localization->str(LSTR_SAVE_GAME), {game_ui_menu_save});
+        pBtn_LoadGame = CreateButton("GameMenu_LoadGame", {19, 263}, {0xD6u, 0x28u}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenLoadGameDialog, 0, INPUT_ACTION_LOAD_GAME, localization->str(LSTR_LOAD_GAME), {game_ui_menu_load});
+        pBtn_GameControls = CreateButton({241, 155}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Game_OpenOptionsDialog, 0, INPUT_ACTION_OPEN_OPTIONS, localization->str(LSTR_SOUND_KEYBOARD_GAME_OPTIONS), {game_ui_menu_controls});
+        pBtn_QuitGame = CreateButton("GameMenu_Quit", {241, 209}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_Quit, 0, INPUT_ACTION_EXIT_GAME, localization->str(LSTR_QUIT), {game_ui_menu_quit});
+        pBtn_Resume = CreateButton({241, 263}, {214, 40}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_GameMenu_ReturnToGame, 0, INPUT_ACTION_BACK_TO_GAME, localization->str(LSTR_RETURN_TO_GAME), {game_ui_menu_resume});
+    }
 
     setKeyboardControlGroup(6, false, 0, 0);
 }
