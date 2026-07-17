@@ -14,6 +14,11 @@ on:
         required: false
         default: ''
         type: string
+      targets:
+        description: JSON list of targets to build, empty for the default set
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       myCommit:
@@ -23,6 +28,11 @@ on:
         type: string
       releaseTag:
         description: Release tag
+        required: false
+        default: ''
+        type: string
+      targets:
+        description: JSON list of targets to build, empty for the default set
         required: false
         default: ''
         type: string
@@ -46,12 +56,14 @@ jobs:
         configuration:
           - Debug
           - RelWithDebInfo
-        # Build android_universal on releases, per-ABI on PR
-        target: >- 
+        # Build the targets passed by the caller if any, otherwise android_universal on releases, per-ABI on PR
+        target: >-
           ${{fromJSON(
-            inputs.releaseTag != ''
-              && '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64","android_universal"]'
-              || '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64","android_arm64_v8a","android_arm32_v7a","android_x86_64"]'
+            inputs.targets != ''
+              && inputs.targets
+              || (inputs.releaseTag != ''
+                && '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64","android_universal"]'
+                || '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64","android_arm64_v8a","android_arm32_v7a","android_x86_64"]')
           )}}
     runs-on: >-
       ${{

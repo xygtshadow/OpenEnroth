@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+# A new push cancels the in-flight run so its jobs don't upload stale binaries to the recreated release.
+concurrency:
+  group: build-mm6-release
+  cancel-in-progress: true
+
 env:
   TAG_NAME: mm6-nightly
 
@@ -45,3 +50,4 @@ jobs:
     secrets: inherit
     with:
       releaseTag: '${{needs.recreateRelease.outputs.tagName}}'
+      targets: '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64"]'
