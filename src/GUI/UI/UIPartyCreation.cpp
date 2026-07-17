@@ -298,16 +298,14 @@ bool PartyCreationUI_Loop() {
 }
 
 // What MM6.EXE does: the Quick Start handler (@0x42fe0e) sets screen id 10, and its caller
-// (@0x453664) fills the four characters in from global.txt rows 506-509 - it does not run the
-// creation screen at all.
+// (@0x453664) fills the four characters in from global.txt rows 506-509 (the fill at 0x485540) -
+// it does not run the creation screen at all.
 //
-// What we do instead: the same default party the creation screen would open with
-// (Party::createDefaultParty -> resetCharactersMm6, itself taken from new.lod's party.bin), plus the
-// skill-derived starting inventory that leaving the creation screen grants (givePartyItemsMm6).
-//
-// Why those agree: new.lod's template party IS MM6's default party, and - as givePartyItemsMm6()'s
-// own comment records - the template's gear is exactly that grant's output for the default skill
-// sets. So the two constructions land on the same party from either end.
+// What we do: on top of the freshly reset party (resetForNewGame -> Party::Reset, the half-blank
+// SetClass default party the creation screen opens with), apply the fully-built new.lod template
+// party (resetCharactersMm6), plus the skill-derived starting inventory that leaving the creation
+// screen grants (givePartyItemsMm6). The template party IS the quick-start party: its gear is
+// exactly that grant's output for its skill sets, as givePartyItemsMm6()'s own comment records.
 //
 // Note there is no stopSounds() here, unlike the creation screen's MM6 tail (which has one to kill
 // the sounds the screen itself made): the only sound in flight on this path is the Quick Start
@@ -315,6 +313,7 @@ bool PartyCreationUI_Loop() {
 void mm6QuickStartParty() {
     resetForNewGame();
 
+    pParty->resetCharactersMm6();
     givePartyItemsMm6();
 }
 

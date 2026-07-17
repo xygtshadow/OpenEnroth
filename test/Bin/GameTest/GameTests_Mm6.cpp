@@ -5723,11 +5723,11 @@ GAME_TEST(Mm6, SegueQuickStart) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
-    // Quick Start skips the creation screen and starts with MM6's default party. MM6.EXE's handler
-    // (@0x42fe0e) sets screen id 10 and its caller (@0x453664) fills the party in from global.txt
-    // rows 506-509; we take the same default party the creation screen would open with, so the
-    // assertions below pin "Quick Start == our own Create Party path", not "== MM6" - the MM6
-    // fidelity of that party is what Mm6.NewGameDefaults pins, against new.lod's template.
+    // Quick Start skips the creation screen and starts with MM6's fully-built template party.
+    // MM6.EXE's handler (@0x42fe0e) sets screen id 10 and its caller (@0x453664) fills the party
+    // in from global.txt rows 506-509 (the fill at 0x485540) - NOT the half-blank SetClass default
+    // party the creation screen opens with. The MM6 fidelity of the template party is what
+    // Mm6.NewGameDefaults pins, against new.lod's party.bin.
     game.goToMainMenu();
     game.pressGuiButton("MainMenu_NewGame");
     game.tick(2);
@@ -5886,9 +5886,31 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectActiveSkill, 0)->rect.x, 230);
     EXPECT_EQ(findButton(UIMSG_PlayerCreationSelectActiveSkill, 8)->rect.x, 390);
 
-    // The default party spends EXACTLY the 50-point MM6 pool (cross-validates the class-base
-    // stat table at MM6.EXE 0x4C2668 against the new.lod template).
-    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 0);
+    auto activeSkills = [](const Character &character) {
+        std::vector<Skill> result;
+        for (Skill skill : allVisibleSkills())
+            if (character.pActiveSkills[skill])
+                result.push_back(skill);
+        return result;
+    };
+
+    // The screen opens with the SetClass default party, NOT the new.lod template: New Game runs
+    // MM6's Party::Reset (MM6.EXE 0x485f40, called at 0x4535fd BEFORE the prologue), which is four
+    // SetClass calls plus faces 0/11/9/7 and the global.txt row 506-509 names - class-base stats
+    // with the whole 50-point pool unspent, and only each class's two fixed skills. The fully-built
+    // template party belongs to Quick Start alone (its fill lives at 0x485540).
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 50);
+    EXPECT_EQ(pParty->pCharacters[0].classType, CLASS_PALADIN);
+    EXPECT_EQ(pParty->pCharacters[1].classType, CLASS_ARCHER);
+    EXPECT_EQ(pParty->pCharacters[2].classType, CLASS_CLERIC);
+    EXPECT_EQ(pParty->pCharacters[3].classType, CLASS_SORCERER);
+    EXPECT_EQ(pParty->pCharacters[0].uCurrentFace, 0);
+    EXPECT_EQ(pParty->pCharacters[1].uCurrentFace, 11);
+    EXPECT_EQ(pParty->pCharacters[2].uCurrentFace, 9);
+    EXPECT_EQ(pParty->pCharacters[3].uCurrentFace, 7);
+    EXPECT_EQ(pParty->pCharacters[3].name, "Zoltan");
+    for (Character &character : pParty->pCharacters)
+        EXPECT_EQ(activeSkills(character).size(), 2u);
 
     // Class change is a full MM6 reset (MM6.EXE SetClass 0x483d90): base stats from the class
     // table, the class's 2 fixed skills, first spell of any granted school, exp/birth-year reroll.
@@ -5910,17 +5932,10 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     EXPECT_LE(zoltan.experience, 350);
     EXPECT_GE(zoltan.uBirthYear, 1139);
     EXPECT_LE(zoltan.uBirthYear, 1144);
-    auto activeSkills = [](const Character &character) {
-        std::vector<Skill> result;
-        for (Skill skill : allVisibleSkills())
-            if (character.pActiveSkills[skill])
-                result.push_back(skill);
-        return result;
-    };
     EXPECT_EQ(activeSkills(zoltan), (std::vector<Skill>{SKILL_SWORD, SKILL_LEATHER}));
     EXPECT_TRUE(std::ranges::none_of(zoltan.bHaveSpell, [](bool have) { return have; }));
-    // The other three template characters spend 13+12+13=38 of the pool.
-    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 12);
+    // The other three are still at their class bases, so the whole pool is back.
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 50);
 
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectClass, std::to_underlying(CLASS_CLERIC), 0);
     game.tick(1);
@@ -5937,14 +5952,14 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT);
     zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT);
     EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 5);
-    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 14);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 52);
     zoltan.DecreaseAttribute(ATTRIBUTE_MIGHT); // Floor: base 7 - 2.
     EXPECT_EQ(zoltan._stats[ATTRIBUTE_MIGHT], 5);
-    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 14);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 52);
     for (int i = 0; i < 30; i++)
         zoltan.IncreaseAttribute(ATTRIBUTE_LUCK); // Cap: 25, from the base of 14.
     EXPECT_EQ(zoltan._stats[ATTRIBUTE_LUCK], 25);
-    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 3);
+    EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 41);
 
     // Skill picks: 2 choices from the class's 9 creation options, same message flow as MM7.
     // Cleric options in display order: Staff, Shield, Leather, Spirit, Mind, Id Item, Repair,
@@ -5990,9 +6005,20 @@ GAME_TEST(Mm6, PartyCreationSkin) {
     game.pressGuiButton("PartyCreation_OK");
     game.tick(5);
     EXPECT_EQ(current_screen_type, SCREEN_PARTY_CREATION);
-    // ...and proceeds once the pool hits zero with 4 skills on everyone.
-    for (int i = 0; i < 3; i++)
-        zoltan.IncreaseAttribute(ATTRIBUTE_MIGHT);
+    // ...and proceeds once the pool hits zero with 4 skills on everyone. Characters 0-2 still
+    // carry only their two fixed class skills, so give each its two creation picks first.
+    for (int i = 0; i < 3; i++) {
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreation_SelectAttribute, i, 0);
+        game.tick(1);
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 0, 0);
+        game.tick(1);
+        engine->_messageQueue->addMessageCurrentFrame(UIMSG_PlayerCreationSelectActiveSkill, 4, 0);
+        game.tick(1);
+    }
+    for (int i = 0; i < 4 && CharacterCreation_GetUnspentAttributePointCount(); i++)
+        for (Attribute stat : allStatAttributes())
+            while (CharacterCreation_GetUnspentAttributePointCount() && pParty->pCharacters[i]._stats[stat] < 25)
+                pParty->pCharacters[i].IncreaseAttribute(stat);
     EXPECT_EQ(CharacterCreation_GetUnspentAttributePointCount(), 0);
     game.pressGuiButton("PartyCreation_OK");
     game.skipLoadingScreen();

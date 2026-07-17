@@ -204,12 +204,14 @@ void EngineController::startNewGame() {
     tick(2);
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6 shows its new-game prologue screen between the main menu and party creation (MM6.EXE
-        // 0x452bd0). Take its Create Party button, so that this keeps landing on the creation screen
-        // like it always did - the prologue's other button, Quick Start, bypasses that screen.
-        pressGuiButton("Mm6Segue_CreateParty");
-        tick(2);
+        // 0x452bd0). Take its Quick Start button: the creation screen opens with the original's
+        // half-blank default party (50 unspent bonus points, two skills per character), which the
+        // OK gate rightly refuses - Quick Start instead yields the fully-built new.lod template
+        // party the tests have always run on.
+        pressGuiButton("Mm6Segue_QuickStart");
+    } else {
+        pressGuiButton("PartyCreation_OK");
     }
-    pressGuiButton("PartyCreation_OK");
     skipLoadingScreen();
     tick(2);
 }

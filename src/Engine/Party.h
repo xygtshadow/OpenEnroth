@@ -76,7 +76,8 @@ struct Party {
     void createDefaultParty();
 
     /**
-     * Resets the four characters to the MM6 default party from new.lod's party.bin template.
+     * Resets the four characters to MM6's fully-built Quick Start party, from new.lod's party.bin
+     * template. The creation screen's opening party is Reset()'s SetClass default party instead.
      */
     void resetCharactersMm6();
     void Reset();

@@ -382,10 +382,12 @@ unsigned int Party::getPartyFame() {
 }
 
 void Party::resetCharactersMm6() {
-    // The MM6 default party, byte-for-byte from new.lod's party.bin - MM6's new-game savegame
-    // template. Experience and birth years are the template's fixed values (MM6 sessions start
-    // in year 1165, see gameStartingYear). Every character knows the first spell of their magic
-    // schools; the books of the second are in their backpacks, see giveDefaultPartyItemsMm6().
+    // MM6's fully-built Quick Start party, byte-for-byte from new.lod's party.bin - MM6's new-game
+    // savegame template (the in-EXE fill lives at 0x485540). This is NOT the party the creation
+    // screen opens with - that's Reset()'s SetClass default party. Experience and birth years are
+    // the template's fixed values (MM6 sessions start in year 1165, see gameStartingYear). Every
+    // character knows the first spell of their magic schools; the books of the second are in
+    // their backpacks, see givePartyItemsMm6().
     struct Mm6DefaultCharacter {
         LstrId name;
         Class classType;
@@ -442,21 +444,11 @@ void Party::createDefaultParty() {
     pHirelingsSacrifice.fill(NPCSacrificeStatus());
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        resetCharactersMm6();
-
-        for (Character &character : pCharacters) {
-            character.lastOpenedSpellbookPage = MAGIC_SCHOOL_FIRE;
-            for (MagicSchool page : allMagicSchools()) {
-                if (character.pActiveSkills[skillForMagicSchool(page)]) {
-                    character.lastOpenedSpellbookPage = page;
-                    break;
-                }
-            }
-
-            character.portraitTimePassed = 0_ticks;
-            character.health = character.GetMaxHealth();
-            character.mana = character.GetMaxMana();
-        }
+        // Nothing to do: Reset() already built MM6's default creation party, and that IS the state
+        // the creation screen opens with (MM6.EXE 0x485f40 runs before the prologue and nothing
+        // refills the characters until the player does). MM7 below instead REPLACES Reset()'s
+        // output with its preconfigured foursome; MM6's preconfigured party belongs to Quick Start
+        // alone, see resetCharactersMm6().
         return;
     }
 
@@ -566,7 +558,33 @@ void Party::Reset() {
     _activeCharacter = 1;
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        resetCharactersMm6();
+        // MM6's default creation party (MM6.EXE Party::Reset 0x485f40, run by New Game at 0x4535fd
+        // BEFORE the prologue): four SetClass calls plus faces 0/11/9/7 and the global.txt row
+        // 506-509 names. That's class-base stats with the whole 50-point pool unspent and only each
+        // class's two fixed skills - the state the creation screen opens with. The fully-built
+        // new.lod template party is NOT this; it belongs to Quick Start alone (its fill lives at
+        // 0x485540), see resetCharactersMm6().
+        struct Mm6DefaultSlot {
+            LstrId name;
+            Class classType;
+            Sex sex;
+            int face;
+        };
+        static constexpr std::array<Mm6DefaultSlot, 4> defaults = {{
+            {LSTR_NAME_RODERICK, CLASS_PALADIN, SEX_MALE, 0},
+            {LSTR_NAME_ALEXIS, CLASS_ARCHER, SEX_FEMALE, 11},
+            {LSTR_NAME_SERENA, CLASS_CLERIC, SEX_FEMALE, 9},
+            {LSTR_NAME_ZOLTAN, CLASS_SORCERER, SEX_MALE, 7},
+        }};
+        for (int i = 0; i < 4; i++) {
+            pCharacters[i].ChangeClass(defaults[i].classType);
+            pCharacters[i].name = localization->str(defaults[i].name);
+            pCharacters[i].uSex = defaults[i].sex;
+            pCharacters[i].uPrevFace = defaults[i].face;
+            pCharacters[i].uCurrentFace = defaults[i].face;
+            pCharacters[i].uPrevVoiceID = defaults[i].face;
+            pCharacters[i].uVoiceID = defaults[i].face;
+        }
     } else {
         pCharacters[0].ChangeClass(CLASS_KNIGHT);
         pCharacters[0].uCurrentFace = 17;
