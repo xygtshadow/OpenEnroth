@@ -376,16 +376,18 @@ void GUIWindow_PartyCreation::updateMm6() {
         Character &character = pParty->pCharacters[i];
         int columnX = 158 * i;
 
-        // Class icon and BLACK class name on the marble plate right of the portrait.
+        // Class icon and class name on the marble plate right of the portrait. MM6.EXE passes
+        // color 0 here, which is "draw with the font's own palette" (FONT.CPP 0x44386b picks the
+        // paletted glyph blit 0x40aa60), and FONTPAL holds white letters over a black shadow.
         if (GraphicsImage *classIcon = ui_partycreation_class_icons[std::to_underlying(character.classType) / 4])
             render->DrawQuad2D(classIcon, {95 + 159 * i, 50});
-        DrawText(assets->pFontCreate.get(), {85 + 159 * i, 97}, colorTable.Black, localization->className(character.classType), frameRect);
+        DrawText(assets->pFontCreate.get(), {85 + 159 * i, 97}, colorTable.White, localization->className(character.classType), frameRect);
 
-        // Character name on the plate strip, editable in place.
+        // Character name on the plate strip, editable in place. Also color 0 in MM6.EXE - white.
         if (keyboard_input_status != WINDOW_INPUT_NONE && uPlayerCreationUI_NameEditCharacter == i) {
             switch (keyboard_input_status) {
             case WINDOW_INPUT_IN_PROGRESS: {
-                int cursorX = DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, keyboardInputHandler->GetTextInput(), 120, 1);
+                int cursorX = DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.White, keyboardInputHandler->GetTextInput(), 120, 1);
                 DrawFlashingInputCursor(159 * i + cursorX + 20, 124, assets->pFontCreate.get(), frameRect);
                 break;
             }
@@ -398,14 +400,14 @@ void GUIWindow_PartyCreation::updateMm6() {
                     character.name = keyboardInputHandler->GetTextInput();
                     creationMm6NameTyped[i] = true; // Face changes no longer reroll it.
                 }
-                DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, character.name, 130, 0);
+                DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.White, character.name, 130, 0);
                 break;
             }
             default:
                 break;
             }
         } else {
-            DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.Black, character.name, 130, 0);
+            DrawTextInRect(assets->pFontCreate.get(), {159 * i + 18, 124}, colorTable.White, character.name, 130, 0);
         }
 
         // Seven stat rows from y=160 (MM7 uses 169), numbers right-aligned at the \r stop.
