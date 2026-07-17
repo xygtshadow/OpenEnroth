@@ -269,7 +269,11 @@ bool Bitmaps_GEN_Loader::Load(RgbaImage *rgbaImage) {
     pTileGenerator->ensureTile(this->resource_name);
     *rgbaImage = png::decode(ufs->read(this->resource_name));
 
-    // Desaturate.
+    // Desaturate to match Bitmaps_LOD_Loader. MM6 draws palette colors raw, see
+    // PaletteManager::createLoadedPalette.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return true;
+
     float xs = engine->config->graphics.Saturation.value();
     float xv = engine->config->graphics.Lightness.value();
     for (Color &pixel : rgbaImage->pixels())

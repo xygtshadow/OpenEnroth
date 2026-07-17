@@ -47,6 +47,12 @@ Palette PaletteManager::createGrayscalePalette() {
 }
 
 Palette PaletteManager::createLoadedPalette(const Palette &palette) {
+    // The saturation/lightness remap below replicates MM7.EXE, which rebuilds every loaded palette
+    // through HSV when constructing its palette LUTs (s * 0.65, v * 1.1). MM6.EXE has no such
+    // step - its renderer uses palette bytes as-is, and remapping them washes out the whole world.
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return palette;
+
     float xs = engine->config->graphics.Saturation.value();
     float xv = engine->config->graphics.Lightness.value();
 

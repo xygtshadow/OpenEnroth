@@ -19,6 +19,7 @@
 #include "Engine/Party.h"
 #include "Engine/PriceCalculator.h"
 #include "Engine/Resources/EngineFileSystem.h"
+#include "Engine/Resources/LodTextureCache.h"
 #include "Engine/Resources/ResourceManager.h"
 #include "Engine/mm7_data.h"
 
@@ -31,6 +32,7 @@
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/LocationFunctions.h"
 #include "Engine/Graphics/Overlays.h"
+#include "Engine/Graphics/PaletteManager.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
@@ -89,6 +91,7 @@
 #include "Io/Mouse.h"
 
 #include "Library/Color/ColorTable.h"
+#include "Library/LodFormats/LodImage.h"
 
 #include "Media/MediaPlayer.h"
 
@@ -8385,5 +8388,28 @@ GAME_TEST(Mm6, CharacterVoices) {
         });
         EXPECT_TRUE(heard) << "no MM6 voice reaction for character " << i << " (voice " << voice << ")";
     }
+}
+
+// MM7.EXE remaps every loaded palette through HSV when building its palette LUTs, scaling
+// saturation by 0.65 and value by 1.1 (the float pair sits in MM7-Rel.exe's .data at 0xd8868;
+// GrayFace exposes it as the MM7+-only PaletteSMul/PaletteVMul patch options). MM6.EXE has no
+// such remap - its renderer converts palette bytes to 16-bit as-is - so applying MM7's remap
+// washed out MM6's entire 3D world (terrain, models, sky, billboards).
+GAME_TEST(Mm6, PalettesDrawRaw) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // The palette-LUT path used for billboards and 3D-world bitmaps is an identity for MM6.
+    LodImage *pal = pBitmaps_LOD->loadTexture("pal002", false);
+    ASSERT_NE(pal, nullptr);
+    EXPECT_EQ(PaletteManager::createLoadedPalette(pal->palette).colors, pal->palette.colors);
+
+    // And end-to-end through the bitmap loader: a loaded 3D-world texture pixel equals the raw
+    // palette entry for its index (sky01 = MM6's first-visit sky).
+    LodImage *sky = pBitmaps_LOD->loadTexture("sky01", false);
+    ASSERT_NE(sky, nullptr);
+    GraphicsImage *skyTex = assets->getBitmap("sky01");
+    ASSERT_NE(skyTex, nullptr);
+    EXPECT_EQ(skyTex->rgba()[0][0], sky->palette.colors[sky->image[0][0]]);
 }
 

@@ -471,8 +471,8 @@ class GameConfig : public Config {
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
                             " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
 
-        Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
-        Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
+        Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes, replicating MM7.EXE's palette processing. Ignored for MM6, which draws palette colors raw."};
+        Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes, replicating MM7.EXE's palette processing. Ignored for MM6, which draws palette colors raw."};
 
         Bool AlwaysCustomCursor = {this, "always_custom_cursor", false,
             "Always draw a custom cursor using the graphics API and hide the system cursor, even if it's the default mouse arrow cursor."};
