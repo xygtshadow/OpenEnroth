@@ -5839,7 +5839,13 @@ GAME_TEST(Mm6, PartyCreationSkin) {
             transparentPixels += arrow->rgba()[y][x].a == 0;
     EXPECT_EQ(arrow->rgba()[0][0].a, 0);
     EXPECT_EQ(transparentPixels, 269);
-    EXPECT_GT(pSpriteFrameTable->FastFindSprite("aframe1"), 0); // The selected-portrait flame frameset.
+    // The selected-portrait flame frameset. MM6's dsft.bin leaves paletteId 0 on every frame -
+    // the game takes sprite palettes from the sprites' own headers (aframe1 carries pal002).
+    // A frame left at paletteId 0 hits the renderer's "not paletted" sentinel and draws the raw
+    // palette indices through the red channel - the "red oval" from the play-test report.
+    int aframeId = pSpriteFrameTable->FastFindSprite("aframe1");
+    ASSERT_GT(aframeId, 0);
+    EXPECT_EQ(pSpriteFrameTable->GetFrame(aframeId, 0_ticks)->paletteId, 2);
 
     // MM6 buttons (MM6.EXE 0x451ff4-0x452670): a lone BUTTMAKE OK scroll at (511,438) - no Clear
     // button - MAKEMINU/MAKEPLUS point-buy buttons, 32x16 face arrows, and no voice arrows at all.

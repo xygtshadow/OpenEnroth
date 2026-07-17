@@ -169,6 +169,21 @@ void SpriteFrameTable::InitializeSprite(signed int uSpriteID) {
                         }
                     }
 
+                    // MM6's dsft.bin doesn't fill in palette ids - the field is 0 in every one of
+                    // its frames - and the game resolves each sprite's palette from the sprite's
+                    // own header in sprites.lod instead (MM7 moved the palette into the frame
+                    // table and stopped using the header). Leaving 0 here would hit the
+                    // renderer's "not paletted" sentinel, which draws the raw palette indices
+                    // through the red channel.
+                    if (engine->gameVersion() == GAME_VERSION_MM6) {
+                        for (Sprite *sprite : pSpriteSFrames[iter_uSpriteID].sprites) {
+                            if (sprite) {
+                                pSpriteSFrames[iter_uSpriteID].paletteId = sprite->sprite_header->paletteId;
+                                break;
+                            }
+                        }
+                    }
+
                     if (!(pSpriteSFrames[iter_uSpriteID].flags & SPRITE_FRAME_HAS_MORE)) {
                         return;
                     }
