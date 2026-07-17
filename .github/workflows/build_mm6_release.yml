@@ -52,3 +52,5 @@ jobs:
       releaseTag: '${{needs.recreateRelease.outputs.tagName}}'
       targets: '["windows_x86_64"]'
       configurations: '["Debug"]'
+      # The MM7 game-data cache is fed from a private repo via a secret this fork doesn't have.
+      skipGameTests: true

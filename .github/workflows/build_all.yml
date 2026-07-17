@@ -24,6 +24,11 @@ on:
         required: false
         default: ''
         type: string
+      skipGameTests:
+        description: Skip tests that need game data (for forks without access to the data cache)
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       myCommit:
@@ -46,6 +51,11 @@ on:
         required: false
         default: ''
         type: string
+      skipGameTests:
+        description: Skip tests that need game data (for forks without access to the data cache)
+        required: false
+        default: false
+        type: boolean
   release:
     types:
       - published
@@ -288,7 +298,7 @@ jobs:
           ninja Run_UnitTest
 
       - name: '[darwin/windows/linux] Run game tests'
-        if: env.MATRIX_PLATFORM != 'android'
+        if: env.MATRIX_PLATFORM != 'android' && !inputs.skipGameTests
         working-directory: build
         run: |
           ninja Run_GameTest_Headless_Parallel
@@ -296,7 +306,7 @@ jobs:
           OPENENROTH_MM7_PATH: ${{github.workspace}}/OpenEnroth_GameData/mm7
 
       - name: '[darwin/windows/linux] Run retrace tests'
-        if: env.MATRIX_PLATFORM != 'android' && env.MATRIX_CONFIGURATION != 'Debug'
+        if: env.MATRIX_PLATFORM != 'android' && env.MATRIX_CONFIGURATION != 'Debug' && !inputs.skipGameTests
         working-directory: build
         run: |
           ninja Run_RetraceTest_Headless_Parallel
