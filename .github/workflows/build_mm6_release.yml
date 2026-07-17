@@ -1,0 +1,47 @@
+name: Build MM6 Release
+
+on:
+  workflow_dispatch: null
+  push:
+    branches:
+      - 'mm6-support'
+
+permissions:
+  contents: write
+
+env:
+  TAG_NAME: mm6-nightly
+
+jobs:
+  recreateRelease:
+    name: Recreate MM6 Release
+    runs-on: ubuntu-latest
+    outputs:
+      tagName: ${{steps.outputReleaseTag.outputs.tagName}}
+    steps:
+      - name: Recreate release at current commit
+        shell: bash
+        env:
+          GH_TOKEN: '${{secrets.GITHUB_TOKEN}}'
+        run: |
+          set -uo pipefail
+          gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || echo "No previous $TAG_NAME release to delete"
+          sleep 10
+          gh release create "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "MM6 nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})" \
+            --notes "Automated build of branch mm6-support @ $GITHUB_SHA"
+
+      - name: Output Release Tag
+        id: outputReleaseTag
+        run: |
+          echo "tagName=${{env.TAG_NAME}}" >> "$GITHUB_OUTPUT"
+
+  build_all:
+    needs: recreateRelease
+    uses: ./.github/workflows/build_all.yml
+    secrets: inherit
+    with:
+      releaseTag: '${{needs.recreateRelease.outputs.tagName}}'
