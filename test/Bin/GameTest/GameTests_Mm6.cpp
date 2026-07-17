@@ -105,6 +105,11 @@ GAME_TEST(Mm6, NewGame) {
     EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_OUTDOOR);
     EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm");
 
+    // First visit to an outdoor map uses MM6's first-visit sky, "sky01" (MM6.EXE @0x46dfe8). MM7's
+    // "plansky3" doesn't exist in MM6's bitmaps.lod and would tile the sky with the "pending"
+    // placeholder - a grid of red no-signs.
+    EXPECT_EQ(pOutdoor->loc_time.skyTextureName, "sky01");
+
     // Entities placed in oute3.ddm should have been loaded: 38 peasants (MM6 monster ids 121-135,
     // random encounter spawns can add more on top), 42 sprite objects and 20 chests.
     int placedPeasants = 0;

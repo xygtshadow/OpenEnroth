@@ -152,6 +152,12 @@ static constexpr IndexedArray<FogProbabilityTableEntry, MAP_EMERALD_ISLAND, MAP_
 static constexpr std::array<int, 9> skyTexturesIds1 = {{3, 3, 3, 3, 3, 3, 3, 3, 3}};
 static constexpr std::array<int, 7> skyTexturesIds2 = {{3, 3, 3, 3, 3, 3, 3}};
 
+// MM6.EXE's sky rotation (tables @0x4c1874 / @0x4c1898, counts @0x4c18b4 / @0x4c18b8, format
+// "sky%02d" @0x4c1950). Same 80/20 selection code as MM7's, but MM7 collapsed both tables to
+// all-plansky3 while MM6 kept a real rotation over its sky01..sky19 bitmaps.
+static constexpr std::array<int, 9> skyTexturesIdsMm6_1 = {{1, 3, 6, 7, 8, 9, 12, 14, 15}};
+static constexpr std::array<int, 7> skyTexturesIdsMm6_2 = {{2, 5, 10, 13, 16, 18, 19}};
+
 //----- (0047A59E) --------------------------------------------------------
 void OutdoorLocation::ExecDraw(unsigned int bRedraw) {
     /*pCamera3D->debug_flags = 0;
@@ -578,19 +584,23 @@ void OutdoorLocation::Load(std::string_view filename, int days_played, int respa
         ddm.respawnCount++;
 
     // LABEL_150:
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
     if (pWeather->bRenderSnow) {  // Ritor1: it's include for snow
         loc_time.skyTextureName = "sky19";
     } else if (loc_time.lastVisitTime) {
         if (loc_time.lastVisitTime.toDays() % 28 != pParty->uCurrentDayOfMonth) {
             int sky_to_use;
             if (vrng->random(100) >= 20)
-                sky_to_use = skyTexturesIds1[vrng->random(9)];
+                sky_to_use = isMm6 ? skyTexturesIdsMm6_1[vrng->random(9)] : skyTexturesIds1[vrng->random(9)];
             else
-                sky_to_use = skyTexturesIds2[vrng->random(7)];
-            loc_time.skyTextureName = fmt::format("plansky{}", sky_to_use);
+                sky_to_use = isMm6 ? skyTexturesIdsMm6_2[vrng->random(7)] : skyTexturesIds2[vrng->random(7)];
+            loc_time.skyTextureName = isMm6 ? fmt::format("sky{:02}", sky_to_use) : fmt::format("plansky{}", sky_to_use);
         }
     } else {
-        loc_time.skyTextureName = "plansky3";
+        // First visit: MM6.EXE @0x46dfe8 copies in "sky01"; MM7's counterpart uses "plansky3".
+        // The plansky names don't exist in MM6's bitmaps.lod (except plansky1/2, editor leftovers),
+        // so the MM7 name would tile the sky with the red "pending" placeholder.
+        loc_time.skyTextureName = isMm6 ? "sky01" : "plansky3";
     }
 
     this->sky_texture = assets->getBitmap(loc_time.skyTextureName);
