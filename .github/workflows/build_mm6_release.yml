@@ -50,4 +50,5 @@ jobs:
     secrets: inherit
     with:
       releaseTag: '${{needs.recreateRelease.outputs.tagName}}'
-      targets: '["windows_x86","windows_x86_64","darwin_arm64","darwin_x86_64","linux_x86","linux_x86_64"]'
+      targets: '["windows_x86_64"]'
+      configurations: '["Debug"]'

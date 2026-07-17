@@ -19,6 +19,11 @@ on:
         required: false
         default: ''
         type: string
+      configurations:
+        description: JSON list of configurations to build, empty for the default set
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       myCommit:
@@ -33,6 +38,11 @@ on:
         type: string
       targets:
         description: JSON list of targets to build, empty for the default set
+        required: false
+        default: ''
+        type: string
+      configurations:
+        description: JSON list of configurations to build, empty for the default set
         required: false
         default: ''
         type: string
@@ -53,9 +63,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        configuration:
-          - Debug
-          - RelWithDebInfo
+        configuration: >-
+          ${{fromJSON(
+            inputs.configurations != ''
+              && inputs.configurations
+              || '["Debug","RelWithDebInfo"]'
+          )}}
         # Build the targets passed by the caller if any, otherwise android_universal on releases, per-ABI on PR
         target: >-
           ${{fromJSON(
