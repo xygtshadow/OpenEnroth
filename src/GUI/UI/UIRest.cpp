@@ -135,35 +135,41 @@ void GUIWindow_Rest::Update() {
         rest_ui_hourglass_frame_current = assets->getImage_ColorKey(fmt::format("hglas{:03}", hourglass_icon_idx));
         render->DrawQuad2D(rest_ui_hourglass_frame_current, mm6 ? Pointi(271, 164) : Pointi(267, 159));
 
+        // MM6 draws every rest-screen string with color 0 (all ten text calls in the draw fn @0x41d920),
+        // which the MM6 text drawer resolves to the font's own FONTPAL palette: white body over a black
+        // shadow - not MM7's dark-on-parchment Diesel/StarkWhite.
+        Color textColor = mm6 ? colorTable.White : colorTable.Diesel;
+        Color shadowColor = mm6 ? colorTable.Black : colorTable.StarkWhite;
+
         tmp_button.rect = mm6 ? Recti(27, 161, 171, 37) : Recti(24, 154, 171, 37);
         tmp_button.pParent = pButton_RestUI_WaitUntilDawn->pParent;
-        tmp_button.DrawLabel(localization->str(LSTR_REST_HEAL_8_HOURS), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
+        tmp_button.DrawLabel(localization->str(LSTR_REST_HEAL_8_HOURS), assets->pFontCreate.get(), textColor, shadowColor);
         tmp_button.pParent = 0;
 
         auto str1 = fmt::format("\r{}{}", mm6 ? 392 : 408, foodRequiredToRest);
-        GUIWindow::DrawText(assets->pFontCreate.get(), {0, mm6 ? 170 : 164}, colorTable.Diesel, str1, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        GUIWindow::DrawText(assets->pFontCreate.get(), {0, mm6 ? 170 : 164}, textColor, str1, pGUIWindow_CurrentMenu->frameRect, 0, shadowColor);
 
-        pButton_RestUI_WaitUntilDawn->DrawLabel(localization->str(LSTR_WAIT_UNTIL_DAWN), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
-        pButton_RestUI_Wait1Hour->DrawLabel(localization->str(LSTR_WAIT_1_HOUR), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
-        pButton_RestUI_Wait5Minutes->DrawLabel(localization->str(LSTR_WAIT_5_MINUTES), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
-        pButton_RestUI_Exit->DrawLabel(localization->str(LSTR_EXIT_REST), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
+        pButton_RestUI_WaitUntilDawn->DrawLabel(localization->str(LSTR_WAIT_UNTIL_DAWN), assets->pFontCreate.get(), textColor, shadowColor);
+        pButton_RestUI_Wait1Hour->DrawLabel(localization->str(LSTR_WAIT_1_HOUR), assets->pFontCreate.get(), textColor, shadowColor);
+        pButton_RestUI_Wait5Minutes->DrawLabel(localization->str(LSTR_WAIT_5_MINUTES), assets->pFontCreate.get(), textColor, shadowColor);
+        pButton_RestUI_Exit->DrawLabel(localization->str(LSTR_EXIT_REST), assets->pFontCreate.get(), textColor, shadowColor);
         // MM6 centers "Wait without healing" in (48, 210, 185, 22) (MM6.EXE 0x41dd45).
         tmp_button.rect = mm6 ? Recti(48, 210, 185, 22) : Recti(45, 199, 185, 30);
 
         tmp_button.pParent = pButton_RestUI_WaitUntilDawn->pParent;
-        tmp_button.DrawLabel(localization->str(LSTR_WAIT_WITHOUT_HEALING), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
+        tmp_button.DrawLabel(localization->str(LSTR_WAIT_WITHOUT_HEALING), assets->pFontCreate.get(), textColor, shadowColor);
         tmp_button.pParent = 0;
 
         CivilTime time = pParty->GetPlayingTime().toCivilTime();
 
         std::string str2 = fmt::format("{}:{:02} {}", time.hourAmPm, time.minute, localization->amPm(time.isPm));
-        DrawText(assets->pFontCreate.get(), {368, 168}, colorTable.Diesel, str2, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        DrawText(assets->pFontCreate.get(), {368, 168}, textColor, str2, pGUIWindow_CurrentMenu->frameRect, 0, shadowColor);
         std::string str3 = fmt::format("{}\r190{}", localization->str(LSTR_DAY_CAPITALIZED), time.day);
-        DrawText(assets->pFontCreate.get(), {350, 190}, colorTable.Diesel, str3, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        DrawText(assets->pFontCreate.get(), {350, 190}, textColor, str3, pGUIWindow_CurrentMenu->frameRect, 0, shadowColor);
         std::string str4 = fmt::format("{}\r190{}", localization->str(LSTR_MONTH), time.month);
-        DrawText(assets->pFontCreate.get(), {350, 222}, colorTable.Diesel, str4, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        DrawText(assets->pFontCreate.get(), {350, 222}, textColor, str4, pGUIWindow_CurrentMenu->frameRect, 0, shadowColor);
         std::string str5 = fmt::format("{}\r190{}", localization->str(LSTR_YEAR), time.year);
-        DrawText(assets->pFontCreate.get(), {350, 254}, colorTable.Diesel, str5, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        DrawText(assets->pFontCreate.get(), {350, 254}, textColor, str5, pGUIWindow_CurrentMenu->frameRect, 0, shadowColor);
         if (currentRestType != REST_NONE) {
             Party::restOneFrame();
         }
