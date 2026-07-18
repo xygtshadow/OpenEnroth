@@ -1369,8 +1369,9 @@ void GameUI_DrawCharacterSelectionFrame() {
         // MM6's active-character highlight is the animated gold oval ring "aframe1" (a sprites.lod
         // frameset, like the turn-based newhand1/newglas1 - loaded together @0x42a610). The present
         // loop draws it for CurrentPlayer right after the portraits (0x4352e5 -> 0x4353f0): x jump
-        // table {50,163,276,388} (@0x4354cc, portrait centers), y=467, bottom-center anchored like
-        // the screen overlays.
+        // table {50,163,276,388} (@0x4354cc, portrait centers), y=467. The blitter @0x4918e0
+        // anchors the sprite's BOTTOM row on row y inclusive and offsets the whole thing +1 px
+        // right (base offset = y*pitch + x - w/2 + 1), so left = x - w/2 + 1, top = y - h + 1.
         if (!pParty->hasActiveCharacter())
             return;
         static constexpr std::array<int, 4> kMm6SelectionFrameX = {50, 163, 276, 388};
@@ -1387,8 +1388,8 @@ void GameUI_DrawCharacterSelectionFrame() {
             return;
         Sprite *sprite = frame->sprites[0];
         render->DrawImage(sprite->texture,
-                          Recti(kMm6SelectionFrameX[pParty->activeCharacterIndex() - 1] - sprite->uWidth / 2,
-                                467 - sprite->uHeight, sprite->uWidth, sprite->uHeight),
+                          Recti(kMm6SelectionFrameX[pParty->activeCharacterIndex() - 1] - sprite->uWidth / 2 + 1,
+                                468 - sprite->uHeight, sprite->uWidth, sprite->uHeight),
                           frame->paletteId);
         return;
     }
