@@ -2014,7 +2014,7 @@ static void CharacterUI_StatsTab_DrawMm6(Character *player) {
         {LSTR_MAGIC, ATTRIBUTE_RESIST_MIND},
     }};
 
-    pY += fontHeight + 3; // The last damage row already advanced by h-2; the gap is 2h+1.
+    pY += 2 * fontHeight + 1; // Unlike the left column, pY still points AT the ranged-damage row here; the gap is 2h+1.
     for (const ResistanceRow &row : resistanceRows) {
         GUIWindow::DrawText(assets->pFontArrus.get(), {273, pY}, colorTable.White,
                             formatRightCol(row.label, player->GetActualResistance(row.attribute),

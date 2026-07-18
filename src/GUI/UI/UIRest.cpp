@@ -35,7 +35,8 @@ static void prepareToLoadRestUI() {
     }
     pEventTimer->setPaused(true);
     if (currentRestType != REST_HEAL) {
-        new OnButtonClick({518, 450}, {0, 0}, pBtn_Rest);
+        // The pressed-button overlay sits on the HUD rest button: MM7 (518, 450), MM6 (525, 399) (MM6.EXE 0x41d5ae).
+        new OnButtonClick(pBtn_Rest->rect.topLeft(), {0, 0}, pBtn_Rest);
     }
     remainingRestTime = Duration();
     currentRestType = REST_NONE;
@@ -88,11 +89,16 @@ GUIWindow_Rest::GUIWindow_Rest()
 
     OutdoorLocation::LoadActualSkyFrame();
 
-    pButton_RestUI_Exit = CreateButton({280, 297}, {154, 37}, BUTTON_TYPE_NORMAL, 0, UIMSG_ExitRest, 0, INPUT_ACTION_INVALID, "", {rest_ui_btn_exit});
-    pButton_RestUI_Main = CreateButton("Rest_RestAndHeal", {24, 154}, {225, 37}, BUTTON_TYPE_NORMAL, 0, UIMSG_Rest8Hour, 0, INPUT_ACTION_REST_HEAL, "", {rest_ui_btn_4});
-    pButton_RestUI_WaitUntilDawn = CreateButton("Rest_WaitTillDawn", {61, 232}, {154, 33}, BUTTON_TYPE_NORMAL, 0, UIMSG_WaitTillDawn, 0, INPUT_ACTION_REST_WAIT_TILL_DAWN, "", {rest_ui_btn_1});
-    pButton_RestUI_Wait1Hour = CreateButton("Rest_Wait1Hour", {61, 264}, {154, 33}, BUTTON_TYPE_NORMAL, 0, UIMSG_Wait1Hour, 0, INPUT_ACTION_REST_WAIT_1_HOUR, "", {rest_ui_btn_2});
-    pButton_RestUI_Wait5Minutes = CreateButton({61, 296}, {154, 33}, BUTTON_TYPE_NORMAL, 0, UIMSG_Wait5Minutes, 0, INPUT_ACTION_REST_WAIT_5_MINUTES, "", {rest_ui_btn_3});
+    // MM6's buttons sit 3px right and 7-11px below MM7's, and the three wait buttons are 27px tall,
+    // not 33 (MM6.EXE rest ctor @0x41d560: exit (283, 308) 154x37, rest & heal (27, 161) 225x37,
+    // dawn (64, 243) / 1 hour (64, 275) / 5 minutes (64, 307), all 154x27).
+    bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    Sizei waitButtonSize = mm6 ? Sizei(154, 27) : Sizei(154, 33);
+    pButton_RestUI_Exit = CreateButton(mm6 ? Pointi(283, 308) : Pointi(280, 297), {154, 37}, BUTTON_TYPE_NORMAL, 0, UIMSG_ExitRest, 0, INPUT_ACTION_INVALID, "", {rest_ui_btn_exit});
+    pButton_RestUI_Main = CreateButton("Rest_RestAndHeal", mm6 ? Pointi(27, 161) : Pointi(24, 154), {225, 37}, BUTTON_TYPE_NORMAL, 0, UIMSG_Rest8Hour, 0, INPUT_ACTION_REST_HEAL, "", {rest_ui_btn_4});
+    pButton_RestUI_WaitUntilDawn = CreateButton("Rest_WaitTillDawn", mm6 ? Pointi(64, 243) : Pointi(61, 232), waitButtonSize, BUTTON_TYPE_NORMAL, 0, UIMSG_WaitTillDawn, 0, INPUT_ACTION_REST_WAIT_TILL_DAWN, "", {rest_ui_btn_1});
+    pButton_RestUI_Wait1Hour = CreateButton("Rest_Wait1Hour", mm6 ? Pointi(64, 275) : Pointi(61, 264), waitButtonSize, BUTTON_TYPE_NORMAL, 0, UIMSG_Wait1Hour, 0, INPUT_ACTION_REST_WAIT_1_HOUR, "", {rest_ui_btn_2});
+    pButton_RestUI_Wait5Minutes = CreateButton(mm6 ? Pointi(64, 307) : Pointi(61, 296), waitButtonSize, BUTTON_TYPE_NORMAL, 0, UIMSG_Wait5Minutes, 0, INPUT_ACTION_REST_WAIT_5_MINUTES, "", {rest_ui_btn_3});
 }
 
 void GUIWindow_Rest::Update() {
@@ -123,22 +129,26 @@ void GUIWindow_Rest::Update() {
             hourglass_icon_idx = 1;
         }
 
+        // MM6's rest-screen draw @0x41d920 puts the hourglass at (271, 164), centers the rest & heal
+        // label in (27, 161, 171, 37), and right-aligns the food count to 392 at y=170 ("\r392%d").
+        bool mm6 = engine->gameVersion() == GAME_VERSION_MM6;
         rest_ui_hourglass_frame_current = assets->getImage_ColorKey(fmt::format("hglas{:03}", hourglass_icon_idx));
-        render->DrawQuad2D(rest_ui_hourglass_frame_current, {267, 159});
+        render->DrawQuad2D(rest_ui_hourglass_frame_current, mm6 ? Pointi(271, 164) : Pointi(267, 159));
 
-        tmp_button.rect = Recti(24, 154, 171, 37);
+        tmp_button.rect = mm6 ? Recti(27, 161, 171, 37) : Recti(24, 154, 171, 37);
         tmp_button.pParent = pButton_RestUI_WaitUntilDawn->pParent;
         tmp_button.DrawLabel(localization->str(LSTR_REST_HEAL_8_HOURS), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
         tmp_button.pParent = 0;
 
-        auto str1 = fmt::format("\r408{}", foodRequiredToRest);
-        GUIWindow::DrawText(assets->pFontCreate.get(), {0, 164}, colorTable.Diesel, str1, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
+        auto str1 = fmt::format("\r{}{}", mm6 ? 392 : 408, foodRequiredToRest);
+        GUIWindow::DrawText(assets->pFontCreate.get(), {0, mm6 ? 170 : 164}, colorTable.Diesel, str1, pGUIWindow_CurrentMenu->frameRect, 0, colorTable.StarkWhite);
 
         pButton_RestUI_WaitUntilDawn->DrawLabel(localization->str(LSTR_WAIT_UNTIL_DAWN), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
         pButton_RestUI_Wait1Hour->DrawLabel(localization->str(LSTR_WAIT_1_HOUR), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
         pButton_RestUI_Wait5Minutes->DrawLabel(localization->str(LSTR_WAIT_5_MINUTES), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
         pButton_RestUI_Exit->DrawLabel(localization->str(LSTR_EXIT_REST), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);
-        tmp_button.rect = Recti(45, 199, 185, 30);
+        // MM6 centers "Wait without healing" in (48, 210, 185, 22) (MM6.EXE 0x41dd45).
+        tmp_button.rect = mm6 ? Recti(48, 210, 185, 22) : Recti(45, 199, 185, 30);
 
         tmp_button.pParent = pButton_RestUI_WaitUntilDawn->pParent;
         tmp_button.DrawLabel(localization->str(LSTR_WAIT_WITHOUT_HEALING), assets->pFontCreate.get(), colorTable.Diesel, colorTable.StarkWhite);

@@ -7765,6 +7765,32 @@ GAME_TEST(Mm6, ReactorMeltdown) {
     EXPECT_EQ(GetCurrentMenuID(), MENU_MAIN);
 }
 
+// MM6's rest screen (MM6.EXE ctor @0x41d560): every button sits 3px right and 7-11px below MM7's,
+// and the three wait buttons are 27px tall, not 33.
+GAME_TEST(Mm6, RestScreenLayout) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    removeAllActorsExcept(-1); // No hostiles nearby, so resting is allowed.
+    game.tick(1);
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_RestWindow, 0, 0);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_REST);
+
+    // CreateButton stores the EXE's closed-interval width/height as w+1 / h+1.
+    EXPECT_EQ(pButton_RestUI_Main->rect, Recti(27, 161, 226, 38));
+    EXPECT_EQ(pButton_RestUI_WaitUntilDawn->rect, Recti(64, 243, 155, 28));
+    EXPECT_EQ(pButton_RestUI_Wait1Hour->rect, Recti(64, 275, 155, 28));
+    EXPECT_EQ(pButton_RestUI_Wait5Minutes->rect, Recti(64, 307, 155, 28));
+    EXPECT_EQ(pButton_RestUI_Exit->rect, Recti(283, 308, 155, 38));
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ExitRest, 0, 0);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
 // Enters a castle through its real outdoor door face, answering the entry prompt if one comes up.
 static void enterCastleThroughDoor(EngineController &game, int eventId) {
     const BLVFace *door = nullptr;
