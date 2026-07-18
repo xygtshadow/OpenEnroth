@@ -204,10 +204,13 @@ enum class Tileset {
     TILESET_WATER, // Water tile & shoreline tiles.
     TILESET_BADLANDS, // Looks like Deyja.
     TILESET_SWAMP,
+    TILESET_COOLED_LAVA, // Volcanic terrain. MM6 only - in MM7 data this slot is dirt filler.
+    TILESET_TROPICAL, // Tropical sand. MM6 only - in MM7 data this slot is dirt filler.
+    TILESET_CITY, // City stone. MM6 only - in MM7 data this slot is sand filler.
     TILESET_COBBLE_ROAD, // Cobble road on dirt.
 
     TILESET_FIRST_TERRAIN = TILESET_GRASS,
-    TILESET_LAST_TERRAIN = TILESET_SWAMP,
+    TILESET_LAST_TERRAIN = TILESET_CITY,
     TILESET_FIRST_ROAD = TILESET_COBBLE_ROAD,
     TILESET_LAST_ROAD = TILESET_COBBLE_ROAD,
 };

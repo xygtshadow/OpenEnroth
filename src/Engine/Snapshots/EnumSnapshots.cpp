@@ -65,7 +65,7 @@ void reconstruct(const TileVariant_MM7 &src, TileVariant *dst, ContextTag<bool> 
 
 void reconstruct(const Tileset_MM7 &src, Tileset *dst) {
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // The tileset numbering is the same in MM6, but the data in the road slots is not. Every MM6
+        // The tileset numbering is the same in MM6, but the data in some slots is not. Every MM6
         // outdoor map uses tileset 22 as its road group, and in MM6's dtile.bin that slot holds the
         // real cobblestone-on-dirt road tiles (drsr*) - unlike MM7, where it's dirt filler. Tileset 10
         // is real road data in MM6 too (grsr*, cobblestone on grass), but no MM6 map references it,
@@ -77,6 +77,23 @@ void reconstruct(const Tileset_MM7 &src, Tileset *dst) {
         }
         if (src == TILESET_MM7_ROAD_GRASS_COBBLE) {
             *dst = TILESET_INVALID;
+            return;
+        }
+
+        // Terrain slots 3/8/9 hold real art in MM6 (volcanic / tropical sand / city stone, complete
+        // with dirt-transition tiles), while in MM7 they are dirt/sand filler, so they get their own
+        // tilesets instead of MM7's dirt/desert fallback below. No MM6 map references tileset 9 in
+        // its terrain groups, it's mapped for tile table consistency only.
+        if (src == TILESET_MM7_COOLED_LAVA) {
+            *dst = TILESET_COOLED_LAVA;
+            return;
+        }
+        if (src == TILESET_MM7_TROPICAL) {
+            *dst = TILESET_TROPICAL;
+            return;
+        }
+        if (src == TILESET_MM7_CITY) {
+            *dst = TILESET_CITY;
             return;
         }
     }

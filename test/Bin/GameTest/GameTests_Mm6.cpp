@@ -2745,6 +2745,44 @@ GAME_TEST(Mm6, CobbleRoads) {
     EXPECT_EQ(pTileTable->tile(crossingId).textureName, "drsrcros");
 }
 
+GAME_TEST(Mm6, TerrainTilesets) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame(); // Starts in New Sorpigal.
+    game.tick(1);
+
+    // MM6's dtile.bin slots 3/8/9 hold real terrain art (volcanic / tropical sand / city stone),
+    // unlike MM7 where they are dirt/sand filler, so they must parse into their own tilesets.
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_COOLED_LAVA, TILE_VARIANT_BASE1)).textureName, "voltyl");
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_TROPICAL, TILE_VARIANT_BASE1)).textureName, "troptyl");
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_CITY, TILE_VARIANT_BASE1)).textureName, "cstyl");
+
+    // And their transition tiles must land on the transition variants, not shadow other tilesets.
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_COOLED_LAVA, TILE_VARIANT_TRANSITION_N)).textureName, "voldrtn");
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_TROPICAL, TILE_VARIANT_TRANSITION_S_W)).textureName, "tropsw");
+
+    auto countTileset = [](Tileset tileset) {
+        int result = 0;
+        for (int y = 0; y < 127; y++)
+            for (int x = 0; x < 127; x++)
+                if (pOutdoor->pTerrain.tileDataByGrid(Pointi(x, y)).tileset == tileset)
+                    result++;
+        return result;
+    };
+
+    // New Sorpigal's oute3.odm has tileset 3 in terrain group 2 with 528 tile map cells in the
+    // group's band - the volcanic patches around the mountains.
+    EXPECT_EQ(countTileset(TILESET_COOLED_LAVA), 528);
+
+    // Misty Islands' outd2.odm has tileset 8 in terrain group 2 with 441 cells - tropical beaches.
+    MapId mistyIslands = pMapStats->GetMapInfo("outd2.odm");
+    ASSERT_NE(mistyIslands, MAP_INVALID);
+    game.teleportTo(mistyIslands, Vec3f(-18688, 19200, 96), 0);
+    game.tick(1);
+    EXPECT_EQ(countTileset(TILESET_TROPICAL), 441);
+}
+
 GAME_TEST(Mm6, SaveLoadRoundtrip) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

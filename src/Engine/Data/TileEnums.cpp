@@ -96,5 +96,8 @@ MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(Tileset, CASE_INSENSITIVE, {
     {TILESET_WATER,                 "water"},
     {TILESET_BADLANDS,              "badlands"},
     {TILESET_SWAMP,                 "swamp"},
+    {TILESET_COOLED_LAVA,           "cooled_lava"},
+    {TILESET_TROPICAL,              "tropical"},
+    {TILESET_CITY,                  "city"},
     {TILESET_COBBLE_ROAD,           "cobble_road"},
 })

@@ -72,10 +72,12 @@ SoundId walkSoundForTileset(Tileset tileset, bool isRunning) {
     case TILESET_SNOW:
         return isRunning ? SOUND_RunSnow : SOUND_WalkSnow;
     case TILESET_DESERT:
+    case TILESET_TROPICAL: // MM6-only tropical sand.
         return isRunning ? SOUND_RunDesert : SOUND_WalkDesert;
-    // Leaving this code here for now, commented out b/c we've dropped TILESET_COOLED_LAVA.
-    // case TILESET_COOLED_LAVA:
-    //     return isRunning ? SOUND_RunCooledLava : SOUND_WalkCooledLava;
+    case TILESET_COOLED_LAVA:
+        return isRunning ? SOUND_RunCooledLava : SOUND_WalkCooledLava;
+    case TILESET_CITY: // MM6-only city stone.
+        return isRunning ? SOUND_RunRoad : SOUND_WalkRoad;
     case TILESET_DIRT:
         return isRunning ? SOUND_RunDirt : SOUND_WalkDirt; // Water sounds were used.
     case TILESET_WATER:
@@ -96,11 +98,11 @@ int foodRequiredForTileset(Tileset tileset) {
     case TILESET_SNOW:
     case TILESET_SWAMP:
         return 3;
-    // Leaving this code here for now, commented out b/c we've dropped TILESET_COOLED_LAVA.
-    // case TILESET_COOLED_LAVA:
+    case TILESET_COOLED_LAVA:
     case TILESET_BADLANDS:
         return 4;
     case TILESET_DESERT:
+    case TILESET_TROPICAL:
         return 5;
     default:
         return 2;
