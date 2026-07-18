@@ -294,8 +294,11 @@ GAME_TEST(MonsterListMm6, DeserializeUsesMm6RecordStride) {
     EXPECT_EQ(second.soundSampleIds[0], 2000);
 }
 
-// MM6 monsters have no tint-color field (an MM7 addition), so reconstruct must default it to white.
-GAME_TEST(MonsterListMm6, ReconstructDefaultsTintColorToWhite) {
+// MM6 monsters have no tint-color field (an MM7 addition), so reconstruct must default it to no-tint.
+// MM7's own dmonlist.bin stores 0x00000000 for every untinted monster, and no record has a nonzero
+// alpha byte. A nonzero alpha routes outdoor actor billboards into the additive-blend path
+// (TransformBillboard's opaquetest), which drew all MM6 actors see-through.
+GAME_TEST(MonsterListMm6, ReconstructDefaultsTintColorToNoTint) {
     MonsterDesc_MM6 src = makeMm6Monster("ArcherA", 173, 161, 140, 40, 1000, "archA");
 
     MonsterDesc dst;
@@ -308,10 +311,10 @@ GAME_TEST(MonsterListMm6, ReconstructDefaultsTintColorToWhite) {
     EXPECT_EQ(dst.toHitRadius, 40);
     EXPECT_EQ(dst.soundSampleIds[ACTOR_SOUND_FIRST], static_cast<SoundId>(1000));
     EXPECT_EQ(dst.spriteNames[ANIM_First], "archA");
-    EXPECT_EQ(dst.tintColor.r, 255);
-    EXPECT_EQ(dst.tintColor.g, 255);
-    EXPECT_EQ(dst.tintColor.b, 255);
-    EXPECT_EQ(dst.tintColor.a, 255);
+    EXPECT_EQ(dst.tintColor.r, 0);
+    EXPECT_EQ(dst.tintColor.g, 0);
+    EXPECT_EQ(dst.tintColor.b, 0);
+    EXPECT_EQ(dst.tintColor.a, 0);
 }
 
 static SoundInfo_MM6 makeMm6Sound(std::string_view name, uint32_t soundId, uint32_t type, uint32_t flags) {

@@ -33,7 +33,7 @@
 
 #include "Media/Audio/SoundInfo.h"
 
-#include "Library/Color/ColorTable.h"
+#include "Library/Color/Color.h"
 #include "Library/Logger/Logger.h"
 #include "Library/Snapshots/CommonSnapshots.h"
 
@@ -1345,7 +1345,10 @@ void reconstruct(const MonsterDesc_MM6 &src, MonsterDesc *dst) {
     dst->monsterRadius = src.monsterRadius;
     dst->movementSpeed = src.movementSpeed;
     dst->toHitRadius = src.toHitRadius;
-    dst->tintColor = colorTable.White;
+    // MM6 has no tint field. MM7's dmonlist.bin stores 0x00000000 for untinted monsters, and no MM7
+    // record has a nonzero alpha byte — a nonzero alpha would push outdoor actor billboards into the
+    // additive-blend path (TransformBillboard's opaquetest) and draw them see-through.
+    dst->tintColor = Color();
     reconstruct(src.soundSampleIds, &dst->soundSampleIds, tags::cast<uint16_t, SoundId>);
     reconstruct(src.internalMonsterName, &dst->internalMonsterName);
     reconstruct(src.spriteNames, &dst->spriteNames);
