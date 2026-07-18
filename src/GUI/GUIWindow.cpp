@@ -624,7 +624,7 @@ void SetUserInterface(PartyAlignment align) {
         game_ui_rightframe = game_ui_mm6_tapestries[1];                  // Fallback for MM7-shaped consumers.
         game_ui_minimap_frame = assets->getImage_Solid("mapback");       // Indoor minimap cloud backdrop at (482,25).
         game_ui_minimap_compass = assets->getImage_Solid("compass");     // 325x9 scrolling ribbon at y=10.
-        game_ui_mm6_facemask = assets->getImage_Alpha("facemask");       // Active-character highlight slab; also the popup portrait frame.
+        game_ui_mm6_facemask = assets->getImage_Alpha("facemask");       // Right-click portrait popup's frame (NOT drawn on the HUD portraits).
 
         game_ui_player_alert_green = assets->getImage_Alpha("buttgem");  // Ready-gems on the portrait pillars.
         game_ui_player_alert_yellow = assets->getImage_Alpha("buttyel");
@@ -658,7 +658,7 @@ void SetUserInterface(PartyAlignment align) {
 
         // No MM6 equivalents (MM6 has no evtnpc portrait frame - dialogue portraits sit directly on
         // the evpan panel and the MM6 draw paths skip these; MM6 shows buffs via the overlay rows,
-        // and its selection highlight is the facemask slab above, not an IB-selec frame) - keep
+        // and its selection highlight is the aframe1 sprite, not an IB-selec frame) - keep
         // placeholders.
         GraphicsImage *placeholder = GraphicsImage::Create(1, 1);
         game_ui_player_selection_frame = placeholder;
