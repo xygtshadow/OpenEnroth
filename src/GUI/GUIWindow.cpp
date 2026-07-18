@@ -622,7 +622,7 @@ void SetUserInterface(PartyAlignment align) {
         game_ui_mm6_tapestries[2] = assets->getImage_Alpha("tap3");      // Dawn.
         game_ui_mm6_tapestries[3] = assets->getImage_Alpha("tap4");      // Night.
         game_ui_rightframe = game_ui_mm6_tapestries[1];                  // Fallback for MM7-shaped consumers.
-        game_ui_minimap_frame = assets->getImage_Solid("mapback");       // Wizard-eye minimap parchment at (482,25).
+        game_ui_minimap_frame = assets->getImage_Solid("mapback");       // Indoor minimap cloud backdrop at (482,25).
         game_ui_minimap_compass = assets->getImage_Solid("compass");     // 325x9 scrolling ribbon at y=10.
         game_ui_mm6_facemask = assets->getImage_Alpha("facemask");       // Oval mask over each portrait.
 

@@ -204,7 +204,9 @@ void Engine::DrawGUI() {
     _statusBar->draw();
 
     if (!pMovie_Track && uGameState != GAME_STATE_CHANGE_LOCATION) {  // ! pVideoPlayer->pSmackerMovie)
-        GameUI_DrawMinimap(Recti(488, 16, 137, 117), viewparams->uMinimapZoom);
+        // MM6.EXE 0x43524c: DrawMinimap over x [480,632), y [25,140) - the tapestry arch window.
+        Recti minimapRect = gameVersion() == GAME_VERSION_MM6 ? Recti(480, 25, 152, 115) : Recti(488, 16, 137, 117);
+        GameUI_DrawMinimap(minimapRect, viewparams->uMinimapZoom);
     }
 
     GameUI_DrawPartySpells();

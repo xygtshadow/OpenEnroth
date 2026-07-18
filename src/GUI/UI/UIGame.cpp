@@ -1586,16 +1586,13 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
     }
 
     if (isMm6) {
-        // MM6.EXE 0x417df0: the top-right tapestry (drawn by GameUI_DrawRightPanelFrames) is the
-        // BACKGROUND here - the MAPBACK parchment (only under Wizard Eye), the map content and the
-        // scrolling compass ribbon all draw over it.
-        if (!bWizardEyeActive) {
-            render->SetUIClipRect(Recti(536, 10, 42, 9));
-            render->DrawQuad2D(game_ui_minimap_compass, {mm6CompassRibbonX(pParty->_viewYaw), 10});
-            render->ResetUIClipRect();
-            return;
-        }
-        render->DrawQuad2D(game_ui_minimap_frame, {482, 25});  // MAPBACK.
+        // MM6.EXE draws the corner minimap every frame: DrawMinimap 0x437220 is called
+        // unconditionally from the present loop @0x43524c, and the wizard-eye flag it computes gates
+        // only the object/actor dots (@0x437965). MAPBACK is not a wizard-eye parchment - it's the
+        // navy cloud backing the INDOOR outline map, blitted @0x417e05 when the level-type global
+        // 0x6107d4 says indoor. Both draw over the tapestry from GameUI_DrawRightPanelFrames.
+        if (uCurrentlyLoadedLevelType == LEVEL_INDOOR)
+            render->DrawQuad2D(game_ui_minimap_frame, {482, 25});  // MAPBACK, 151x116.
     }
 
     render->SetUIClipRect(rect);
@@ -1622,7 +1619,7 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
             int starty16 = partyy16 - (rect.h << 16) / (2 * zoom) * imageWidth;
 
             // TODO(pskelton): could stretch texture rather than rescale
-            assert(rect.w == 137 && rect.h == 117);
+            assert(rect.size() == (isMm6 ? Sizei(152, 115) : Sizei(137, 117)));
 
             RgbaImage minimapImage = RgbaImage::solid(Color(), rect.size());
             int step16 = (1 << 16) * imageWidth / zoom;
@@ -1642,7 +1639,8 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
         }
         render->BeginLines2D();
     } else if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
-        render->FillRect(rect, colorTable.NavyBlue);
+        if (!isMm6)  // MM6's navy backdrop is the MAPBACK cloud drawn above.
+            render->FillRect(rect, colorTable.NavyBlue);
         uNumBlueFacesInBLVMinimap = 0;
         render->BeginLines2D();
         for (unsigned i = 0; i < (unsigned)pIndoor->mapOutlines.size(); ++i) {
@@ -1811,6 +1809,10 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
     render->DrawQuad2D(game_ui_minimap_dirs[arrow_idx], {center.x - 3, center.y - 3});
 
     if (isMm6) {
+        // MM6.EXE DrawMinimap ends by re-blitting the tapestry (call @0x437e3a -> 0x417960): the
+        // arch is the FOREGROUND frame whose keyed window crops the square map blit into the cloud
+        // shape (the compass slit is keyed too, so the ribbon shows through).
+        render->DrawQuad2D(mm6TapestryForHour(pParty->uCurrentHour), {468, 0});
         render->SetUIClipRect(Recti(536, 10, 42, 9));
         render->DrawQuad2D(game_ui_minimap_compass, {mm6CompassRibbonX(pParty->_viewYaw), 10});
         render->ResetUIClipRect();

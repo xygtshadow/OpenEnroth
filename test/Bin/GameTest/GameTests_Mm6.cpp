@@ -36,6 +36,7 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
+#include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/TurnEngine/TurnEngineEnums.h"
 #include "Engine/Objects/Actor.h"
@@ -4945,8 +4946,8 @@ GAME_TEST(Mm6, TownHallBountyHunt) {
 
 // The MM6 in-game HUD draws from MM6's own skin assets (reversed from MM6.EXE: asset loader @0x418090,
 // HUD draw cluster @0x417dc0/0x417df0/0x486900): border3/border4 edges around the viewport, a
-// time-of-day tapestry (TAP1..4) over the top-right block with the wizard-eye minimap (MAPBACK) and the
-// scrolling compass ribbon showing through its color-keyed holes, the border1.pcx right panel (books /
+// time-of-day tapestry (TAP1..4) over the top-right block with the minimap and the scrolling compass
+// ribbon showing through its color-keyed holes, the border1.pcx right panel (books /
 // medallions / hireling windows), the border2.pcx portrait strip with per-face frame sets
 // (malea..maleh / girla..girld, 53 frames each), bottom-anchored HP/SP pillar bars, ready-gems, and the
 // footer status bar.
@@ -5014,7 +5015,7 @@ GAME_TEST(Mm6, GameHudSkin) {
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
 
-    // The wizard-eye minimap path draws without crashing (MAPBACK + map content + tapestry overlay).
+    // The wizard-eye dots path draws without crashing (map content + object/actor dots).
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Apply(pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_MASTER, 5, 0, 0);
     game.tick(3);
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
@@ -5076,6 +5077,37 @@ GAME_TEST(Mm6, GameHudSkin) {
     EXPECT_EQ(defaultColor, ui_character_stat_default_color);
     EXPECT_EQ(buffedColor, ui_character_stat_buffed_color);
     EXPECT_EQ(debuffedColor, ui_character_stat_debuffed_color);
+}
+
+// MM6 shows the corner minimap at all times. MM6.EXE calls DrawMinimap (0x437220) unconditionally
+// from the present loop (@0x43524c, rect x [480,632) x y [25,140)); the wizard-eye buff (plus the
+// Cartographer hireling @0x4372c2) gates only the object/actor dots inside it. MAPBACK is the navy
+// cloud backing the INDOOR outline map (blitted @0x417e05 when the level-type global 0x6107d4 says
+// indoor), not a wizard-eye parchment. OE used to model the whole minimap as wizard-eye-only, which
+// left the tapestry window showing its black backing fill in normal play (play-test report #6).
+GAME_TEST(Mm6, MinimapAlwaysVisible) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(3);
+    EXPECT_FALSE(pParty->wizardEyeActive());
+
+    // Outdoors: the map content source is the real per-map minimap texture from MM6's icons.lod
+    // (oute3 for New Sorpigal), not the "pending" placeholder.
+    ASSERT_NE(viewparams->location_minimap, nullptr);
+    EXPECT_EQ(viewparams->location_minimap->size(), Sizei(512, 512));
+
+    // Indoors: the minimap outline pass runs every frame WITHOUT Wizard Eye, marking seen outlines -
+    // the observable side effect of the map content path actually drawing.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+    game.tick(3);
+    bool anyOutlineSeen = false;
+    for (char flags : pIndoor->_visible_outlines)
+        anyOutlineSeen = anyOutlineSeen || flags != 0;
+    EXPECT_TRUE(anyOutlineSeen);
 }
 
 // Milestone 72: the quest/autonotes/map/calendar books draw from MM6's own assets - the shared
