@@ -2051,7 +2051,11 @@ void reconstruct(const PortraitFrameData_MM7 &src, PortraitFrameData *dst) {
 
 void reconstruct(const LevelDecoration_MM6 &src, LevelDecoration_MM7 *dst) {
     static_cast<LevelDecoration_MM6 &>(*dst) = src;
-    dst->eventVarId = 0; // Persistent decoration event variables are an MM7 addition.
+    // Persistent decoration event variables are an MM7 addition. MM7 files store eventVarId with
+    // a +75 offset that reconstruct(LevelDecoration_MM7, LevelDecoration) subtracts, so write
+    // the offset zero here - a bare 0 would come out as -75 and index out of decorVars' bounds
+    // on decorations that PrepareDecorations() doesn't reassign (the interactive ones past 124).
+    dst->eventVarId = 75;
     dst->field_1E = 0;
 }
 

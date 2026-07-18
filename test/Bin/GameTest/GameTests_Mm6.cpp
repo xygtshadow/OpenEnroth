@@ -8532,3 +8532,35 @@ GAME_TEST(Mm6, ActorWalkAnimationsAdvance) {
     EXPECT_EQ(pSpriteFrameTable->GetFrame(batC, 0_ticks)->paletteId, 161);
 }
 
+// Hovering or clicking an interactive decoration indexes the 125-slot decorVars array with the
+// decoration's eventVarId (UIGame.cpp / Viewport.cpp / CastSpellInfo.cpp), so every eventVarId
+// must stay in bounds. MM6 decorations reconstruct through LevelDecoration_MM7 and then pick up
+// the MM7 file format's -75 eventVarId shift; PrepareDecorations() only reassigns the first 124
+// interactive decorations, so on a map with more of them (New Sorpigal has hundreds) the rest
+// kept eventVarId == -75, and mousing over one tripped an out-of-range assert.
+GAME_TEST(Mm6, DecorationEventVarIdsInBounds) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    ASSERT_EQ(uCurrentlyLoadedLevelType, LEVEL_OUTDOOR);
+
+    int interactiveCount = 0;
+    for (LevelDecoration &decor : pLevelDecorations) {
+        if (decor.uEventID || !decor.IsInteractive())
+            continue;
+        interactiveCount++;
+        ASSERT_GE(decor.eventVarId, 0) << "decoration desc " << std::to_underlying(decor.uDecorationDescID);
+        ASSERT_LT(decor.eventVarId, (int)engine->_persistentVariables.decorVars.size())
+            << "decoration desc " << std::to_underlying(decor.uDecorationDescID);
+    }
+    // The crash needs the overflow tail: more interactive decorations than PrepareDecorations()
+    // assigns ids to. If a future MM6-aware IsInteractive() drops the count below this, pick a
+    // different map (or drop this check) - the bounds asserts above are the actual invariant.
+    EXPECT_GT(interactiveCount, 124);
+}
+
