@@ -27,6 +27,8 @@ std::vector<std::string> resolveGamePaths(Environment *environment, GameVersion 
 /**
  * Validates that `dataPath` holds a complete data set for the given game version.
  *
+ * @param dataPath                  Data path to validate.
+ * @param version                   Game version to validate against.
  * @param[out] missingFile          Set to the first required file that's missing, if validation fails.
  * @return                          True if `dataPath` is a valid data folder for `version`.
  */
