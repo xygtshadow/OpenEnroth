@@ -1366,7 +1366,8 @@ void GameUI_WritePointedObjectStatusString() {
 //----- (0044158F) --------------------------------------------------------
 void GameUI_DrawCharacterSelectionFrame() {
     if (engine->gameVersion() == GAME_VERSION_MM6)
-        return;  // MM6 has no IB-selec analog; the active-character highlight is a fidelity leftover.
+        return;  // MM6's active-character highlight is the FACEMASK slab, drawn in the portrait pass
+                 // (before the buff fx overlays) - see GameUI_DrawPortraits.
     if (pParty->hasActiveCharacter())
         render->DrawQuad2D(game_ui_player_selection_frame,
             {pPlayerPortraitsXCoords_For_PlayerBuffAnimsDrawing[pParty->activeCharacterIndex() - 1] - 9, 380});
@@ -1427,8 +1428,11 @@ void GameUI_DrawPortraits() {
     pParty->updateDelayedReaction();
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6.EXE 0x486900: faces at ({22,135,248,360}, 383), the facemask oval drawn over each at (-2, -2),
-        // and a per-character alert gem (green / yellow / red) at (+56, 378) while the character can act.
+        // MM6.EXE 0x486900: faces at ({22,135,248,360}, 383), and a per-character alert gem
+        // (green / yellow / red) at (+56, 378) while the character can act.
+        // FACEMASK (a dark slab with a bright oval rim, 63x83) is MM6's active-character highlight: the
+        // original draws it at face -(2,2) over the SELECTED portrait only (same geometry as its other
+        // use, the right-click portrait popup @0x41a7ec) - never over all four.
         for (int i = 0; i < pParty->pCharacters.size(); ++i) {
             Character *pPlayer = &pParty->pCharacters[i];
             Color tint = pParty->pPartyBuffs[PARTY_BUFF_INVISIBILITY].Active() ? colorTable.MediumGrey : colorTable.White;
@@ -1448,7 +1452,8 @@ void GameUI_DrawPortraits() {
                 pPortrait = game_ui_player_faces[i][pPlayer->portraitImageIndex];
             }
             render->DrawQuad2D(pPortrait, {kMm6PortraitX[i], kMm6PortraitY}, tint);
-            render->DrawQuad2D(game_ui_mm6_facemask, {kMm6PortraitX[i] - 2, kMm6PortraitY - 2}, tint);
+            if (pParty->hasActiveCharacter() && pParty->activeCharacterIndex() - 1 == i)
+                render->DrawQuad2D(game_ui_mm6_facemask, {kMm6PortraitX[i] - 2, kMm6PortraitY - 2}, tint);
         }
 
         // The persistent per-character/party buff fx render as part of the portrait pass in MM6.EXE (0x436010).
