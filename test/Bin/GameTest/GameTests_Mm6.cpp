@@ -2762,6 +2762,12 @@ GAME_TEST(Mm6, TerrainTilesets) {
     EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_COOLED_LAVA, TILE_VARIANT_TRANSITION_N)).textureName, "voldrtn");
     EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_TROPICAL, TILE_VARIANT_TRANSITION_S_W)).textureName, "tropsw");
 
+    // Water shore tiles must keep their wtrdr* names - the hwtrdr* rename is MM7-only hardware-renderer
+    // art that doesn't exist in MM6's bitmaps.lod. With the rename they all loaded as the 64x64 error
+    // texture, and the first one to claim a renderer texture unit pushed all real 128px terrain tiles
+    // out of the unit the terrain shader samples, turning ALL outdoor terrain into water/error art.
+    EXPECT_EQ(pTileTable->tile(pTileTable->tileId(TILESET_WATER, TILE_VARIANT_TRANSITION_N)).textureName, "wtrdrn");
+
     auto countTileset = [](Tileset tileset) {
         int result = 0;
         for (int y = 0; y < 127; y++)
@@ -8756,4 +8762,5 @@ GAME_TEST(Mm6, BarrelHoverAndClick) {
     game.tick(1);
     EXPECT_EQ(engine->_statusBar->get(), "Empty Barrel");
 }
+
 
