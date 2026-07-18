@@ -19,6 +19,7 @@
 
 #include "Engine/Engine.h"
 #include "Engine/Resources/EngineFileSystem.h"
+#include "Engine/Resources/LodTextureCache.h"
 #include "Engine/EngineGlobals.h"
 #include "Engine/Graphics/BspRenderer.h"
 #include "Engine/Graphics/Image.h"
@@ -1040,9 +1041,11 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                     // else need to add it
                     auto thistexture = assets->getBitmap(tile.textureName, tile.flags & TILE_GENERATED_TRANSITION);
                     int width = thistexture->width();
-                    // check size to see what unit it needs
+                    // check size to see what unit it needs. Unit 0 is reserved for water - the terrain shader
+                    // only samples regular tiles from textureArray1, so never assign them to unit 0. This matters
+                    // when the water texture has the same size as regular tiles (MM6's wtrtyl fallback).
                     int i;
-                    for (i = 0; i < 8; i++) {
+                    for (i = 1; i < 8; i++) {
                         if (terraintexturesizes[i] == width || terraintexturesizes[i] == 0) break;
                     }
 
@@ -1147,8 +1150,10 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                 int tunit = (comb & 0xFF00) >> 8;
 
                 if (tunit == unit) {
-                    // get texture
-                    auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
+                    // get texture - water layers go through hd_water_tile_anim, the HDWTR names might be fallback-mapped
+                    GraphicsImage *texture = it->first.starts_with("HDWTR")
+                        ? hd_water_tile_anim[tlayer]
+                        : assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
                     glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
                         0,
@@ -2450,8 +2455,10 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
                 int tunit = (comb & 0xFF00) >> 8;
 
                 if (tunit == unit) {
-                    // get texture
-                    auto texture = assets->getBitmap(it->first);
+                    // get texture - water layers go through hd_water_tile_anim, the HDWTR names might be fallback-mapped
+                    GraphicsImage *texture = it->first.starts_with("HDWTR")
+                        ? hd_water_tile_anim[tlayer]
+                        : assets->getBitmap(it->first);
 
                     glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
                         0,
@@ -2930,8 +2937,10 @@ void OpenGLRenderer::DrawIndoorFaces() {
                     int tunit = (comb & 0xFF00) >> 8;
 
                     if (tunit == unit) {
-                        // get texture
-                        auto texture = assets->getBitmap(it->first);
+                        // get texture - water layers go through hd_water_tile_anim, the HDWTR names might be fallback-mapped
+                        GraphicsImage *texture = it->first.starts_with("HDWTR")
+                            ? hd_water_tile_anim[tlayer]
+                            : assets->getBitmap(it->first);
 
                         glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
                             0,
@@ -3467,8 +3476,11 @@ void OpenGLRenderer::_initWaterTiles() {
     if (hd_water_tile_anim[0])
         return;
 
+    // MM6 data has no hdwtr* pre-rendered water animation frames, its water is the single static
+    // wtrtyl tile - use it for all frames there.
+    bool hasHdWater = pBitmaps_LOD->loadTexture("hdwtr000", /*useDummyOnError=*/false) != nullptr;
     for (unsigned i = 0; i < 7; ++i) {
-        std::string container_name = fmt::format("HDWTR{:03}", i);
+        std::string container_name = hasHdWater ? fmt::format("HDWTR{:03}", i) : "wtrtyl";
         hd_water_tile_anim[i] = assets->getBitmap(container_name);
     }
 }
