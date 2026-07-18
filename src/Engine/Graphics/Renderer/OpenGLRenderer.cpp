@@ -59,6 +59,12 @@
     #define LOWORD(l) ((unsigned short)(((std::uintptr_t)(l)) & 0xFFFF))
 #endif
 
+// From GL_EXT_texture_filter_anisotropic, not exposed by our glad headers.
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+    #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+    #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+
 static constexpr int DEFAULT_AMBIENT_LIGHT_LEVEL = 0;
 
 // globals
@@ -1157,11 +1163,7 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
             }
 
             // last texture setups
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            _setWorldTextureFiltering(GL_CLAMP_TO_EDGE);
         }
     }
 
@@ -2471,12 +2473,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
             //bool border = tile->IsWaterBorderTile();
 
 
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            _setWorldTextureFiltering(GL_REPEAT);
         }
     }
 
@@ -2953,12 +2950,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
 
 
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-                glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+                _setWorldTextureFiltering(GL_REPEAT);
             }
         }
 
@@ -3382,6 +3374,22 @@ bool OpenGLRenderer::Initialize() {
         //                     openenroth requires opengl core 4.1 or opengles 3.2 capable gpu to run.
     }
 
+    // Anisotropic filtering is not part of core OpenGL, but the extension is ubiquitous.
+    GLint numExtensions = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
+    for (GLint i = 0; i < numExtensions; i++) {
+        std::string_view extension = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
+        if (extension == "GL_EXT_texture_filter_anisotropic" || extension == "GL_ARB_texture_filter_anisotropic") {
+            glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &_maxAnisotropy);
+            break;
+        }
+    }
+    if (_maxAnisotropy > 1.0f) {
+        logger->info("Anisotropic filtering: up to {}x", _maxAnisotropy);
+    } else {
+        logger->info("Anisotropic filtering: unsupported");
+    }
+
     gladSetGLPostCallback(GL_Check_Errors);
 
     _initImGui();
@@ -3463,6 +3471,18 @@ void OpenGLRenderer::_initWaterTiles() {
         std::string container_name = fmt::format("HDWTR{:03}", i);
         hd_water_tile_anim[i] = assets->getBitmap(container_name);
     }
+}
+
+void OpenGLRenderer::_setWorldTextureFiltering(GLint wrapMode) {
+    // Trilinear + anisotropic filtering. The original software renderers did per-span mip selection, so plain
+    // GL_LINEAR here would make distant textures shimmer in a way the original games didn't.
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, wrapMode);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, wrapMode);
+    if (_maxAnisotropy > 1.0f)
+        glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::min(16.0f, _maxAnisotropy));
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
 }
 
 bool OpenGLRenderer::Reinitialize(bool firstInit) {

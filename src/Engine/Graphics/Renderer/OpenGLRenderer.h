@@ -110,6 +110,7 @@ class OpenGLRenderer : public BaseRenderer {
     void _initImGui();
     void _shutdownImGui();
     void _initWaterTiles();
+    void _setWorldTextureFiltering(GLint wrapMode);
 
     FrameLimiter _frameLimiter;
 
@@ -130,6 +131,8 @@ class OpenGLRenderer : public BaseRenderer {
     int GPU_MAX_TEX_UNITS{};
     int GPU_MAX_UNIFORM_COMP{};
     int GPU_MAX_TOTAL_TEXTURES{};
+
+    float _maxAnisotropy{}; // 0 when anisotropic filtering is unsupported.
 
     OpenGLShader terrainshader;
     OpenGLShader outbuildshader;

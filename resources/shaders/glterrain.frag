@@ -36,8 +36,9 @@ void main() {
     // get normal texture at point
     fragcol = texture(textureArray1, vec3(texuv.x,texuv.y,olayer));
 
-    // replace texture with water if alpha or a water tile (bit 0x1 in attribs)
-    if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0){
+    // replace texture with water if transparent or a water tile (bit 0x1 in attribs)
+    // mipmap averaging makes alpha fractional at a distance, hence the 0.5 threshold
+    if (fragcol.a < 0.5 || (vsAttrib & 0x1) > 0){
         fragcol = watercol;
     }
 
