@@ -2721,6 +2721,30 @@ GAME_TEST(Mm6, TerrainUnchangedBySeasons) {
     EXPECT_EQ(winter, summer);
 }
 
+GAME_TEST(Mm6, CobbleRoads) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame(); // Starts in New Sorpigal.
+    game.tick(1);
+
+    // Every MM6 outdoor map puts tileset 22 in the road slot of its tileset table, and in MM6's
+    // dtile.bin that's drsr* - the cobblestone-on-dirt road tiles. New Sorpigal's oute3.odm has
+    // 116 road-band cells in its tile map, and roads are exempt from transition recalculation,
+    // so all 116 must come out as road tiles.
+    int roadCells = 0;
+    for (int y = 0; y < 127; y++)
+        for (int x = 0; x < 127; x++)
+            if (pOutdoor->pTerrain.tileDataByGrid(Pointi(x, y)).tileset == TILESET_COBBLE_ROAD)
+                roadCells++;
+    EXPECT_EQ(roadCells, 116);
+
+    // And the road tile group resolves to the drsr* tiles, not to MM7's grass-cobble roads.
+    int crossingId = pTileTable->tileId(TILESET_COBBLE_ROAD, TILE_VARIANT_ROAD_N_S_E_W);
+    ASSERT_NE(crossingId, 0);
+    EXPECT_EQ(pTileTable->tile(crossingId).textureName, "drsrcros");
+}
+
 GAME_TEST(Mm6, SaveLoadRoundtrip) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "Engine/Engine.h"
 #include "Engine/Data/TileEnums.h"
 
 void reconstruct(const TileVariant_MM7 &src, TileVariant *dst, ContextTag<bool> isRoad, ContextTag<std::string> name) {
@@ -63,6 +64,23 @@ void reconstruct(const TileVariant_MM7 &src, TileVariant *dst, ContextTag<bool> 
 }
 
 void reconstruct(const Tileset_MM7 &src, Tileset *dst) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // The tileset numbering is the same in MM6, but the data in the road slots is not. Every MM6
+        // outdoor map uses tileset 22 as its road group, and in MM6's dtile.bin that slot holds the
+        // real cobblestone-on-dirt road tiles (drsr*) - unlike MM7, where it's dirt filler. Tileset 10
+        // is real road data in MM6 too (grsr*, cobblestone on grass), but no MM6 map references it,
+        // and letting it keep MM7's road mapping would shadow the drsr* tiles in the tileset+variant
+        // lookup, as grsr* tiles come first in dtile.bin.
+        if (src == TILESET_MM7_ROAD_CRACKED_COBBLE) {
+            *dst = TILESET_COBBLE_ROAD;
+            return;
+        }
+        if (src == TILESET_MM7_ROAD_GRASS_COBBLE) {
+            *dst = TILESET_INVALID;
+            return;
+        }
+    }
+
     switch (src) {
     case TILESET_MM7_INVALID:               *dst = TILESET_INVALID; break;
     case TILESET_MM7_GRASS:                 *dst = TILESET_GRASS; break;
