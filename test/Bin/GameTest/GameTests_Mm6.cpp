@@ -5147,6 +5147,36 @@ GAME_TEST(Mm6, GameHudSkin) {
     EXPECT_EQ(debuffedColor, ui_character_stat_debuffed_color);
 }
 
+// The MM6 quick-reference screen: MM6's quikref bitmap is only the box frame (teal-keyed interior)
+// and goes at (0,0) - the EXE first fills the viewport with LEATHER + the (7,8)/(461,8) corner
+// patches (MM6.EXE 0x416884..0x4168d3), draws the character columns at 91+94*i (0x416919), and
+// blits the buttexi1 exit button at (391,316) every frame (0x417387). OE used to draw only the
+// frame, at MM7's (8,8) - a black screen with 8px-misaligned text and no visible exit button
+// (play-test report).
+GAME_TEST(Mm6, QuickReferenceScreen) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(3);
+
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_QuickReference, 0, 0);
+    game.tick(3); // Opens the screen and runs its draw path.
+    EXPECT_EQ(current_screen_type, SCREEN_QUICK_REFERENCE);
+    // Every piece resolves to real MM6 art of the original dimensions.
+    EXPECT_EQ(assets->getImage_ColorKey("quikref")->size(), Sizei(460, 346)); // The frame-only bitmap.
+    EXPECT_EQ(ui_leather_mm7->size(), Sizei(460, 344));                       // The fill under it.
+    EXPECT_EQ(assets->getImage_Solid("buttexi1")->size(), Sizei(64, 32));     // The exit-button art.
+
+    // The exit hitbox matches the EXE's CreateButton (MM6.EXE 0x42ceb0: 391,316 + 75x33 as a
+    // closed interval, stored half-open as +1).
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(391, 316, 76, 34));
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
 // MM6 shows the corner minimap at all times. MM6.EXE calls DrawMinimap (0x437220) unconditionally
 // from the present loop (@0x43524c, rect x [480,632) x y [25,140)); the wizard-eye buff (plus the
 // Cartographer hireling @0x4372c2) gates only the object/actor dots inside it. MAPBACK is the navy

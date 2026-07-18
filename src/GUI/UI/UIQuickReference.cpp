@@ -12,10 +12,12 @@
 #include "GUI/GUIButton.h"
 #include "GUI/GUIFont.h"
 #include "GUI/UI/UIQuickReference.h"
+#include "GUI/UI/UIGame.h"
 
 #include "Media/Audio/AudioPlayer.h"
 
 GraphicsImage *ui_game_quickref_background = nullptr;
+static GraphicsImage *mm6_quickref_exit_button = nullptr;  // buttexi1, blitted every frame (MM6.EXE 0x417387).
 
 GUIWindow_QuickReference::GUIWindow_QuickReference() : GUIWindow(WINDOW_QuickReference, {0, 0}, render->GetRenderDimensions()) {
     // 004304E7 Game_EventLoop --- part
@@ -26,6 +28,9 @@ GUIWindow_QuickReference::GUIWindow_QuickReference() : GUIWindow(WINDOW_QuickRef
 
     if (!ui_game_quickref_background)
         ui_game_quickref_background = assets->getImage_ColorKey("quikref");
+
+    if (engine->gameVersion() == GAME_VERSION_MM6 && !mm6_quickref_exit_button)
+        mm6_quickref_exit_button = assets->getImage_Solid("buttexi1");
 
     pBtn_ExitCancel = CreateButton({0x187u, 0x13Cu}, {0x4Bu, 0x21u}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0,
                                    INPUT_ACTION_INVALID, localization->str(LSTR_EXIT_DIALOGUE), {ui_buttdesc2});
@@ -44,7 +49,19 @@ void GUIWindow_QuickReference::Update() {
     Color pTextColor;
     int pFontHeight = assets->pFontArrus->GetHeight() + 1;
 
-    render->DrawQuad2D(ui_game_quickref_background, {8, 8});
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    if (isMm6) {
+        // MM6's quikref bitmap is only the box frame (its interior is the transparency key), and it
+        // goes at (0,0) over the standard char-screen base: LEATHER filling the viewport with the
+        // corner patches on top (MM6.EXE 0x416884..0x4168d3). MM7 bakes the whole screen into one
+        // opaque bitmap drawn at (8,8).
+        render->DrawQuad2D(ui_leather_mm7, {8, 8});
+        render->DrawQuad2D(game_ui_mm6_border5, {7, 8});
+        render->DrawQuad2D(game_ui_mm6_border6, {461, 8});
+        render->DrawQuad2D(ui_game_quickref_background, {0, 0});
+    } else {
+        render->DrawQuad2D(ui_game_quickref_background, {8, 8});
+    }
 
     pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {22, 18}, colorTable.White, localization->str(LSTR_NAME), 60, 0);
     pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {22, 47}, colorTable.White, localization->str(LSTR_LEVEL), 60, 0);
@@ -73,7 +90,7 @@ void GUIWindow_QuickReference::Update() {
     pY += pFontHeight;
     pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {22, pY}, colorTable.White, localization->str(LSTR_QSPELL), 60, 0);
 
-    int pX = 89;
+    int pX = isMm6 ? 91 : 89;  // MM6 character columns are at 91+94*i (MM6.EXE 0x416919).
     for (Character &player : pParty->pCharacters) {
         pGUIWindow_CurrentMenu->DrawTextInRect(assets->pFontArrus.get(), {pX, 18}, ui_character_header_text_color, player.name, 84, 0);
 
@@ -131,7 +148,7 @@ void GUIWindow_QuickReference::Update() {
         pX += 94;
     }
 
-    if (engine->gameVersion() == GAME_VERSION_MM6) {
+    if (isMm6) {
         // MM6 is positive = good (MM6.EXE 0x4172DC): bad color below zero, plain up to
         // Respectable, good color from +200 up.
         int reputation = pParty->GetPartyReputation();
@@ -150,4 +167,9 @@ void GUIWindow_QuickReference::Update() {
     GUIWindow::DrawText(assets->pFontArrus.get(), {22, 323}, colorTable.White, rep, pGUIWindow_CurrentMenu->frameRect);
     std::string fame = fmt::format("\r261{}: {}", localization->str(LSTR_FAME), pParty->getPartyFame());
     GUIWindow::DrawText(assets->pFontArrus.get(), {0, 323}, colorTable.White, fame, pGUIWindow_CurrentMenu->frameRect);
+
+    // MM6 blits the exit button art every frame after the text (MM6.EXE 0x417387); MM7 has it
+    // baked into the quikref bitmap instead.
+    if (isMm6)
+        render->DrawQuad2D(mm6_quickref_exit_button, {391, 316});
 }
