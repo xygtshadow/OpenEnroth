@@ -935,21 +935,6 @@ void deserialize(const Blob &src, SaveGameLite_MM7 *dst) {
 void reconstruct(const SpriteFrameTable_MM6 &src, SpriteFrameTable *dst) {
     reconstruct(src.frames, &dst->pSpriteSFrames);
     reconstruct(src.eframes, &dst->pSpriteEFrames);
-
-    // MM6 sprite frames don't store a per-frame total animation length (an MM7 addition). Derive it:
-    // frames are grouped into animation sequences chained by SPRITE_FRAME_HAS_MORE, and the group's
-    // total length (the sum of the per-frame lengths) is stored on the group's first frame - which is
-    // the only frame GetFrame() reads animationLength from.
-    Duration groupLength;
-    size_t groupStart = 0;
-    for (size_t i = 0; i < dst->pSpriteSFrames.size(); i++) {
-        groupLength += dst->pSpriteSFrames[i].frameLength;
-        if (!(dst->pSpriteSFrames[i].flags & SPRITE_FRAME_HAS_MORE)) {
-            dst->pSpriteSFrames[groupStart].animationLength = groupLength;
-            groupStart = i + 1;
-            groupLength = Duration();
-        }
-    }
 }
 
 void deserialize(InputStream &src, SpriteFrameTable_MM6 *dst) {

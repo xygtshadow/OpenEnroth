@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -23,12 +24,40 @@
 #include "Utility/Memory/Blob.h"
 #include "Utility/Streams/BlobInputStream.h"
 
-static SpriteFrame_MM6 makeMm6Frame(int32_t scale, int32_t flags, int16_t frameLength) {
+static SpriteFrame_MM6 makeMm6Frame(int32_t scale, uint16_t flags, int16_t frameLength, int16_t animationLength) {
     SpriteFrame_MM6 frame = {};
     frame.scale = scale;
     frame.flags = flags;
     frame.frameLength = frameLength;
+    frame.animationLength = animationLength;
     return frame;
+}
+
+// Builds one 56-byte MM6 sprite frame record byte by byte, independently of the SpriteFrame_MM6
+// struct layout, so these tests catch field-offset mistakes in the struct itself.
+static std::string makeMm6FrameBytes(std::string_view groupName, std::string_view textureName, int32_t scale,
+                                     uint16_t bits, int16_t lightRadius, int16_t paletteId, int16_t paletteIndex,
+                                     int16_t time, int16_t totalTime) {
+    std::string bytes;
+    auto appendPod = [&bytes](const auto &value) {
+        bytes.append(reinterpret_cast<const char *>(&value), sizeof(value));
+    };
+    std::array<char, 12> name = {};
+    std::copy(groupName.begin(), groupName.end(), name.begin());
+    bytes.append(name.data(), name.size());
+    name = {};
+    std::copy(textureName.begin(), textureName.end(), name.begin());
+    bytes.append(name.data(), name.size());
+    std::array<int16_t, 8> hwSpriteIds = {};
+    appendPod(hwSpriteIds);
+    appendPod(scale);
+    appendPod(bits);
+    appendPod(lightRadius);
+    appendPod(paletteId);
+    appendPod(paletteIndex);
+    appendPod(time);
+    appendPod(totalTime);
+    return bytes;
 }
 
 // Serializes a SpriteFrameTable in MM6 on-disk layout: u32 frameCount, u32 eframeCount, then
@@ -55,8 +84,8 @@ static Blob makeMm6SpriteTableBlob(const std::vector<SpriteFrame_MM6> &frames, c
 // deserializer must use the 56-byte stride, or records desync.
 GAME_TEST(SpriteFrameTableMm6, DeserializeUsesMm6RecordStride) {
     std::vector<SpriteFrame_MM6> frames = {
-        makeMm6Frame(65536, static_cast<int32_t>(SPRITE_FRAME_HAS_MORE), 10),
-        makeMm6Frame(131072, 0, 20),
+        makeMm6Frame(65536, static_cast<uint16_t>(SPRITE_FRAME_HAS_MORE), 10, 30),
+        makeMm6Frame(131072, 0, 20, 0),
     };
     std::vector<uint16_t> eframes = {0, 1};
 
@@ -76,18 +105,27 @@ GAME_TEST(SpriteFrameTableMm6, DeserializeUsesMm6RecordStride) {
     EXPECT_EQ(table.eframes[1], 1);
 }
 
-// MM6 doesn't store the total animation length per frame, so reconstruct must derive it as the
-// sum of frame lengths within each SPRITE_FRAME_HAS_MORE group, stored on the group's first frame.
-GAME_TEST(SpriteFrameTableMm6, ReconstructDerivesAnimationLength) {
-    std::vector<SpriteFrame_MM6> frames = {
-        // Group 1: two chained frames (10 + 20 = 30).
-        makeMm6Frame(65536, static_cast<int32_t>(SPRITE_FRAME_HAS_MORE), 10),
-        makeMm6Frame(65536, 0, 20),
-        // Group 2: single standalone frame (5).
-        makeMm6Frame(65536, 0, 5),
-    };
+// MM6's SFT records pack the flag bits into TWO bytes (MM7 widened the field to 4), so every field
+// after them sits 2 bytes earlier than in MM7: lightRadius, paletteId, paletteIndex, then BOTH the
+// per-frame time and the group total time - MM6 does store the total, on the group's first frame.
+// Reading the flags as 4 bytes shifted all of these: frameLength picked up the total time (which is
+// 0 on every chained frame, freezing every sprite animation on its first frame), glowRadius picked
+// up the palette id (hanging a spurious light on every billboard), paletteId picked up the
+// always-zero paletteIndex, and a nonzero light radius leaked into the flag word's high bits
+// (SPRITE_FRAME_GLOWING / SPRITE_FRAME_TRANSPARENT are up there).
+GAME_TEST(SpriteFrameTableMm6, DeserializeReadsMm6FieldOffsets) {
+    // The first two frames of MM6's bat-A walk group (dsft.bin records 1525-1526), byte-exact,
+    // plus a self-lit frame with a real light radius.
+    std::string bytes;
+    uint32_t frameCount = 3;
+    uint32_t eframeCount = 0;
+    bytes.append(reinterpret_cast<const char *>(&frameCount), sizeof(frameCount));
+    bytes.append(reinterpret_cast<const char *>(&eframeCount), sizeof(eframeCount));
+    bytes += makeMm6FrameBytes("bAwlka", "bhwlka", 32768, 0xE005, 0, 159, 0, 2, 12);
+    bytes += makeMm6FrameBytes("", "bhwlkb", 32768, 0xE001, 0, 159, 0, 2, 0);
+    bytes += makeMm6FrameBytes("torch", "torch1", 65536, 0x0016, 300, 3, 0, 5, 5);
 
-    BlobInputStream input(makeMm6SpriteTableBlob(frames, {}));
+    BlobInputStream input(Blob::fromString(std::move(bytes)));
     SpriteFrameTable_MM6 table;
     deserialize(input, &table);
 
@@ -95,11 +133,28 @@ GAME_TEST(SpriteFrameTableMm6, ReconstructDerivesAnimationLength) {
     reconstruct(table, &dst);
 
     ASSERT_EQ(dst.pSpriteSFrames.size(), 3u);
-    // Frame lengths and animation lengths are stored in 1/16s units in the file, *8 -> ticks.
-    EXPECT_EQ(dst.pSpriteSFrames[0].frameLength, Duration::fromTicks(10 * 8));
-    EXPECT_EQ(dst.pSpriteSFrames[0].animationLength, Duration::fromTicks(30 * 8));
-    EXPECT_EQ(dst.pSpriteSFrames[1].frameLength, Duration::fromTicks(20 * 8));
-    EXPECT_EQ(dst.pSpriteSFrames[2].animationLength, Duration::fromTicks(5 * 8));
+    const SpriteFrame &first = dst.pSpriteSFrames[0];
+    const SpriteFrame &chained = dst.pSpriteSFrames[1];
+    const SpriteFrame &lit = dst.pSpriteSFrames[2];
+
+    EXPECT_EQ(first.flags, SPRITE_FRAME_HAS_MORE | SPRITE_FRAME_FIRST | SPRITE_FRAME_MIRROR_5 |
+                               SPRITE_FRAME_MIRROR_6 | SPRITE_FRAME_MIRROR_7);
+    EXPECT_EQ(first.paletteId, 159);
+    EXPECT_EQ(first.glowRadius, 0);
+    // Frame times are 1/16s units in the file, *8 -> ticks.
+    EXPECT_EQ(first.frameLength, Duration::fromTicks(2 * 8));
+    EXPECT_EQ(first.animationLength, Duration::fromTicks(12 * 8));
+
+    // The chained frame carries its own frame time - GetFrame() advances the walk cycle through it.
+    EXPECT_EQ(chained.frameLength, Duration::fromTicks(2 * 8));
+    EXPECT_EQ(chained.paletteId, 159);
+
+    // A real light radius lands in glowRadius and doesn't leak into the flag word.
+    EXPECT_EQ(lit.flags, SPRITE_FRAME_LIT | SPRITE_FRAME_FIRST | SPRITE_FRAME_IMAGE1);
+    EXPECT_EQ(lit.glowRadius, 300);
+    EXPECT_EQ(lit.paletteId, 3);
+    EXPECT_EQ(lit.frameLength, Duration::fromTicks(5 * 8));
+    EXPECT_EQ(lit.animationLength, Duration::fromTicks(5 * 8));
 }
 
 static DecorationDesc_MM6 makeMm6Decoration(std::string_view internalName, std::string_view hint, int16_t type,

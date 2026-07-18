@@ -138,17 +138,27 @@ struct SpriteFrame_MM6 {
     std::array<char, 12> textureName; // Texture name in sprites.lod w/o rotational suffixes.
     std::array<int16_t, 8> hwSpriteIds;
     int32_t scale;
-    int32_t flags; // TODO(captainurist): 2 bytes in MM6?
+    uint16_t flags; // MM6 packs the flag bits into 2 bytes; MM7 widened the field to 4.
     int16_t glowRadius;
     int16_t paletteId; // Palette id, a number in [0, 999] referencing palXXX in bitmaps.lod.
     int16_t paletteIndex; // Not used in OE, this was an index in a palette array that had non-existing palettes removed.
     int16_t frameLength;
+    int16_t animationLength; // Total length of the animation group, stored on the group's 1st frame.
 };
 static_assert(sizeof(SpriteFrame_MM6) == 56);
 MM_DECLARE_MEMCOPY_SERIALIZABLE(SpriteFrame_MM6)
 
 
-struct SpriteFrame_MM7 : SpriteFrame_MM6 {
+struct SpriteFrame_MM7 {
+    std::array<char, 12> spriteName;
+    std::array<char, 12> textureName;
+    std::array<int16_t, 8> hwSpriteIds;
+    int32_t scale;
+    int32_t flags;
+    int16_t glowRadius;
+    int16_t paletteId;
+    int16_t paletteIndex;
+    int16_t frameLength;
     int16_t animationLength;
     int16_t _pad;
 };

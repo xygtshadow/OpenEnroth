@@ -285,12 +285,24 @@ void reconstruct(const SpriteFrame_MM6 &src, SpriteFrame *dst) {
     dst->glowRadius = src.glowRadius;
     dst->paletteId = src.paletteId;
     dst->frameLength = Duration::fromTicks(src.frameLength * 8);
-    // MM6 sprite frames don't store the total animation length (an MM7 addition). It is derived
-    // per animation group in reconstruct(const SpriteFrameTable_MM6 &, ...); left default here.
+    dst->animationLength = Duration::fromTicks(src.animationLength * 8);
 }
 
 void reconstruct(const SpriteFrame_MM7 &src, SpriteFrame *dst) {
-    reconstruct(static_cast<const SpriteFrame_MM6 &>(src), dst);
+    reconstruct(src.spriteName, &dst->spriteName);
+    dst->spriteName = ascii::toLower(dst->spriteName);
+
+    reconstruct(src.textureName, &dst->textureName);
+    dst->textureName = ascii::toLower(dst->textureName);
+
+    dst->sprites.fill(nullptr);
+
+    dst->scale = src.scale / 65536.0f;
+    dst->flags = static_cast<SpriteFrameFlags>(src.flags);
+
+    dst->glowRadius = src.glowRadius;
+    dst->paletteId = src.paletteId;
+    dst->frameLength = Duration::fromTicks(src.frameLength * 8);
     dst->animationLength = Duration::fromTicks(src.animationLength * 8);
 }
 

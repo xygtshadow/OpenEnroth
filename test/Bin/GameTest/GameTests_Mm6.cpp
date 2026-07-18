@@ -5922,10 +5922,11 @@ GAME_TEST(Mm6, PartyCreationSkin) {
             transparentPixels += arrow->rgba()[y][x].a == 0;
     EXPECT_EQ(arrow->rgba()[0][0].a, 0);
     EXPECT_EQ(transparentPixels, 269);
-    // The selected-portrait flame frameset. MM6's dsft.bin leaves paletteId 0 on every frame -
-    // the game takes sprite palettes from the sprites' own headers (aframe1 carries pal002).
-    // A frame left at paletteId 0 hits the renderer's "not paletted" sentinel and draws the raw
-    // palette indices through the red channel - the "red oval" from the play-test report.
+    // The selected-portrait flame frameset resolves pal002 from the frame table (dsft.bin DOES
+    // fill per-frame palette ids - the earlier "all zeroes" reading was the misaligned MM6 record
+    // layout picking up the always-zero paletteIndex field). A frame left at paletteId 0 hits the
+    // renderer's "not paletted" sentinel and draws the raw palette indices through the red
+    // channel - the "red oval" from the play-test report.
     int aframeId = pSpriteFrameTable->FastFindSprite("aframe1");
     ASSERT_GT(aframeId, 0);
     EXPECT_EQ(pSpriteFrameTable->GetFrame(aframeId, 0_ticks)->paletteId, 2);
@@ -8486,5 +8487,48 @@ GAME_TEST(Mm6, PalettesDrawRaw) {
     GraphicsImage *skyTex = assets->getBitmap("sky01");
     ASSERT_NE(skyTex, nullptr);
     EXPECT_EQ(skyTex->rgba()[0][0], sky->palette.colors[sky->image[0][0]]);
+}
+
+// MM6's dsft.bin packs the SFT flag bits into 2 bytes (MM7 widened them to 4), and OE read them as
+// 4 - shifting every following field of every record by two bytes. frameLength picked up the group
+// total time, which MM6 stores only on a group's first frame, so GetFrame() saw zero-length chained
+// frames and always returned the first one: every monster and street NPC glided around frozen
+// mid-stride. paletteId picked up the always-zero paletteIndex (masking that MM6 recolor tiers
+// share textures and differ ONLY in the frame-table palette), and glowRadius picked up the palette
+// id, hanging a spurious light on every billboard.
+GAME_TEST(Mm6, ActorWalkAnimationsAdvance) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // The bat-A walk group: six chained frames of 2/16s each, 12/16s total, palette pal159.
+    int batA = pSpriteFrameTable->FastFindSprite("bAwlka");
+    ASSERT_GT(batA, 0);
+    pSpriteFrameTable->InitializeSprite(batA);
+
+    SpriteFrame *first = pSpriteFrameTable->GetFrame(batA, 0_ticks);
+    EXPECT_EQ(first->frameLength, Duration::fromTicks(2 * 8));
+    EXPECT_EQ(first->animationLength, Duration::fromTicks(12 * 8));
+    EXPECT_EQ(first->paletteId, 159);
+    EXPECT_EQ(first->glowRadius, 0);
+
+    // The walk cycle actually advances through all six frames and wraps.
+    SpriteFrame *prev = first;
+    for (int t = 16; t < 96; t += 16) {
+        SpriteFrame *cur = pSpriteFrameTable->GetFrame(batA, Duration::fromTicks(t));
+        EXPECT_NE(cur, prev) << "walk cycle stuck at t=" << t;
+        prev = cur;
+    }
+    EXPECT_EQ(pSpriteFrameTable->GetFrame(batA, Duration::fromTicks(96)), first);
+
+    // Recolor tiers of the same monster share the bhwlk* textures and differ only in the
+    // frame-table palette: bat A/B/C carry pal159/160/161.
+    int batB = pSpriteFrameTable->FastFindSprite("bBwlka");
+    int batC = pSpriteFrameTable->FastFindSprite("bCwlka");
+    ASSERT_GT(batB, 0);
+    ASSERT_GT(batC, 0);
+    pSpriteFrameTable->InitializeSprite(batB);
+    pSpriteFrameTable->InitializeSprite(batC);
+    EXPECT_EQ(pSpriteFrameTable->GetFrame(batB, 0_ticks)->paletteId, 160);
+    EXPECT_EQ(pSpriteFrameTable->GetFrame(batC, 0_ticks)->paletteId, 161);
 }
 
