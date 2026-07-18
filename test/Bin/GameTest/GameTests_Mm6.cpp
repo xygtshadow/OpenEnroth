@@ -5455,13 +5455,17 @@ GAME_TEST(Mm6, CharacterScreenSkin) {
         game.tick(2);
     }
 
-    // The magnifier at (600,300) toggles the rings view (BACKHAND + guy_up + accessories) and back.
+    // The magnifier at (600,300) toggles the rings view (BACKHAND + guy_up + accessories). In the
+    // rings view the toggle button moves to guy_up's own spot - (527,300) at guy_up's 64x32 size,
+    // centered on the BACKHAND panel (MM6.EXE 0x42cfda) - and clicking it there toggles back.
     game.pressAndReleaseButton(BUTTON_LEFT, 615, 315);
     game.tick(2);
     EXPECT_TRUE(ringscreenactive());
-    game.pressAndReleaseButton(BUTTON_LEFT, 615, 315);
+    EXPECT_EQ(pCharacterScreen_DetalizBtn->rect, Recti(527, 300, 65, 33));
+    game.pressAndReleaseButton(BUTTON_LEFT, 540, 315);
     game.tick(2);
     EXPECT_FALSE(ringscreenactive());
+    EXPECT_EQ(pCharacterScreen_DetalizBtn->rect, Recti(600, 300, 31, 31));
 
     // A two-handed main-hand weapon switches the doll to the grip pose (arm2 + ARM2 sleeve).
     if (InventoryEntry offhand = active.inventory.entry(ITEM_SLOT_OFF_HAND))

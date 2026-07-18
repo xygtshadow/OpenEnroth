@@ -797,12 +797,14 @@ static void CharacterUI_DrawPaperdollMm6(Character *player) {
 }
 
 // MM6.EXE 0x412db0: the rings view - doll, then BACKHAND at (481,0) with the accessories over it,
-// guy_up replacing the magnifier. Ring/amulet/gauntlet positions are the same values MM7 kept.
+// guy_up at the toggle button's position (0x412deb reads the button's x/y; the toggle handler
+// places it at (527,300), centered on BACKHAND). Ring/amulet/gauntlet positions are the same
+// values MM7 kept.
 static void CharacterUI_DrawPaperdollWithRingOverlayMm6(Character *player) {
     CharacterUI_DrawPaperdollMm6(player);
 
     render->DrawQuad2D(ui_character_inventory_paperdoll_rings_background, {481, 0});
-    render->DrawQuad2D(paperdollMm6GuyUp, {600, 300});
+    render->DrawQuad2D(paperdollMm6GuyUp, pCharacterScreen_DetalizBtn->rect.topLeft());
 
     for (unsigned i = 0; i < 6; ++i) {
         InventoryEntry entry = player->inventory.entry(ringSlot(i));
@@ -1062,12 +1064,20 @@ void GUIWindow_CharacterRecord::ToggleRingsOverlay() {
     pCharacterScreen_DetalizBtn->Release();
     pCharacterScreen_DollBtn->Release();
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6 keeps the toggle at the magnifier's spot in both views - the rings view just
-        // draws guy_up over it (MM6.EXE 0x412df0).
-        h = 30;
-        w = 30;
-        y = 300;
-        x = 600;
+        if (bRingsShownInCharScreen) {
+            // MM6 rings view: the toggle moves to guy_up's spot, centered on the BACKHAND
+            // panel, at guy_up's own size (MM6.EXE 0x42cfda: x=0x20f, y=0x12c, w/h from the
+            // texture); the drawer blits guy_up at the button's position (0x412deb).
+            h = paperdollMm6GuyUp->height();
+            w = paperdollMm6GuyUp->width();
+            y = 300;
+            x = 527;
+        } else {
+            h = 30;
+            w = 30;
+            y = 300;
+            x = 600;
+        }
     } else if (bRingsShownInCharScreen) {
         h = ui_exit_cancel_button_background->height();
         w = ui_exit_cancel_button_background->width();
