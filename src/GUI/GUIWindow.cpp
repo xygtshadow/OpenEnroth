@@ -671,8 +671,10 @@ void SetUserInterface(PartyAlignment align) {
         game_ui_wizardEye = pIconsFrameTable->animationId("wizeye"); // -1, MM6 has no such animation.
         game_ui_torchLight = pIconsFrameTable->animationId("torch"); // Same.
 
-        uGameUIFontMain = colorTable.Diesel;
-        uGameUIFontShadow = colorTable.StarkWhite;
+        // MM6 HUD text is drawn with color 0 = the font's own FONTPAL palette: white body over a black
+        // shadow (FONTPAL indices 255/1 in MM6 icons.lod) - not MM7-neutral's dark-on-light scheme.
+        uGameUIFontMain = colorTable.White;
+        uGameUIFontShadow = colorTable.Black;
 
         UI_Create();
         return;

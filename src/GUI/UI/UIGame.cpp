@@ -855,14 +855,17 @@ void GameUI_DrawFoodAndGold() {
     int text_y;  // esi@2
 
     if (uGameState != GAME_STATE_FINAL_WINDOW) {
-        // MM6 draws food/gold on the shelf under the book row: "\r086%lu" / "\r022%lu" at y=356 (MM6.EXE 0x417a32).
+        // MM6 draws food/gold on the shelf under the book row: "\r086%lu" / "\r022%lu" at y=356, tinted pure
+        // yellow (255,255,0) over the smallnum font's black palette shadow (MM6.EXE 0x417a32).
         bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
         text_y = isMm6 ? 356 : (_44100D_should_alter_right_panel() != 0 ? 381 : 322);
         const char *foodFormat = isMm6 ? "\r086{}" : "\r087{}";
         const char *goldFormat = isMm6 ? "\r022{}" : "\r028{}";
+        Color color = isMm6 ? colorTable.Yellow : uGameUIFontMain;
+        Color shadow = isMm6 ? colorTable.Black : uGameUIFontShadow;
 
-        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format(fmt::runtime(foodFormat), toCompactString(pParty->GetFood())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
-        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, uGameUIFontMain, fmt::format(fmt::runtime(goldFormat), toCompactString(pParty->GetGold())), pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
+        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, color, fmt::format(fmt::runtime(foodFormat), toCompactString(pParty->GetFood())), pPrimaryWindow->frameRect, 0, shadow);
+        GUIWindow::DrawText(assets->pFontSmallnum.get(), {0, text_y}, color, fmt::format(fmt::runtime(goldFormat), toCompactString(pParty->GetGold())), pPrimaryWindow->frameRect, 0, shadow);
         // force to render all queued text now so it wont be delayed and drawn over things it isn't supposed to, like item in hand or nuklear
         render->EndTextNew();
     }

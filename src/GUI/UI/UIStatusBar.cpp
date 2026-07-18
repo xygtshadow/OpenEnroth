@@ -3,11 +3,14 @@
 #include <string>
 
 #include "Engine/AssetsManager.h"
+#include "Engine/Engine.h"
 #include "Engine/EngineGlobals.h"
 #include "Engine/Localization.h"
 #include "Engine/mm7_data.h"
 
 #include "Engine/Graphics/Renderer/Renderer.h"
+
+#include "Library/Color/ColorTable.h"
 
 #include "GUI/GUIFont.h"
 
@@ -21,18 +24,31 @@ const std::string &StatusBar::get() {
     }
 }
 
+// MM6.EXE draws status text at (AlignText_Center(450) + 11, 355) (draw fn @0x418e50); timed event messages are
+// tinted pale yellow (255,255,155) while the mouseover/permanent string is drawn with color 0, which means the
+// lucida font's own FONTPAL palette - white body (index 255) over a black shadow (index 1).
+static int statusTextY() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? 355 : 357;
+}
+
 void StatusBar::draw() {
     render->DrawQuad2D(game_ui_statusbar, {0, 352});
 
     const std::string &status = get();
     if (status.length() > 0) {
-        GUIWindow::DrawText(assets->pFontLucida.get(), { assets->pFontLucida->AlignText_Center(450, status) + 11, 357}, uGameUIFontMain, status, pPrimaryWindow->frameRect, 0, uGameUIFontShadow);
+        Color color = uGameUIFontMain;
+        Color shadow = uGameUIFontShadow;
+        if (engine->gameVersion() == GAME_VERSION_MM6) {
+            color = _eventStatusExpireTime ? colorTable.PaleCanary : colorTable.White;
+            shadow = colorTable.Black;
+        }
+        GUIWindow::DrawText(assets->pFontLucida.get(), { assets->pFontLucida->AlignText_Center(450, status) + 11, statusTextY()}, color, status, pPrimaryWindow->frameRect, 0, shadow);
     }
 }
 
 void StatusBar::drawForced(std::string_view str, Color color) {
     render->DrawQuad2D(game_ui_statusbar, {0, 352});
-    GUIWindow::DrawText(assets->pFontLucida.get(), { assets->pFontLucida->AlignText_Center(450, str) + 11, 357}, color, str, pPrimaryWindow->frameRect);
+    GUIWindow::DrawText(assets->pFontLucida.get(), { assets->pFontLucida->AlignText_Center(450, str) + 11, statusTextY()}, color, str, pPrimaryWindow->frameRect);
 }
 
 void StatusBar::update() {
