@@ -240,7 +240,7 @@ void DecorationInteraction(unsigned int id, Pid pid) {
     } else {
         if (pLevelDecorations[id].IsInteractive()) {
             activeLevelDecoration = &pLevelDecorations[id];
-            eventProcessor(engine->_persistentVariables.decorVars[pLevelDecorations[id].eventVarId] + 380, Pid(), 1);
+            eventProcessor(engine->_persistentVariables.decorVars[pLevelDecorations[id].eventVarId] + decorationGlobalEventBase(), Pid(), 1);
             activeLevelDecoration = nullptr;
         }
     }

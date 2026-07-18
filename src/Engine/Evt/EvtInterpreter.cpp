@@ -540,7 +540,11 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
         }
         case EVENT_ChangeEvent:
             if (ir.data.event_id) {
-                engine->_persistentVariables.decorVars[activeLevelDecoration->eventVarId] = ir.data.event_id - 124;
+                // Store the decoration's new global event relative to the same base the click /
+                // hover sites add back (MM7: 380, MM6: 400). The original engines stored the
+                // byte-truncated difference (MM7.EXE used -124, MM6.EXE added 0x70 - both are
+                // just -base mod 256), and the u8 decorVars element truncates the same way here.
+                engine->_persistentVariables.decorVars[activeLevelDecoration->eventVarId] = ir.data.event_id - decorationGlobalEventBase();
             } else {
                 engine->_persistentVariables.decorVars[activeLevelDecoration->eventVarId] = 0;
                 activeLevelDecoration->uFlags |= LEVEL_DECORATION_INVISIBLE;

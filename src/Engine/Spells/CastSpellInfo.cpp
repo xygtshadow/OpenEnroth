@@ -2494,7 +2494,7 @@ void CastSpellInfoHelpers::castSpell() {
                         // TODO(captainurist): investigate, that's a very weird std::to_underlying call.
                         if (pLevelDecorations[std::to_underlying(pSpriteObjects[obj_id].containing_item.itemId)].IsInteractive()) {
                             activeLevelDecoration = &pLevelDecorations[obj_id];
-                            eventProcessor(engine->_persistentVariables.decorVars[pLevelDecorations[obj_id].eventVarId] + 380, Pid(), 1);
+                            eventProcessor(engine->_persistentVariables.decorVars[pLevelDecorations[obj_id].eventVarId] + decorationGlobalEventBase(), Pid(), 1);
                             activeLevelDecoration = nullptr;
                         }
                     }

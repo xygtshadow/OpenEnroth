@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "Engine/Engine.h"
 #include "Engine/Random/Random.h"
 #include "Engine/Party.h"
 
@@ -13,11 +14,67 @@ std::vector<LevelDecoration> pLevelDecorations;
 std::vector<int> decorationsWithSound;
 LevelDecoration *activeLevelDecoration;
 
+int decorationGlobalEventBase() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? 400 : 380;
+}
+
 //----- (004583B0) --------------------------------------------------------
 LevelDecoration::LevelDecoration() { memset(this, 0, sizeof(*this)); }
 
+// MM6's ddeclist.bin ids differ from MM7's, and so do its decoration global events - fired
+// event / hover topic row = returned value + 400. Ported from MM6.EXE 0x455050 (the seeding
+// switch called from the map loader / respawn loops at 0x455220 / 0x4554b3 / 0x4556a2).
+static int mm6DecorationGlobalEvent(DecorationId type) {
+    int roll = grng->random(100); // MM6.EXE rolls rand() % 100 up front, before dispatching.
+    switch (std::to_underlying(type)) {
+        case 118: // Crystal01 "crystal"
+        case 119: // Crystal02 "crystal"
+        case 120: // Crystal03 "crystal"
+        case 121: // Crystal04 "crystal"
+            return roll < 50 ? 47 : 48 + grng->random(10); // ev 447 nothing / 448-457 gems by Perception.
+        case 146: // trasheap "trash heap"
+            return roll < 20 ? 37 : 36; // ev 437 disease + potion / 436 disease.
+        case 154: // Bag01 "bag"
+            if (roll < 40) return 31; // ev 431 nothing.
+            if (roll < 70) return 32; // ev 432 level 1 item.
+            return roll < 90 ? 33 : 34; // ev 433 / 434 level 2 / 3 item.
+        case 155: // Bucket "bucket"
+            if (roll < 25) return 43; // ev 443 nothing.
+            if (roll < 50) return 44; // ev 444 Poppysnaps.
+            return roll < 75 ? 45 : 46; // ev 445 / 446 Phirna Root / Widowsweep Berries.
+        case 158: // FlourSack "sack"
+            return roll < 50 ? 29 : 30; // ev 429 nothing / 430 food.
+        case 162: // Bag02 "bag"
+            return 35; // ev 435 gold.
+        case 163: // Barrel "barrel"
+        case 164: // Keg "keg"
+            if (roll < 30) return 10; // ev 410 empty.
+            if (roll < 40) return 11; // ev 411 +1 Might.
+            if (roll < 50) return 12; // ev 412 +1 Accuracy.
+            if (roll < 60) return 13; // ev 413 +1 Personality.
+            if (roll < 70) return 14; // ev 414 +1 Intellect.
+            if (roll < 80) return 15; // ev 415 +1 Endurance.
+            return roll < 90 ? 16 : 17; // ev 416 / 417 +1 Speed / Luck.
+        case 166: // SkullPile "skull pile"
+            if (roll < 40) return 39; // ev 439 Weak + potion by Perception.
+            if (roll < 70) return 40; // ev 440 Cursed + potion.
+            return roll < 90 ? 41 : 42; // ev 441 / 442 Insane / Dead + potion.
+        case 167: // CookFire "fire"
+            if (roll < 80) return 25; // ev 425 food.
+            if (roll < 90) return 26; // ev 426 level 1 item + food.
+            return roll < 97 ? 27 : 28; // ev 427 / 428 level 2 / 3 item + food.
+        case 182: // Cauldron "Cauldron"
+            return roll < 20 ? 19 : 23; // ev 419 +1 Fire res / 423 +1 Magic res.
+        default:
+            return 0;
+    }
+}
+
 //----- (00450929) --------------------------------------------------------
 int LevelDecoration::GetGlobalEvent() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return mm6DecorationGlobalEvent(uDecorationDescID);
+
     // LevelDecoration *v1; // esi@1
     // signed int v2; // eax@1
     // int v3; // eax@5
@@ -348,6 +405,30 @@ bool LevelDecoration::IsObeliskChestActive() {
 
 //----- (0044C2F4) --------------------------------------------------------
 bool LevelDecoration::IsInteractive() {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6.EXE's classify tables (0x455298 / 0x4558c8 seeding, 0x420c88 / 0x429e28 click,
+        // 0x41fa04 hover) all mark exactly these 14 ddeclist.bin ids as interactive.
+        switch (std::to_underlying(uDecorationDescID)) {
+            case 118: // Crystal01 "crystal"
+            case 119: // Crystal02 "crystal"
+            case 120: // Crystal03 "crystal"
+            case 121: // Crystal04 "crystal"
+            case 146: // trasheap "trash heap"
+            case 154: // Bag01 "bag"
+            case 155: // Bucket "bucket"
+            case 158: // FlourSack "sack"
+            case 162: // Bag02 "bag"
+            case 163: // Barrel "barrel"
+            case 164: // Keg "keg"
+            case 166: // SkullPile "skull pile"
+            case 167: // CookFire "fire"
+            case 182: // Cauldron "Cauldron"
+                return true;
+            default:
+                return false;
+        }
+    }
+
     switch (uDecorationDescID) {
     case DECORATION_TRASH_HEAP_4:    // trash pile
     case DECORATION_CAMPFIRE_5:    // campfire

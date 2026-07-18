@@ -8558,9 +8558,140 @@ GAME_TEST(Mm6, DecorationEventVarIdsInBounds) {
         ASSERT_LT(decor.eventVarId, (int)engine->_persistentVariables.decorVars.size())
             << "decoration desc " << std::to_underlying(decor.uDecorationDescID);
     }
-    // The crash needs the overflow tail: more interactive decorations than PrepareDecorations()
-    // assigns ids to. If a future MM6-aware IsInteractive() drops the count below this, pick a
-    // different map (or drop this check) - the bounds asserts above are the actual invariant.
-    EXPECT_GT(interactiveCount, 124);
+    // With MM6's own interactivity table (see DecorationInteractivityTables below) the count
+    // stays within PrepareDecorations()' 124 slots - the bounds asserts above are the actual
+    // invariant this test pins.
+    EXPECT_GT(interactiveCount, 0);
+    EXPECT_LE(interactiveCount, 124);
+}
+
+// LevelDecoration::IsInteractive() / GetGlobalEvent() must use MM6's decoration tables under
+// --game-version mm6, not MM7's. MM6.EXE classifies exactly 14 ddeclist.bin ids as interactive
+// (the descId-0x76 xlat tables at 0x455298/0x4558c8: crystals 118-121, trash heap 146, bag 154,
+// bucket 155, flour sack 158, gold bag 162, barrel 163, keg 164, skull pile 166, cook fire 167,
+// cauldron 182) and seeds each decoration's decorVar from the switch at 0x455050; hovering /
+// clicking then resolves npctopic row / global.evt event = seed + 400 (MM7 uses +380).
+GAME_TEST(Mm6, DecorationInteractivityTables) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    ASSERT_EQ(uCurrentlyLoadedLevelType, LEVEL_OUTDOOR);
+
+    constexpr std::array<int, 14> mm6InteractiveIds = {118, 119, 120, 121, 146, 154, 155, 158, 162, 163, 164, 166, 167, 182};
+    auto isMm6Interactive = [&](int descId) {
+        return std::find(mm6InteractiveIds.begin(), mm6InteractiveIds.end(), descId) != mm6InteractiveIds.end();
+    };
+    // Seed windows per desc id, from MM6.EXE 0x455050 (fired event / npctopic row = seed + 400).
+    auto seedWindow = [](int descId) -> std::pair<int, int> {
+        switch (descId) {
+            case 118: case 119: case 120: case 121: return {47, 57}; // Crystals.
+            case 146: return {36, 37}; // Trash heap.
+            case 154: return {31, 34}; // Large bag.
+            case 155: return {43, 46}; // Bucket.
+            case 158: return {29, 30}; // Flour sack.
+            case 162: return {35, 35}; // Bag of gold.
+            case 163: case 164: return {10, 17}; // Barrel / keg.
+            case 166: return {39, 42}; // Skull pile.
+            case 167: return {25, 28}; // Cook fire.
+            case 182: return {19, 23}; // Cauldron (only 19 or 23 occur; a window assert suffices).
+            default: return {0, 0};
+        }
+    };
+
+    int interactiveCount = 0;
+    for (LevelDecoration &decor : pLevelDecorations) {
+        int descId = std::to_underlying(decor.uDecorationDescID);
+        EXPECT_EQ(decor.IsInteractive(), isMm6Interactive(descId)) << "descId " << descId;
+        if (decor.uEventID || !decor.IsInteractive() || !isMm6Interactive(descId))
+            continue;
+        interactiveCount++;
+        ASSERT_GE(decor.eventVarId, 0);
+        ASSERT_LT(decor.eventVarId, (int)engine->_persistentVariables.decorVars.size());
+        int seed = engine->_persistentVariables.decorVars[decor.eventVarId];
+        auto [seedLo, seedHi] = seedWindow(descId);
+        EXPECT_GE(seed, seedLo) << "descId " << descId;
+        EXPECT_LE(seed, seedHi) << "descId " << descId;
+        // The hover topic row for this seed is one of npctopic.txt's decoration rows (410-457).
+        EXPECT_FALSE(pNPCTopics[seed + 400].pTopic.empty()) << "descId " << descId << " seed " << seed;
+    }
+    EXPECT_GT(interactiveCount, 0);
+    EXPECT_LE(interactiveCount, 124);
+}
+
+// End-to-end barrel interaction in New Sorpigal: hovering a barrel names it via npctopic row
+// seed + 400, clicking fires global.evt event seed + 400 (a permanent +1 stat point in MM6),
+// and the event's ChangeEvent(410) stores the new seed relative to the same +400 base.
+GAME_TEST(Mm6, BarrelHoverAndClick) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    MapId newSorpigal = pMapStats->GetMapInfo("oute3.odm");
+    ASSERT_NE(newSorpigal, MAP_INVALID);
+    game.teleportTo(newSorpigal, Vec3f(-9728, -11319, 160), 0);
+    game.tick(1);
+    ASSERT_EQ(uCurrentlyLoadedLevelType, LEVEL_OUTDOOR);
+
+    std::vector<int> barrels;
+    for (size_t i = 0; i < pLevelDecorations.size(); i++)
+        if (std::to_underlying(pLevelDecorations[i].uDecorationDescID) == 163 && !pLevelDecorations[i].uEventID)
+            barrels.push_back(static_cast<int>(i));
+    ASSERT_FALSE(barrels.empty());
+
+    // Stand west of a barrel facing east (+x) and sweep the crosshair column until the pick
+    // lands on it. Some barrels sit against geometry, so try candidates until one hovers.
+    int picked = -1;
+    int pickX = 238, pickY = -1;
+    for (int id : barrels) {
+        Vec3f pos = pLevelDecorations[id].vPosition;
+        game.teleportTo(newSorpigal, pos - Vec3f(200, 0, 0), 0);
+        game.tick(2);
+        for (int y = 120; y <= 320; y += 8) {
+            game.moveMouse(pickX, y);
+            game.tick(1);
+            if (mouse->uPointingObjectID.type() == OBJECT_Decoration && (int)mouse->uPointingObjectID.id() == id) {
+                picked = id;
+                pickY = y;
+                break;
+            }
+        }
+        if (picked != -1)
+            break;
+    }
+    ASSERT_NE(picked, -1) << "no barrel in New Sorpigal could be hovered";
+
+    LevelDecoration &barrel = pLevelDecorations[picked];
+    ASSERT_GE(barrel.eventVarId, 0);
+    ASSERT_LT(barrel.eventVarId, (int)engine->_persistentVariables.decorVars.size());
+
+    // Force the red-liquid barrel seed (event/topic 411) for a deterministic click result.
+    engine->_persistentVariables.decorVars[barrel.eventVarId] = 11;
+    game.tick(1);
+    EXPECT_EQ(engine->_statusBar->get(), "Barrel of Red liquid");
+
+    int mightBefore = 0;
+    for (const Character &character : pParty->pCharacters)
+        mightBefore += character._stats[ATTRIBUTE_MIGHT];
+
+    game.pressAndReleaseButton(BUTTON_LEFT, pickX, pickY);
+    game.tick(3);
+
+    // Global event 411: +1 base Might, then ChangeEvent(410) -> seed 10 ("Empty Barrel").
+    EXPECT_EQ(engine->_persistentVariables.decorVars[barrel.eventVarId], 10);
+    int mightAfter = 0;
+    for (const Character &character : pParty->pCharacters)
+        mightAfter += character._stats[ATTRIBUTE_MIGHT];
+    EXPECT_EQ(mightAfter, mightBefore + 1);
+
+    // The event's own "+1 Might permanent" status text masks the hover text until it expires.
+    engine->_statusBar->clearEvent();
+    game.moveMouse(pickX, pickY);
+    game.tick(1);
+    EXPECT_EQ(engine->_statusBar->get(), "Empty Barrel");
 }
 
