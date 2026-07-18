@@ -5243,11 +5243,22 @@ GAME_TEST(Mm6, BookScreens) {
     EXPECT_EQ(pAutonoteTxt[116].eType, AUTONOTE_SEER);
     EXPECT_EQ(pAutonoteTxt[100].eType, AUTONOTE_MISC);
 
+    // The pressed book-button sprite is NOT drawn at the button rect (y=263): MM6.EXE's open-book
+    // handlers (0x42e996/0x42ea12/0x42eaab/0x42eb22) place the overlay at y=270, with autonotes and
+    // maps also 1px left of their buttons (play-test report: pressed tomes sat ~5px too high).
+    auto booksOverlayPos = []() -> Pointi {
+        for (GUIWindow *window : lWindowList)
+            if (window->eWindowType == WINDOW_BooksButtonOverlay)
+                return window->frameRect.topLeft();
+        return Pointi(-1, -1);
+    };
+
     // Quest book: opens, MM6 page-tab buttons at (415,13)/(415,48) (CreateButton stores w+1/h+1),
     // page-flip messages run the MM6 draw, Escape closes.
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenQuestBook, 0, 0);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(booksOverlayPos(), Pointi(495, 270));
     EXPECT_EQ(pBtn_Book_1->rect, Recti(415, 13, 51, 35));
     EXPECT_EQ(pBtn_Book_2->rect, Recti(415, 48, 51, 35));
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_NEXT_PAGE), 0);
@@ -5265,6 +5276,7 @@ GAME_TEST(Mm6, BookScreens) {
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenAutonotes, 0, 0);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(booksOverlayPos(), Pointi(526, 270));
     for (BookButtonAction action : {BOOK_NOTES_POTION, BOOK_NOTES_FOUNTAIN, BOOK_NOTES_OBELISK, BOOK_NOTES_SEER, BOOK_NOTES_MISC}) {
         engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(action), 0);
         game.tick(2);
@@ -5278,6 +5290,7 @@ GAME_TEST(Mm6, BookScreens) {
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenMapBook, 0, 0);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(booksOverlayPos(), Pointi(557, 270));
     EXPECT_EQ(pBtn_Book_1->rect, Recti(415, 13, 51, 35));
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_ClickBooksBtn, std::to_underlying(BOOK_ZOOM_IN), 0);
     game.tick(2);
@@ -5290,6 +5303,7 @@ GAME_TEST(Mm6, BookScreens) {
     engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenCalendar, 0, 0);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_BOOKS);
+    EXPECT_EQ(booksOverlayPos(), Pointi(588, 270));
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_GAME);

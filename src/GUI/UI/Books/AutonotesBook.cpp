@@ -35,7 +35,8 @@ GUIWindow_AutonotesBook::GUIWindow_AutonotesBook() : GUIWindow_Book() {
     this->eWindowType = WindowType::WINDOW_AutonotesBook;
 
     bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Autonotes->rect.topLeft() : Pointi{527, 353}, Sizei{0, 0}, pBtn_Autonotes);
+    // MM6 draws the pressed sprite at (526,270), 1px left and 7px below the button rect (MM6.EXE open handler 0x42ea12).
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? Pointi{526, 270} : Pointi{527, 353}, Sizei{0, 0}, pBtn_Autonotes);
     bFlashAutonotesBook = false;
 
     ui_book_quest_div_bar = assets->getImage_Alpha("divbar");

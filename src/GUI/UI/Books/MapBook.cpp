@@ -36,7 +36,8 @@ GUIWindow_MapBook::GUIWindow_MapBook() {
     viewparams->sViewCenterY = pParty->pos.y;
     viewparams->ClampMapViewPosition();
     bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Maps->rect.topLeft() : Pointi{546, 353}, Sizei{0, 0}, pBtn_Maps);
+    // MM6 draws the pressed sprite at (557,270), 1px left and 7px below the button rect (MM6.EXE open handler 0x42eaab).
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? Pointi{557, 270} : Pointi{546, 353}, Sizei{0, 0}, pBtn_Maps);
 
     if (isMm6) {
         // MM6's map book (MM6.EXE window ctor case 0x40d7f2 + draw 0x40e8d0): no background of its own -

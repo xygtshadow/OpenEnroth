@@ -24,7 +24,8 @@ GUIWindow_QuestBook::GUIWindow_QuestBook() {
     this->eWindowType = WindowType::WINDOW_QuestBook;
 
     bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Quests->rect.topLeft() : Pointi{493, 355}, Sizei{0, 0}, pBtn_Quests);
+    // MM6 draws the pressed sprite at (495,270), 7px below the button rect (MM6.EXE open handler 0x42e996).
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? Pointi{495, 270} : Pointi{493, 355}, Sizei{0, 0}, pBtn_Quests);
     bFlashQuestBook = false;
 
     ui_book_quest_div_bar = assets->getImage_Alpha("divbar");

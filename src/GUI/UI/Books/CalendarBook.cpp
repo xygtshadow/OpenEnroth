@@ -40,7 +40,8 @@ GUIWindow_CalendarBook::GUIWindow_CalendarBook() : GUIWindow_Book() {
     this->eWindowType = WindowType::WINDOW_CalendarBook;
 
     bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
-    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? pBtn_Calendar->rect.topLeft() : Pointi{570, 354}, Sizei{0, 0}, pBtn_Calendar);
+    // MM6 draws the pressed sprite at (588,270), 7px below the button rect (MM6.EXE open handler 0x42eb22).
+    pChildBooksOverlay = std::make_unique<GUIWindow_BooksButtonOverlay>(isMm6 ? Pointi{588, 270} : Pointi{570, 354}, Sizei{0, 0}, pBtn_Calendar);
 
     if (isMm6) {
         // MM6's calendar (MM6.EXE window ctor case 0x40da9b + draw 0x40ed20): time_bg over the shared book
