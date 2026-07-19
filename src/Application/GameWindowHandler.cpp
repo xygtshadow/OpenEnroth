@@ -478,6 +478,10 @@ bool GameWindowHandler::mousePressEvent(const PlatformMouseEvent *event) {
         } else {
             OnMouseRightClick(position);
         }
+    } else if (event->button == BUTTON_MIDDLE) {
+        // Middle click toggles mouse look, mirroring the INPUT_ACTION_TOGGLE_MOUSE_LOOK key path in OnKey.
+        if (current_screen_type == SCREEN_GAME)
+            mouse->ToggleMouseLook();
     }
     return false;
 }

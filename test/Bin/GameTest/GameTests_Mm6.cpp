@@ -382,9 +382,29 @@ GAME_TEST(Mm6, ModernControls) {
     game.tick(2);
     EXPECT_GT(eAttacker.timeToRecovery, 0_ticks);
 
-    // F interacts with nothing targeted - shouldn't crash.
+    // F interacts: the wandering above has left the party in front of a house door, so the
+    // interact fires the doorway event and enters the house - the binding works end to end.
     game.pressAndReleaseKey(PlatformKey::KEY_F);
     game.tick(5);
+    EXPECT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    // Escape leaves the house.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Middle mouse toggles mouselook. While enabled, the pick/cursor position is pinned to the
+    // viewport center (crosshair targeting) regardless of where the mouse moves.
+    EXPECT_EQ(mouse->_mouseLook, Io::Mouse::MouseLookState::Disabled);
+    game.pressAndReleaseButton(BUTTON_MIDDLE, 320, 240);
+    game.tick(1);
+    EXPECT_EQ(mouse->_mouseLook, Io::Mouse::MouseLookState::Enabled);
+    game.moveMouse(50, 50);
+    game.tick(1);
+    EXPECT_EQ(mouse->position(), pViewport.center());
+    game.pressAndReleaseButton(BUTTON_MIDDLE, 320, 240);
+    game.tick(1);
+    EXPECT_EQ(mouse->_mouseLook, Io::Mouse::MouseLookState::Disabled);
 }
 
 GAME_TEST(Mm6, KillAndLootPeasant) {
