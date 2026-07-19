@@ -971,11 +971,30 @@ void OpenGLRenderer::_set_3d_modelview_matrix() {
 
 // TODO(pskelton): to camera?
 void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
+    // In native-res mode the ortho matrices stay in virtual 640x480 space (outputRender/pViewport
+    // are virtual there) while the viewport rect is mapped to device pixels - the GPU applies the
+    // UI scale, and the 3D world pass (which inherits the gameviewport viewport and only swaps in
+    // its own perspective matrices) rasterizes at native window resolution.
     if (!gameviewport) {  // project over entire window
-        glViewport(0, 0, outputRender.w, outputRender.h);
+        if (isNativeResMode()) {
+            // deviceRect() is the exact scaled, centered UI frame. NOT toDeviceOutward(): its
+            // ceiled far edge can overshoot the frame by a pixel at some window sizes, stretching
+            // the UI into the pillarbox bars.
+            Recti r = _uiTransform.deviceRect();
+            glViewport(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+        } else {
+            glViewport(0, 0, outputRender.w, outputRender.h);
+        }
         projmat = glm::ortho(float(0), float(outputRender.w), float(outputRender.h), float(0), float(-1), float(1));
     } else {  // project to game viewport
-        glViewport(pViewport.x, outputRender.h - (pViewport.y + pViewport.h - 1) - 1, pViewport.w, pViewport.h);
+        if (isNativeResMode()) {
+            // Rounded outward so the scaled viewport always covers the exact virtual edge - the
+            // HUD frame art overdraws the seam.
+            Recti r = _uiTransform.toDeviceOutward(pViewport);
+            glViewport(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+        } else {
+            glViewport(pViewport.x, outputRender.h - (pViewport.y + pViewport.h - 1) - 1, pViewport.w, pViewport.h);
+        }
         projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w - 1), float(pViewport.y + pViewport.h - 1), float(pViewport.y), float(1), float(-1));
     }
 }
