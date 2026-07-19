@@ -469,7 +469,9 @@ class GameConfig : public Config {
         // TODO(captainurist): #enum, will need to support cycleIncrement for enums entries.
         Int RenderFilter = {this, "render_filter", 2, &ValidateRenderFilter,
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
-                            " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
+                            " 0 - native-resolution mode: no scaled framebuffer, the 3D world renders at window resolution"
+                            " and the UI scales smoothly to fit (sharp-bilinear, aspect ratio preserved, pillarboxed),"
+                            " 1 - linear filter, 2 - nearest filter"};
 
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes, replicating MM7.EXE's palette processing. Ignored for MM6, which draws palette colors raw."};
         Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes, replicating MM7.EXE's palette processing. Ignored for MM6, which draws palette colors raw."};

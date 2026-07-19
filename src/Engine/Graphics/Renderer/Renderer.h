@@ -46,7 +46,9 @@ class Renderer {
      *
      * @return                          Render-sized image; in native-resolution mode the frame
      *                                  lives in the window-sized default framebuffer, so the
-     *                                  returned image is device-sized instead.
+     *                                  returned image is device-sized instead - except in the
+     *                                  headless `NullRenderer`, which never captures at device
+     *                                  size and intentionally stays render-sized.
      */
     virtual RgbaImage ReadScreenPixels() = 0;
     virtual void ClearTarget(Color uColor) = 0;
