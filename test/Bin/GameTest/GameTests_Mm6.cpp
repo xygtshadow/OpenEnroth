@@ -8893,3 +8893,31 @@ GAME_TEST(Mm6, ViewportPillarCapitalTransparency) {
     EXPECT_GE(transparentPixels(game_ui_mm6_border5), 56);
     EXPECT_GE(transparentPixels(game_ui_mm6_border6), 63);
 }
+
+GAME_TEST(Mm6, KeyBindingsWindowVirtualSpace) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // All engine UI code works in the virtual 640x480 space; only the renderer maps it to window
+    // pixels. The key-bindings window used to size itself from GetPresentDimensions() - window
+    // pixels - which is only coincidentally right while the window is exactly 640x480. Resize the
+    // window so the two spaces differ.
+    game.resizeWindow(1024, 768);
+    game.tick(2);
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1024, 768));
+    ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_MENU);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenKeyMappingOptions, 0, 0);
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
+    EXPECT_EQ(pGUIWindow_CurrentMenu->frameRect, Recti(0, 0, 640, 480));
+
+    game.resizeWindow(640, 480); // Don't leak the window size into subsequent tests.
+    game.tick(2);
+    game.goToGame();
+}
