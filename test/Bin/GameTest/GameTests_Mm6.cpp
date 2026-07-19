@@ -90,6 +90,7 @@
 #include "GUI/UI/Houses/TownHall.h"
 #include "GUI/UI/Houses/Transport.h"
 
+#include "Io/KeyboardActionMapping.h"
 #include "Io/Mouse.h"
 
 #include "Library/Color/ColorTable.h"
@@ -307,6 +308,83 @@ GAME_TEST(Mm6, WalkAndInteract) {
 
     // And the world should keep simulating - actor AI, animations, ambient sounds - without crashing.
     game.tick(200);
+}
+
+GAME_TEST(Mm6, ModernControls) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // mm6-extra defaults to the modern control scheme: WASD movement, Space jump / fly up,
+    // X fly down, Q attack, E quick cast, F interact, L quest book. Native-res rendering
+    // (render_filter = 0) is also the default.
+    EXPECT_EQ(engine->config->keybindings.Forward.defaultValue(), PlatformKey::KEY_W);
+    EXPECT_EQ(engine->config->keybindings.Backward.defaultValue(), PlatformKey::KEY_S);
+    EXPECT_EQ(engine->config->keybindings.StepLeft.defaultValue(), PlatformKey::KEY_A);
+    EXPECT_EQ(engine->config->keybindings.StepRight.defaultValue(), PlatformKey::KEY_D);
+    EXPECT_EQ(engine->config->keybindings.Jump.defaultValue(), PlatformKey::KEY_SPACE);
+    EXPECT_EQ(engine->config->keybindings.FlyUp.defaultValue(), PlatformKey::KEY_SPACE);
+    EXPECT_EQ(engine->config->keybindings.FlyDown.defaultValue(), PlatformKey::KEY_X);
+    EXPECT_EQ(engine->config->keybindings.Attack.defaultValue(), PlatformKey::KEY_Q);
+    EXPECT_EQ(engine->config->keybindings.CastReady.defaultValue(), PlatformKey::KEY_E);
+    EXPECT_EQ(engine->config->keybindings.EventTrigger.defaultValue(), PlatformKey::KEY_F);
+    EXPECT_EQ(engine->config->keybindings.Quest.defaultValue(), PlatformKey::KEY_L);
+    EXPECT_EQ(engine->config->keybindings.ToggleMouseLook.defaultValue(), PlatformKey::KEY_F10); // Keyboard fallback; middle mouse is the primary toggle.
+    EXPECT_EQ(engine->config->graphics.RenderFilter.defaultValue(), 0);
+
+    // The game-test harness pins the classic bindings before every test (recorded traces and the
+    // older scripted tests replay raw keypresses that assume them) - apply the modern defaults to
+    // actually exercise the shipped scheme. The next test's prepareForNextTest() re-pins classic.
+    keyboardActionMapping->applyKeybindings(keyboardActionMapping->defaultKeybindings(KEYBINDINGS_ALL));
+
+    game.startNewGame();
+
+    // W walks forward.
+    Vec3f posBefore = pParty->pos;
+    game.pressKey(PlatformKey::KEY_W);
+    game.tick(20);
+    game.releaseKey(PlatformKey::KEY_W);
+    game.tick(1);
+    EXPECT_NE(pParty->pos, posBefore);
+
+    // A strafes left: position changes, yaw doesn't.
+    int yawBefore = pParty->_viewYaw;
+    posBefore = pParty->pos;
+    game.pressKey(PlatformKey::KEY_A);
+    game.tick(20);
+    game.releaseKey(PlatformKey::KEY_A);
+    game.tick(1);
+    EXPECT_NE(pParty->pos, posBefore);
+    EXPECT_EQ(pParty->_viewYaw, yawBefore);
+
+    // Space jumps: the party leaves the ground.
+    float zBefore = pParty->pos.z;
+    game.pressKey(PlatformKey::KEY_SPACE);
+    game.tick(3);
+    game.releaseKey(PlatformKey::KEY_SPACE);
+    EXPECT_GT(pParty->pos.z, zBefore);
+    game.tick(30); // Land again.
+
+    // Q attacks: the active character swings and goes into recovery. The engine then advances
+    // the active character to the next ready one, so keep a reference to the attacker.
+    Character &qAttacker = pParty->activeCharacter();
+    EXPECT_EQ(qAttacker.timeToRecovery, 0_ticks);
+    game.pressAndReleaseKey(PlatformKey::KEY_Q);
+    game.tick(2);
+    EXPECT_GT(qAttacker.timeToRecovery, 0_ticks);
+
+    // E quick-casts: with no quick spell readied it falls back to an attack, which exercises
+    // the INPUT_ACTION_QUICK_CAST binding end to end. The attacker is now the next ready
+    // character (Alexis - her bow shot's recovery lands with the arrow's spell effect).
+    Character &eAttacker = pParty->activeCharacter();
+    EXPECT_NE(&eAttacker, &qAttacker);
+    EXPECT_EQ(eAttacker.timeToRecovery, 0_ticks);
+    game.pressAndReleaseKey(PlatformKey::KEY_E);
+    game.tick(2);
+    EXPECT_GT(eAttacker.timeToRecovery, 0_ticks);
+
+    // F interacts with nothing targeted - shouldn't crash.
+    game.pressAndReleaseKey(PlatformKey::KEY_F);
+    game.tick(5);
 }
 
 GAME_TEST(Mm6, KillAndLootPeasant) {

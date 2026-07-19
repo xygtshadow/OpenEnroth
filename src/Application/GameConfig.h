@@ -467,7 +467,7 @@ class GameConfig : public Config {
         Int RenderHeight = {this, "render_height", 480, &ValidateRenderHeight, "Internal rendered resolution height"};
 
         // TODO(captainurist): #enum, will need to support cycleIncrement for enums entries.
-        Int RenderFilter = {this, "render_filter", 2, &ValidateRenderFilter,
+        Int RenderFilter = {this, "render_filter", 0, &ValidateRenderFilter,
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
                             " 0 - native-resolution mode: no scaled framebuffer, the 3D world renders at window resolution"
                             " and the UI scales smoothly to fit (sharp-bilinear, aspect ratio preserved, pillar-/letterboxed;"
@@ -523,32 +523,36 @@ class GameConfig : public Config {
      public:
         explicit Keybindings(GameConfig *config) : ConfigSection(config, "keybindings") {}
 
+        // Changing a default binding here requires a matching update in
+        // EngineTraceStateAccessor::applyClassicKeybindings - recorded traces replay raw
+        // keypresses that assume the bindings they were recorded under.
+
         Key AlwaysRun = {this, INPUT_ACTION_TOGGLE_ALWAYS_RUN, "always_run", PlatformKey::KEY_U, "Always run toggle key."};
-        Key Attack = {this, INPUT_ACTION_ATTACK, "attack", PlatformKey::KEY_A, "Attack key."};
+        Key Attack = {this, INPUT_ACTION_ATTACK, "attack", PlatformKey::KEY_Q, "Attack key."};
         Key AutoNotes = {this, INPUT_ACTION_OPEN_AUTONOTES, "auto_notes", PlatformKey::KEY_N, "Open autonotes key."};
-        Key Backward = {this, INPUT_ACTION_MOVE_BACKWARDS, "backward", PlatformKey::KEY_DOWN, "Walk backwards key."};
+        Key Backward = {this, INPUT_ACTION_MOVE_BACKWARDS, "backward", PlatformKey::KEY_S, "Walk backwards key."};
         Key Cast = {this, INPUT_ACTION_OPEN_SPELLBOOK, "cast", PlatformKey::KEY_C, "Cast a spell from spellbook key."};
-        Key CastReady = {this, INPUT_ACTION_QUICK_CAST, "cast_ready", PlatformKey::KEY_S, "Cast a quick spell key."};
+        Key CastReady = {this, INPUT_ACTION_QUICK_CAST, "cast_ready", PlatformKey::KEY_E, "Cast a quick spell key."};
         Key CenterView = {this, INPUT_ACTION_CENTER_VIEW, "center_view", PlatformKey::KEY_END, "Center view key."};
         Key CharCycle = {this, INPUT_ACTION_NEXT_CHAR, "char_cycle", PlatformKey::KEY_TAB, "Switch between characters key."};
         Key Combat = {this, INPUT_ACTION_TOGGLE_TURN_BASED, "combat", PlatformKey::KEY_RETURN, "Switch between realtime and turn-based modes key."};
-        Key EventTrigger = {this, INPUT_ACTION_INTERACT, "event_trigger", PlatformKey::KEY_SPACE, "Interaction key."};
-        Key FlyDown = {this, INPUT_ACTION_FLY_DOWN, "fly_down", PlatformKey::KEY_INSERT, "Fly down key."};
-        Key FlyUp = {this, INPUT_ACTION_FLY_UP, "fly_up", PlatformKey::KEY_PAGEUP, "Fly up key."};
-        Key Forward = {this, INPUT_ACTION_MOVE_FORWARD, "forward", PlatformKey::KEY_UP, "Move forward key."};
-        Key Jump = {this, INPUT_ACTION_JUMP, "jump", PlatformKey::KEY_X, "Jump key."};
+        Key EventTrigger = {this, INPUT_ACTION_INTERACT, "event_trigger", PlatformKey::KEY_F, "Interaction key."};
+        Key FlyDown = {this, INPUT_ACTION_FLY_DOWN, "fly_down", PlatformKey::KEY_X, "Fly down key."};
+        Key FlyUp = {this, INPUT_ACTION_FLY_UP, "fly_up", PlatformKey::KEY_SPACE, "Fly up key. Deliberately shares Space with Jump: jump on the ground, ascend when Fly is active."};
+        Key Forward = {this, INPUT_ACTION_MOVE_FORWARD, "forward", PlatformKey::KEY_W, "Move forward key."};
+        Key Jump = {this, INPUT_ACTION_JUMP, "jump", PlatformKey::KEY_SPACE, "Jump key."};
         Key Land = {this, INPUT_ACTION_FLY_LAND, "land", PlatformKey::KEY_HOME, "Land key."};
         Key Left = {this, INPUT_ACTION_TURN_LEFT, "left", PlatformKey::KEY_LEFT, "Turn left key."};
         Key LookDown = {this, INPUT_ACTION_LOOK_DOWN, "look_down", PlatformKey::KEY_DELETE, "Look down key."};
         Key LookUp = {this, INPUT_ACTION_LOOK_UP, "look_up", PlatformKey::KEY_PAGEDOWN, "Look up key."};
         Key MapBook = {this, INPUT_ACTION_OPEN_MAP, "map_book", PlatformKey::KEY_M, "Open map key."};
         Key Pass = {this, INPUT_ACTION_PASS, "pass", PlatformKey::KEY_B, "Pass turn key."};
-        Key Quest = {this, INPUT_ACTION_OPEN_QUESTS, "quest", PlatformKey::KEY_Q, "Open quest book key."};
+        Key Quest = {this, INPUT_ACTION_OPEN_QUESTS, "quest", PlatformKey::KEY_L, "Open quest book key."};
         Key QuickReference = {this, INPUT_ACTION_OPEN_QUICK_REFERENCE, "quick_reference", PlatformKey::KEY_Z, "Open quick reference menu key."};
         Key Rest = {this, INPUT_ACTION_REST, "rest", PlatformKey::KEY_R, "Rest key."};
         Key Right = {this, INPUT_ACTION_TURN_RIGHT, "right", PlatformKey::KEY_RIGHT, "Turn right key."};
-        Key StepLeft = {this, INPUT_ACTION_STRAFE_LEFT, "step_left", PlatformKey::KEY_LEFTBRACKET, "Strafe left key."};
-        Key StepRight = {this, INPUT_ACTION_STRAFE_RIGHT, "step_right", PlatformKey::KEY_RIGHTBRACKET, "Strafe right key."};
+        Key StepLeft = {this, INPUT_ACTION_STRAFE_LEFT, "step_left", PlatformKey::KEY_A, "Strafe left key."};
+        Key StepRight = {this, INPUT_ACTION_STRAFE_RIGHT, "step_right", PlatformKey::KEY_D, "Strafe right key."};
         Key TimeCalendar = {this, INPUT_ACTION_OPEN_CALENDAR, "time_calendar", PlatformKey::KEY_T, "Open calendar key."};
         Key Yell = {this, INPUT_ACTION_YELL, "yell", PlatformKey::KEY_Y, "Yell key."};
         Key ZoomIn = {this, INPUT_ACTION_ZOOM_IN, "zoom_in", PlatformKey::KEY_ADD, "Zoom in automap key."};
