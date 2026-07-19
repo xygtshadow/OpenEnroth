@@ -24,6 +24,7 @@
 #include "Engine/mm7_data.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Utility/ScopeGuard.h"
 #include "Utility/Segment.h"
 #include "Utility/String/Split.h"
 #include "Engine/Graphics/BSPModel.h"
@@ -8906,6 +8907,12 @@ GAME_TEST(Mm6, KeyBindingsWindowVirtualSpace) {
     // window so the two spaces differ.
     game.resizeWindow(1024, 768);
     game.tick(2);
+    // Restore unconditionally - a failed ASSERT_* below returns from the test body, and skipping
+    // the restore would leak the 1024x768 window into subsequent tests in this process.
+    MM_AT_SCOPE_EXIT({
+        game.resizeWindow(640, 480);
+        game.tick(2);
+    });
     ASSERT_EQ(render->GetPresentDimensions(), Sizei(1024, 768));
     ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
 
@@ -8917,8 +8924,8 @@ GAME_TEST(Mm6, KeyBindingsWindowVirtualSpace) {
     ASSERT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
     EXPECT_EQ(pGUIWindow_CurrentMenu->frameRect, Recti(0, 0, 640, 480));
 
-    game.resizeWindow(640, 480); // Don't leak the window size into subsequent tests.
-    game.tick(2);
+    // Routes through goToGameOrMainMenu, whose SCREEN_KEYBOARD_OPTIONS escape presses
+    // KeyBinding_Default - harmless here because this test changes no bindings.
     game.goToGame();
 }
 
@@ -8933,6 +8940,12 @@ GAME_TEST(Mm6, HouseDialogueWindowVirtualSpace) {
     // virtual-space UI, where it is a text-layout rect. Make the two spaces differ.
     game.resizeWindow(1024, 768);
     game.tick(2);
+    // Restore unconditionally - a failed ASSERT_* below returns from the test body, and skipping
+    // the restore would leak the 1024x768 window into subsequent tests in this process.
+    MM_AT_SCOPE_EXIT({
+        game.resizeWindow(640, 480);
+        game.tick(2);
+    });
     ASSERT_EQ(render->GetPresentDimensions(), Sizei(1024, 768));
     ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
 
@@ -8956,8 +8969,6 @@ GAME_TEST(Mm6, HouseDialogueWindowVirtualSpace) {
     ASSERT_NE(pDialogueWindow, nullptr);
     EXPECT_EQ(pDialogueWindow->frameRect, Recti(0, 0, 640, 345));
 
-    game.resizeWindow(640, 480); // Don't leak the window size into subsequent tests.
-    game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
