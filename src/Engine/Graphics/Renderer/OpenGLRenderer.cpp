@@ -213,12 +213,14 @@ OpenGLRenderer::~OpenGLRenderer() {
 }
 
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
+    // TODO(hires): Task 5 - device-size readbacks. In native-res mode this reads an
+    // outputRender-sized (virtual 640x480) corner of the window-sized default framebuffer.
     RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
     }
     glReadPixels(0, 0, outputRender.w, outputRender.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
     return result;
@@ -226,7 +228,7 @@ RgbaImage OpenGLRenderer::ReadScreenPixels() {
 
 void OpenGLRenderer::ClearTarget(Color uColor) {
     /* TODO(Gerark) Should we bind to the framebuffer before clearing?
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
     }
     */
@@ -286,12 +288,17 @@ void OpenGLRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor
 void OpenGLRenderer::BeginScene3D() {
     // Setup for 3D
 
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
 
         GL_Check_Framebuffer(__FUNCTION__);
+    } else if (isNativeResMode()) {
+        // No intermediate framebuffer: the frame draws straight into the window-sized default
+        // framebuffer. Open the scissor to the full window so the frame-start clear below wipes
+        // the pillarbox/letterbox bars together with the scene.
+        glScissor(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);
     }
 
     glDepthMask(GL_TRUE);
@@ -1961,7 +1968,7 @@ void OpenGLRenderer::ResetUIClipRect() {
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
@@ -2214,7 +2221,33 @@ void OpenGLRenderer::flushAndScale() {
     EndLines2D();
     EndTextNew();
 
-    if (outputRender != outputPresent) {
+    if (isNativeResMode()) {
+        // No blit - the frame was drawn straight into the default framebuffer. Just wipe the
+        // pillarbox/letterbox bars around the scaled UI frame: nothing ever rasterizes there
+        // (the viewport transform bounds all drawing to the frame), but backbuffer contents are
+        // undefined after a swap, so the bars must be re-blackened every frame.
+        Sizei device = _uiTransform.deviceSize;
+        Recti frame = _uiTransform.deviceRect() & Recti(Pointi(0, 0), device);
+        if (frame != Recti(Pointi(0, 0), device)) {
+            glClearColor(0.0, 0.0, 0.0, 1.0);
+            Recti bars[4] = {
+                Recti(0, 0, frame.x, device.h),                                            // Left.
+                Recti(frame.x + frame.w, 0, device.w - frame.x - frame.w, device.h),       // Right.
+                Recti(frame.x, 0, frame.w, frame.y),                                       // Top.
+                Recti(frame.x, frame.y + frame.h, frame.w, device.h - frame.y - frame.h),  // Bottom.
+            };
+            for (const Recti &bar : bars) {
+                if (bar.isEmpty())
+                    continue;
+                glScissor(bar.x, device.h - bar.y - bar.h, bar.w, bar.h);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            glScissor(0, 0, device.w, device.h);
+        }
+        return;
+    }
+
+    if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glDisable(GL_SCISSOR_TEST);
 
@@ -2244,9 +2277,15 @@ void OpenGLRenderer::flushAndScale() {
 }
 
 void OpenGLRenderer::swapBuffers() {
-    if (outputRender != outputPresent) {
+    if (_usesScalingFramebuffer()) {
         glEnable(GL_SCISSOR_TEST);
         glViewport(0, 0, outputRender.w, outputRender.h);
+    } else if (isNativeResMode()) {
+        // Reset to the full window so the next frame's first clear (BeginScene3D / ClearTarget)
+        // covers the pillarbox/letterbox bars; scissor stays enabled throughout in this mode.
+        glEnable(GL_SCISSOR_TEST);
+        glViewport(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);
+        glScissor(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);
     }
 
     openGLContext->swapBuffers();
@@ -3513,28 +3552,36 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
 
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(2, framebufferTextures);
+    framebuffer = 0;
+    framebufferTextures[0] = 0;
+    framebufferTextures[1] = 0;
 
-    glGenFramebuffers(1, &framebuffer);
-    glGenTextures(2, framebufferTextures);
+    if (!isNativeResMode()) {
+        glGenFramebuffers(1, &framebuffer);
+        glGenTextures(2, framebufferTextures);
 
-    glBindTexture(GL_TEXTURE_2D, framebufferTextures[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, outputRender.w, outputRender.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, framebufferTextures[0]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, outputRender.w, outputRender.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glBindTexture(GL_TEXTURE_2D, 0);
 
-    glBindTexture(GL_TEXTURE_2D, framebufferTextures[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, outputRender.w, outputRender.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, framebufferTextures[1]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, outputRender.w, outputRender.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 
-    glViewport(0, 0, outputRender.w, outputRender.h);
-    glScissor(0, 0, outputRender.w, outputRender.h);
+    // In native-res mode there is no scaling framebuffer - the initial viewport/scissor cover the
+    // window-sized default framebuffer instead of the (virtual) render dimensions.
+    Sizei targetSize = isNativeResMode() ? _uiTransform.deviceSize : outputRender;
+    glViewport(0, 0, targetSize.w, targetSize.h);
+    glScissor(0, 0, targetSize.w, targetSize.h);
     glEnable(GL_SCISSOR_TEST);
 
     this->clipRect = Recti(Pointi(0, 0), outputRender);

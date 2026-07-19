@@ -98,6 +98,16 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void endOverlays() override;
 
  protected:
+    /**
+     * @return  Whether rendering goes through the intermediate scaling framebuffer that
+     *          `flushAndScale()` blits onto the window (`render_filter` 1/2 with render dimensions
+     *          differing from the window size). False in native-resolution mode, where the
+     *          dimensions also differ but everything draws straight into the default framebuffer.
+     */
+    [[nodiscard]] bool _usesScalingFramebuffer() const {
+        return !isNativeResMode() && outputRender != outputPresent;
+    }
+
     virtual void DoRenderBillboards_D3D() override;
     void SetBillboardBlendOptions(RenderBillboardD3D::OpacityType a1);
 
