@@ -1298,8 +1298,10 @@ GAME_TEST(Issues, Issue2507) {
 GAME_TEST(Hires, NativeResHeadlessGate) {
     // MM7 counterpart of Mm6.NativeResHeadlessGate - a native-resolution mode (render_filter 0)
     // crash gate that runs the frame loop and the full virtual->device->virtual mouse round-trip
-    // at a fractional scale: 1000x750 puts the UI transform at 1.5625x, where virtual coordinates
-    // land between device pixels.
+    // at a fractional scale in a non-4:3 window: 1000x700 puts the UI transform at
+    // min(1000/640, 700/480) = 1.4583x, where virtual coordinates land between device pixels,
+    // and centers the 933x700 scaled frame at a nonzero pillarbox offset {33, 0}, which the
+    // mouse round-trip below exercises through MapToRender/MapToPresent.
     game.startNewGame();
 
     // The mode is snapshotted on Reinitialize, which the resize triggers, so set the filter
@@ -1307,7 +1309,7 @@ GAME_TEST(Hires, NativeResHeadlessGate) {
     // skipping the restore would leak native-res mode into subsequent tests in this process.
     int oldFilter = engine->config->graphics.RenderFilter.value();
     engine->config->graphics.RenderFilter.setValue(0);
-    game.resizeWindow(1000, 750);
+    game.resizeWindow(1000, 700);
     game.tick(2);
     MM_AT_SCOPE_EXIT({
         engine->config->graphics.RenderFilter.setValue(oldFilter);
@@ -1316,7 +1318,7 @@ GAME_TEST(Hires, NativeResHeadlessGate) {
     });
     // outputPresent and the native-res mode snapshot are taken together in
     // updateRenderDimensions, so the window size having propagated proves the mode switch did too.
-    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1000, 750));
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1000, 700));
     ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
 
     // A stretch of ordinary frames, then a click at the center of the screen. Harness clicks are
@@ -1335,5 +1337,5 @@ GAME_TEST(Hires, NativeResHeadlessGate) {
     EXPECT_GE(clickPos.y, 239);
     EXPECT_LE(clickPos.y, 241);
     EXPECT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
-    EXPECT_EQ(render->GetPresentDimensions(), Sizei(1000, 750));
+    EXPECT_EQ(render->GetPresentDimensions(), Sizei(1000, 700));
 }

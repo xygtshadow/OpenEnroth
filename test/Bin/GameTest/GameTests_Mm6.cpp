@@ -9065,4 +9065,22 @@ GAME_TEST(Mm6, NativeResHeadlessGate) {
     EXPECT_LE(clickPos.y, 241);
     EXPECT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
     EXPECT_EQ(render->GetPresentDimensions(), Sizei(1000, 750));
+
+    // Follow-on leg: a window smaller than 640x480. The UI scale clamps to 1 and the virtual
+    // frame is centered as a crop (negative offset {-70, -40}) - the crop path's only integration
+    // exercise. At the clamped 1x scale the mouse round-trip is exact.
+    game.resizeWindow(500, 400);
+    game.tick(2);
+    ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(500, 400));
+
+    game.tick(5);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+
+    clickPos = mouse->position();
+    EXPECT_GE(clickPos.x, 319);
+    EXPECT_LE(clickPos.x, 321);
+    EXPECT_GE(clickPos.y, 239);
+    EXPECT_LE(clickPos.y, 241);
 }
