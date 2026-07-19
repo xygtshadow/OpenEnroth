@@ -116,4 +116,16 @@ if(OE_BUILD_TESTS)
     target_check_style(test_engine)
 
     target_link_libraries(OpenEnroth_GameTest PUBLIC test_engine)
+
+    # True unit tests for header-only engine code — these run in OpenEnroth_UnitTest, so they
+    # must not link the full engine.
+    set(UNIT_TEST_ENGINE_SOURCES
+            Tests/UiScaleTransform_ut.cpp)
+
+    add_library(unit_test_engine OBJECT ${UNIT_TEST_ENGINE_SOURCES})
+    target_link_libraries(unit_test_engine PUBLIC testing_unit library_geometry)
+
+    target_check_style(unit_test_engine)
+
+    target_link_libraries(OpenEnroth_UnitTest PUBLIC unit_test_engine)
 endif()

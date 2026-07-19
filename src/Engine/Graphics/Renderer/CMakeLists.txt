@@ -20,7 +20,8 @@ set(ENGINE_GRAPHICS_RENDERER_HEADERS
         Renderer.h
         RendererEnums.h
         RendererFactory.h
-        TextureRenderId.h)
+        TextureRenderId.h
+        UiScaleTransform.h)
 
 add_library(engine_graphics_renderer STATIC ${ENGINE_GRAPHICS_RENDERER_SOURCES} ${ENGINE_GRAPHICS_RENDERER_HEADERS})
 target_check_style(engine_graphics_renderer)
