@@ -346,7 +346,7 @@ static Color GameMenuUI_GetKeyBindingColor(InputAction action) {
 }
 
 GUIWindow_GameKeyBindings::GUIWindow_GameKeyBindings()
-    : GUIWindow(WINDOW_KeyMappingOptions, {0, 0}, render->GetPresentDimensions()) {
+    : GUIWindow(WINDOW_KeyMappingOptions, {0, 0}, render->GetRenderDimensions()) {
     game_ui_options_controls[0] = assets->getImage_ColorKey("optkb");
     game_ui_options_controls[1] = assets->getImage_ColorKey("optkb_h");
     game_ui_options_controls[2] = assets->getImage_ColorKey("resume1");
