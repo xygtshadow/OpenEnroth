@@ -213,15 +213,15 @@ OpenGLRenderer::~OpenGLRenderer() {
 }
 
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
-    // TODO(hires): broken in native-res mode - reads an outputRender-sized (virtual 640x480)
-    // bottom-left corner of the window-sized default framebuffer instead of the whole frame.
-    // Needs to read device-sized pixels and downsample where callers expect virtual dimensions.
-    // (Task 5.)
-    RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
+    // In native-res mode the frame is drawn straight into the window-sized default framebuffer,
+    // so the readback is device-sized; otherwise it's the outputRender-sized scaling framebuffer
+    // (or the default framebuffer, whose size then matches outputRender).
+    Sizei size = isNativeResMode() ? _uiTransform.deviceSize : outputRender;
+    RgbaImage result = RgbaImage::uninitialized(size.w, size.h);
     if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
     }
-    glReadPixels(0, 0, outputRender.w, outputRender.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
+    glReadPixels(0, 0, size.w, size.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
     if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
@@ -777,10 +777,6 @@ void OpenGLRenderer::DrawIndoorSkyPolygon(int uNumVertices, GraphicsImage *textu
 
 RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int height) {
     // TODO(pskelton): should this call drawworld instead??
-    // TODO(hires): broken in native-res mode - on top of ReadScreenPixels() returning the wrong
-    // region (see there), the interval sampling below indexes the pixels with virtual
-    // pViewport/outputRender coordinates; both need mapping through _uiTransform once readbacks
-    // return device-sized pixels. (Task 5.)
 
     pCamera3D->_viewPitch = pParty->_viewPitch;
     pCamera3D->_viewYaw = pParty->_viewYaw;
@@ -802,15 +798,22 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
 
     // TODO(captainurist): subImage().scale()
     RgbaImage sPixels = ReadScreenPixels();
-    float interval_x = static_cast<float>(pViewport.w) / width;
-    float interval_y = static_cast<float>(pViewport.h) / height;
-
     RgbaImage pPixels = RgbaImage::solid(Color(), width, height);
 
     if (uCurrentlyLoadedLevelType != LEVEL_NULL) {
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                pPixels[y][x] = sPixels[outputRender.h - (y + 1) * interval_y - pViewport.y][x * interval_x + pViewport.x];
+        if (isNativeResMode()) {
+            // The readback is device-sized: map the virtual viewport rect into device space and
+            // sample that region down to the requested size. sampleRegion clamps, which covers the
+            // outward-rounded rect overshooting the window by a pixel (or lying partly outside it
+            // when an undersized window crops the frame).
+            pPixels = sampleRegion(flipVertically(sPixels), _uiTransform.toDeviceOutward(pViewport), Sizei(width, height));
+        } else {
+            float interval_x = static_cast<float>(pViewport.w) / width;
+            float interval_y = static_cast<float>(pViewport.h) / height;
+            for (int y = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    pPixels[y][x] = sPixels[outputRender.h - (y + 1) * interval_y - pViewport.y][x * interval_x + pViewport.x];
+                }
             }
         }
     }

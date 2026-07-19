@@ -42,6 +42,7 @@ class BaseRenderer : public Renderer {
     virtual Sizei GetPresentDimensions() override;
     virtual Pointi MapToRender(Pointi position) override;
     virtual Pointi MapToPresent(Pointi position) override;
+    virtual RgbaImage MakeVirtualScreenshot() override;
 
     /**
      * @return  Whether the renderer runs in native-resolution mode (`render_filter` == 0). In this

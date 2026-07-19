@@ -41,6 +41,13 @@ class Renderer {
 
     virtual bool Initialize() = 0;
 
+    /**
+     * Reads back the current render target, in the bottom-up row order that GL returns pixels in.
+     *
+     * @return                          Render-sized image; in native-resolution mode the frame
+     *                                  lives in the window-sized default framebuffer, so the
+     *                                  returned image is device-sized instead.
+     */
     virtual RgbaImage ReadScreenPixels() = 0;
     virtual void ClearTarget(Color uColor) = 0;
     virtual void Present() = 0;
@@ -120,7 +127,28 @@ class Renderer {
      */
     virtual RgbaImage MakeViewportScreenshot(int width, int height) = 0;
 
+    /**
+     * Takes a screenshot of the whole frame.
+     *
+     * @return                          Screenshot at render size. In native-resolution mode the
+     *                                  frame is rendered at window resolution, so the returned
+     *                                  image is device-sized - the whole window, pillarbox /
+     *                                  letterbox bars included. External screenshot tooling relies
+     *                                  on getting the native-resolution capture here; use
+     *                                  `MakeVirtualScreenshot` when a render-sized image is needed
+     *                                  regardless of mode.
+     */
     virtual RgbaImage MakeFullScreenshot() = 0;
+
+    /**
+     * Takes a screenshot of the whole frame at the virtual render size (`GetRenderDimensions()`)
+     * regardless of mode.
+     *
+     * @return                          Screenshot at render size; in native-resolution mode the
+     *                                  scaled UI frame is cropped out of the device-sized capture
+     *                                  and sampled down to the virtual size.
+     */
+    virtual RgbaImage MakeVirtualScreenshot() = 0;
 
     virtual std::vector<Actor *> getActorsInViewport(int pDepth) = 0;
 

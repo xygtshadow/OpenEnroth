@@ -93,6 +93,8 @@
 #include "Io/Mouse.h"
 
 #include "Library/Color/ColorTable.h"
+#include "Library/Image/Pcx.h"
+#include "Library/Lod/LodReader.h"
 #include "Library/LodFormats/LodImage.h"
 
 #include "Media/MediaPlayer.h"
@@ -8972,4 +8974,50 @@ GAME_TEST(Mm6, HouseDialogueWindowVirtualSpace) {
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
+
+GAME_TEST(Mm6, NativeResSaveThumbnail) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Native-resolution mode (render_filter 0) renders the frame at window resolution, but pixel
+    // readbacks with a caller-chosen size - save thumbnails above all - must still come out at
+    // that size. The mode is snapshotted on Reinitialize, which the resize triggers, so set the
+    // filter first. Restore unconditionally - a failed ASSERT_* below returns from the test body,
+    // and skipping the restore would leak native-res mode into subsequent tests in this process.
+    int oldFilter = engine->config->graphics.RenderFilter.value();
+    engine->config->graphics.RenderFilter.setValue(0);
+    game.resizeWindow(1024, 768);
+    game.tick(2);
+    MM_AT_SCOPE_EXIT({
+        engine->config->graphics.RenderFilter.setValue(oldFilter);
+        game.resizeWindow(640, 480);
+        game.tick(2);
+    });
+    // outputPresent and the native-res mode snapshot are taken together in
+    // updateRenderDimensions, so the window size having propagated proves the mode switch did too.
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1024, 768));
+    ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+
+    // Readbacks touch the render target, so they run on the game thread (in a non-headless run
+    // that's where the GL context is bound). The viewport screenshot contract - an image of
+    // exactly the requested size - holds in native-res mode (Lloyd's Beacon asks for 92x68, the
+    // gamma preview for 155x117), as does MakeVirtualScreenshot's render-size contract (the
+    // endgame certificate is re-drawn as a virtual-space quad at its natural size).
+    Sizei viewportShotSize, virtualShotSize;
+    game.runGameRoutine([&] {
+        viewportShotSize = render->MakeViewportScreenshot(92, 68).size();
+        virtualShotSize = render->MakeVirtualScreenshot().size();
+    });
+    EXPECT_EQ(viewportShotSize, Sizei(92, 68));
+    EXPECT_EQ(virtualShotSize, Sizei(640, 480));
+
+    // And a save's thumbnail, captured through the same viewport-screenshot path, decodes at its
+    // fixed dimensions.
+    Blob save = game.saveGame();
+    LodReader reader(std::move(save));
+    RgbaImage thumbnail = pcx::decode(reader.read("image.pcx"));
+    EXPECT_EQ(thumbnail.size(), Sizei(150, 112));
 }

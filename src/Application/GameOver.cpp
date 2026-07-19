@@ -124,7 +124,9 @@ GraphicsImage *CreateWinnerCertificate(bool isLoss) {
     render->EndLines2D();
     render->EndTextNew();
 
-    RgbaImage pixels = render->MakeFullScreenshot();
+    // Virtual-size capture: the certificate is written out in the vanilla 640x480 PCX shape and
+    // re-drawn every frame as a virtual-space quad at its natural size.
+    RgbaImage pixels = render->MakeVirtualScreenshot();
     ufs->write(engine->gameVersion() == GAME_VERSION_MM6 ? "MM6_Win.Pcx" : "MM7_Win.Pcx", pcx::encode(pixels));
     GraphicsImage *result = GraphicsImage::Create(std::move(pixels));
 

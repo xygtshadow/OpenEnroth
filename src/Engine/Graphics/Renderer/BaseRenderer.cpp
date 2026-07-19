@@ -29,6 +29,7 @@
 #include "Engine/EngineGlobals.h"
 #include "Engine/Random/Random.h"
 
+#include "Library/Image/ImageFunctions.h"
 #include "Library/Logger/Logger.h"
 
 #include "Utility/Math/TrigLut.h"
@@ -646,6 +647,17 @@ Pointi BaseRenderer::MapToPresent(Pointi position) {
     }
 
     return result;
+}
+
+RgbaImage BaseRenderer::MakeVirtualScreenshot() {
+    RgbaImage screenshot = MakeFullScreenshot();
+
+    // The size check keeps this a plain pass-through for renderers that never capture at device
+    // size (NullRenderer), and for a native-res window that is exactly the virtual size.
+    if (!isNativeResMode() || screenshot.size() == outputRender)
+        return screenshot;
+
+    return sampleRegion(screenshot, _uiTransform.deviceRect(), outputRender);
 }
 
 bool BaseRenderer::isNativeResMode() const {
