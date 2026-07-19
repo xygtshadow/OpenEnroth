@@ -374,7 +374,7 @@ GAME_TEST(Mm6, ModernControls) {
 
     // E quick-casts: with no quick spell readied it falls back to an attack, which exercises
     // the INPUT_ACTION_QUICK_CAST binding end to end. The attacker is now the next ready
-    // character (Alexis - her bow shot's recovery lands with the arrow's spell effect).
+    // character (Alexis, who shoots her bow - recovery is applied when the arrow sprite spawns).
     Character &eAttacker = pParty->activeCharacter();
     EXPECT_NE(&eAttacker, &qAttacker);
     EXPECT_EQ(eAttacker.timeToRecovery, 0_ticks);

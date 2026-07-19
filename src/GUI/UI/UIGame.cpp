@@ -53,6 +53,7 @@
 #include "GUI/UI/UISpellbook.h"
 
 #include "Io/InputEnumFunctions.h"
+#include "Io/KeyboardActionMapping.h"
 #include "Io/Mouse.h"
 
 #include "Utility/Math/TrigLut.h"
@@ -395,20 +396,9 @@ void GUIWindow_GameKeyBindings::Update() {
 
         engine->_statusBar->clearAll();
 
-        key_map_conflicted.clear();
+        key_map_conflicted = findConflictingKeybindings(curr_key_map, keyboardActionMapping->defaultKeybindings(KEYBINDINGS_CONFIGURABLE));
 
-        bool anyConflicts = false;
-        for (auto x : curr_key_map) {
-            for (auto y : curr_key_map) {
-                if (x.first != y.first && x.second == y.second) {
-                    key_map_conflicted.insert(x.first);
-                    key_map_conflicted.insert(y.first);
-                    anyConflicts = true;
-                }
-            }
-        }
-
-        if (anyConflicts)
+        if (!key_map_conflicted.empty())
             engine->_statusBar->setEvent(LSTR_KEY_CONFLICT);
         else
             engine->_statusBar->clearAll();

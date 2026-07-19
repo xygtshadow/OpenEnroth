@@ -1,10 +1,13 @@
 #include "InputEnumFunctions.h"
 
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "Library/Serialization/EnumSerialization.h"
 
 #include "Utility/IndexedArray.h"
+#include "Utility/MapAccess.h"
 
 // TODO(captainurist): these should be localizable.
 MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(InputAction, CASE_INSENSITIVE, {
@@ -319,4 +322,24 @@ std::string GetDisplayName(PlatformKey key) {
 
 bool TryParseDisplayName(std::string_view displayName, PlatformKey *outKey) {
     return tryDeserialize(displayName, outKey);
+}
+
+std::unordered_set<InputAction> findConflictingKeybindings(const std::unordered_map<InputAction, PlatformKey> &bindings,
+                                                           const std::unordered_map<InputAction, PlatformKey> &defaultBindings) {
+    auto isDefault = [&](InputAction action, PlatformKey key) {
+        return valueOr(defaultBindings, action, PlatformKey::KEY_NONE) == key;
+    };
+
+    std::unordered_set<InputAction> result;
+    for (const auto &[xAction, xKey] : bindings) {
+        for (const auto &[yAction, yKey] : bindings) {
+            if (xAction == yAction || xKey != yKey)
+                continue;
+            if (isDefault(xAction, xKey) && isDefault(yAction, yKey))
+                continue; // An intentional shipped default share, e.g. Space being both Jump and FlyUp.
+            result.insert(xAction);
+            result.insert(yAction);
+        }
+    }
+    return result;
 }
