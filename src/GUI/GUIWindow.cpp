@@ -155,6 +155,11 @@ GUIButton *GUI_HandleHotkey(PlatformKey hotkey) {
 
         int width = render->GetPresentDimensions().w;
         // TODO(captainurist): Sus. Comparing height to width?
+        // Note that this check is dead in practice: it only passes for a square fullscreen window
+        // (frameRect.w == frameRect.h == present width), and no such window is ever created -
+        // fullscreen windows are GetRenderDimensions()-sized (640x480 aspect). In native-res mode
+        // (device-px width vs virtual-space frameRect) it likewise never matches, so behavior is
+        // identical in all modes.
         if (pWindow->frameRect.x == 0 && pWindow->frameRect.y == 0 &&
             pWindow->frameRect.w == width && pWindow->frameRect.h == width) {
             break;
