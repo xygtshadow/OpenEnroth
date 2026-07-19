@@ -124,6 +124,25 @@ bool Alpha_LOD_Loader::Load(RgbaImage *rgbaImage) {
     return true;
 }
 
+bool BlackKey_LOD_Loader::Load(RgbaImage *rgbaImage) {
+    LodImage *tex = lod->loadTexture(resource_name);
+    if (tex == nullptr)
+        return false;
+
+    // MM6's transparent blit (MM6.EXE 0x40a5a0) skips pixels whose 16bpp-565 palette color is 0, so every
+    // palette entry that quantizes to black is transparent, not just index 0.
+    Palette palette = tex->palette;
+    for (size_t i = 0; i < 256; i++) {
+        Color color = palette.colors[i];
+        if ((color.r & 0xF8) == 0 && (color.g & 0xFC) == 0 && (color.b & 0xF8) == 0)
+            palette.colors[i] = Color();
+    }
+
+    *rgbaImage = makeRgbaImage(tex->image, palette);
+
+    return true;
+}
+
 bool Buff_LOD_Loader::Load(RgbaImage *rgbaImage) {
     LodImage *tex = lod->loadTexture(resource_name);
     if (tex == nullptr)

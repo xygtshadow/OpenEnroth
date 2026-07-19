@@ -8862,3 +8862,34 @@ GAME_TEST(Mm6, BarrelHoverAndClick) {
 }
 
 
+GAME_TEST(Mm6, ViewportPillarCapitalTransparency) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // border5/border6, the pillar capitals overhanging the 3D viewport's top corners at (7,8)/(461,8),
+    // mark their cut-out with BLACK palette entries (165/182), not index 0. MM6.EXE draws them with the
+    // 16bpp-black-keyed blit 0x40a5a0 (via 0x417dc0), so the cut-out must be transparent - with plain
+    // palette-0 alpha they drew as opaque black boxes over the sky.
+    ASSERT_NE(game_ui_mm6_border5, nullptr);
+    ASSERT_NE(game_ui_mm6_border6, nullptr);
+    EXPECT_EQ(game_ui_mm6_border5->size(), Sizei(8, 20));
+    EXPECT_EQ(game_ui_mm6_border6->size(), Sizei(7, 21));
+
+    // The cut-out corners are transparent, the capital art is opaque.
+    EXPECT_EQ(game_ui_mm6_border5->rgba()[19][7].a, 0);  // Palette index 165, rgb (0,0,0).
+    EXPECT_NE(game_ui_mm6_border5->rgba()[0][0].a, 0);   // Palette index 239, rgb (83,79,80).
+    EXPECT_EQ(game_ui_mm6_border6->rgba()[20][0].a, 0);  // Palette index 182, rgb (0,0,0).
+    EXPECT_NE(game_ui_mm6_border6->rgba()[0][6].a, 0);   // Palette index 232, rgb (54,51,50).
+
+    // And a good chunk of each patch is cut out (56/160 resp. 63/147 exactly-black pixels alone).
+    auto transparentPixels = [](GraphicsImage *image) {
+        int result = 0;
+        for (const Color &color : image->rgba().pixels())
+            result += color.a == 0;
+        return result;
+    };
+    EXPECT_GE(transparentPixels(game_ui_mm6_border5), 56);
+    EXPECT_GE(transparentPixels(game_ui_mm6_border6), 63);
+}

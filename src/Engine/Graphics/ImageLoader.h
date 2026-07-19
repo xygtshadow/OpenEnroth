@@ -77,6 +77,21 @@ class Alpha_LOD_Loader : public ImageLoader {
     LodTextureCache *lod;
 };
 
+// Emulates MM6's transparent blit (MM6.EXE 0x40a5a0): a pixel is skipped iff its palette color is 0 in
+// 16bpp-565, i.e. every near-black palette entry (r < 8, g < 4, b < 8) is transparent - not just index 0.
+class BlackKey_LOD_Loader : public ImageLoader {
+ public:
+    inline BlackKey_LOD_Loader(LodTextureCache *lod, std::string_view filename) {
+        this->resource_name = filename;
+        this->lod = lod;
+    }
+
+    virtual bool Load(RgbaImage *rgbaImage) override;
+
+ protected:
+    LodTextureCache *lod;
+};
+
 class Buff_LOD_Loader : public ImageLoader {
  public:
     inline Buff_LOD_Loader(LodTextureCache *lod, std::string_view filename) {

@@ -610,10 +610,15 @@ void SetUserInterface(PartyAlignment align) {
         // Note on loaders: MM6's icon bitmaps almost never set the palette-0-transparent header flag -
         // transparency is by the palette-0 CONVENTION, so cut-out images go through getImage_Alpha
         // (unconditional palette-0 transparency); TealMask color-keying never matches MM6 palettes.
+        // Images whose cut-out is black-but-not-index-0 use getImage_BlackKey, the EXE's 0x40a5a0 blit.
         game_ui_topframe = assets->getImage_Solid("border3");            // 468x8 top edge at (0,0).
         game_ui_leftframe = assets->getImage_Solid("border4");           // 8x344 left edge at (0,8).
-        game_ui_mm6_border5 = assets->getImage_Alpha("border5");         // Viewport corner patch at (7,8).
-        game_ui_mm6_border6 = assets->getImage_Alpha("border6");         // Viewport corner patch at (461,8).
+        game_ui_mm6_border5 = assets->getImage_BlackKey("border5");      // Viewport corner patch at (7,8).
+        game_ui_mm6_border6 = assets->getImage_BlackKey("border6");      // Viewport corner patch at (461,8): both
+                                                                         // mark their cut-out with BLACK entries
+                                                                         // (165/182), not index 0 - the EXE draws
+                                                                         // them with the 16bpp-black-keyed blit
+                                                                         // 0x40a5a0 (via 0x417dc0).
         game_ui_bottomframe = assets->getImage_PCXFromIconsLOD("border2.pcx");        // 469x109 portrait strip at (0,371).
         game_ui_right_panel_frame = assets->getImage_PCXFromIconsLOD("border1.pcx");  // 172x339 right panel at (468,141).
         game_ui_statusbar = assets->getImage_Solid("footer");            // 483x24 status bar at (0,352).

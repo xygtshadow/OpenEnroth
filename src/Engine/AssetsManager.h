@@ -26,6 +26,7 @@ class AssetsManager {
     GraphicsImage *getImage_Paletted(std::string_view name);
     GraphicsImage *getImage_Solid(std::string_view name);
     GraphicsImage *getImage_Alpha(std::string_view name);
+    GraphicsImage *getImage_BlackKey(std::string_view name); // MM6's transparent blit: 16bpp-black is transparent.
     GraphicsImage *getImage_Buff(std::string_view name);
 
     GraphicsImage *getImage_PCXFromIconsLOD(std::string_view name, Color colorkey = Color());
