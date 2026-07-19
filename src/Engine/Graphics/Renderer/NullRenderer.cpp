@@ -17,7 +17,10 @@ bool NullRenderer::Reinitialize(bool firstInit) {
 }
 
 RgbaImage NullRenderer::ReadScreenPixels() {
-    return RgbaImage::solid(Color(), 640, 480);
+    // Shaped to outputRender, not a hardcoded 640x480, so that readback contracts that compare
+    // against the render size - MakeVirtualScreenshot's pass-through above all - hold by
+    // construction. The two coincide in the default configuration.
+    return RgbaImage::solid(Color(), outputRender.w, outputRender.h);
 }
 
 void NullRenderer::ClearTarget(Color uColor) {}
@@ -76,7 +79,7 @@ RgbaImage NullRenderer::MakeViewportScreenshot(const int width, const int height
 }
 
 RgbaImage NullRenderer::MakeFullScreenshot() {
-    return RgbaImage::solid(Color(), 640, 480);
+    return ReadScreenPixels();
 }
 
 void NullRenderer::BeginDecals() {}
