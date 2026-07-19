@@ -3847,7 +3847,9 @@ void OpenGLRenderer::DrawTwodVerts() {
     uniforms.paltex2D = paltex2D_id;
     // In native-res mode UI quads draw 1:1 in virtual space and the viewport magnifies them to
     // device pixels - sharp-bilinear needs that magnification factor. 1.0 disables it in the
-    // shader, keeping the default path bit-identical.
+    // shader, keeping the default path bit-identical. This assumes quads draw 1:1
+    // texel:virtual-pixel; stretched quads (movie frames) just get a proportionally wider
+    // sharpening ramp - still bounded by the bilinear footprint.
     uniforms.texelScale = isNativeResMode() ? _uiTransform.scale : 1.0f;
     uniforms.submit(twodshader);
 
