@@ -41,3 +41,17 @@ target_link_libraries(engine_graphics_renderer
         glad
         library_filesystem_sub
         library_preprocessor)
+
+if(OE_BUILD_TESTS)
+    set(TEST_ENGINE_GRAPHICS_RENDERER_SOURCES
+            Tests/UiScaleTransform_ut.cpp)
+
+    add_library(test_engine_graphics_renderer OBJECT ${TEST_ENGINE_GRAPHICS_RENDERER_SOURCES})
+    # These are true unit tests of header-only pure math, so they link only geometry, not the GL
+    # renderer — keeps OpenEnroth_UnitTest free of engine/GL dependencies.
+    target_link_libraries(test_engine_graphics_renderer PUBLIC testing_unit library_geometry)
+
+    target_check_style(test_engine_graphics_renderer)
+
+    target_link_libraries(OpenEnroth_UnitTest PUBLIC test_engine_graphics_renderer)
+endif()
