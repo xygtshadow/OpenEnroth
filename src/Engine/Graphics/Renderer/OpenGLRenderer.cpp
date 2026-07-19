@@ -1976,12 +1976,27 @@ void OpenGLRenderer::SetBillboardBlendOptions(RenderBillboardD3D::OpacityType a1
 }
 
 void OpenGLRenderer::SetUIClipRect(const Recti &rect) {
-    this->clipRect = rect;
-    glScissor(rect.x, outputRender.h - rect.y - rect.h, rect.w, rect.h);  // invert glscissor co-ords 0,0 is BL
+    this->clipRect = rect;  // Stays virtual - DrawQuad2D/DrawTextNew CPU-clip against it.
+    if (isNativeResMode()) {
+        // Rounded outward: at fractional scales a nearest-rounded scissor could shave the last
+        // device pixel row/column off the clipped art; adjacent UI art overdraws the seam.
+        Recti r = _uiTransform.toDeviceOutward(rect);
+        glScissor(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+    } else {
+        glScissor(rect.x, outputRender.h - rect.y - rect.h, rect.w, rect.h);  // invert glscissor co-ords 0,0 is BL
+    }
 }
 
 void OpenGLRenderer::ResetUIClipRect() {
-    this->SetUIClipRect(Recti(Pointi(0, 0), outputRender));
+    this->clipRect = Recti(Pointi(0, 0), outputRender);
+    if (isNativeResMode()) {
+        // Open the scissor to the whole window rather than the scaled UI frame: drawing is already
+        // bounded to the frame by the viewport transform, and a full-window scissor keeps
+        // scissored full-target clears (ClearTarget at frame start) covering the pillarbox bars.
+        glScissor(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);
+    } else {
+        glScissor(0, 0, outputRender.w, outputRender.h);
+    }
 }
 
 void OpenGLRenderer::BeginScene2D() {
