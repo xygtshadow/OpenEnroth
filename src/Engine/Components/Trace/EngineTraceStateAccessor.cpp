@@ -39,6 +39,7 @@ static bool shouldTake(const GameConfig *config, const ConfigSection *section, c
 }
 
 void EngineTraceStateAccessor::prepareForRecording(GameConfig *config, ConfigPatch *patch) {
+    applyClassicKeybindings(config);
     *patch = ConfigPatch::fromConfig(config, [config] (const ConfigSection *section, const AnyConfigEntry *entry) {
         return !shouldSkip(config, section, entry) && shouldTake(config, section, entry);
     });
@@ -54,7 +55,7 @@ void EngineTraceStateAccessor::prepareForPlayback(GameConfig *config, const Conf
             if (!shouldSkip(config, section, entry))
                 entry->reset();
 
-    // TODO(captainurist): Right now setting keybindings here doesn't work
+    applyClassicKeybindings(config); // Raw keypresses in traces assume classic bindings.
     patch.apply(config);
 
     // We don't set voice & music levels to 0.0 b/c in this case our code doesn't even call into OpenAL, and this is NOT
@@ -69,6 +70,20 @@ void EngineTraceStateAccessor::prepareForPlayback(GameConfig *config, const Conf
     config->debug.NoVideo.setValue(config->debug.TraceNoVideo.value());
     config->debug.NoPartyActorCollisions.setValue(config->debug.TraceNoPartyActorCollisions.value());
     pAudioPlayer->UpdateVolumeFromConfig();
+}
+
+void EngineTraceStateAccessor::applyClassicKeybindings(GameConfig *config) {
+    config->keybindings.Forward.setValue(PlatformKey::KEY_UP);
+    config->keybindings.Backward.setValue(PlatformKey::KEY_DOWN);
+    config->keybindings.StepLeft.setValue(PlatformKey::KEY_LEFTBRACKET);
+    config->keybindings.StepRight.setValue(PlatformKey::KEY_RIGHTBRACKET);
+    config->keybindings.Jump.setValue(PlatformKey::KEY_X);
+    config->keybindings.FlyUp.setValue(PlatformKey::KEY_PAGEUP);
+    config->keybindings.FlyDown.setValue(PlatformKey::KEY_INSERT);
+    config->keybindings.Attack.setValue(PlatformKey::KEY_A);
+    config->keybindings.CastReady.setValue(PlatformKey::KEY_S);
+    config->keybindings.EventTrigger.setValue(PlatformKey::KEY_SPACE);
+    config->keybindings.Quest.setValue(PlatformKey::KEY_Q);
 }
 
 EventTraceGameState EngineTraceStateAccessor::makeGameState() {
