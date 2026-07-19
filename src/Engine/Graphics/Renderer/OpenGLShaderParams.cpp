@@ -35,6 +35,7 @@ void TwoDUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
     glUniform1i(shader.uniformLocation("paltex2D"), paltex2D);
     glUniform1i(shader.uniformLocation("texture0"), texture0);
+    glUniform1f(shader.uniformLocation("u_texelScale"), texelScale);
 }
 
 void TextUniforms::submit(const OpenGLShader &shader) const {
@@ -42,6 +43,7 @@ void TextUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
     glUniform1i(shader.uniformLocation("texture0"), texture0);
     glUniform1i(shader.uniformLocation("texture1"), texture1);
+    glUniform1f(shader.uniformLocation("u_texelScale"), texelScale);
 }
 
 void DecalUniforms::submit(const OpenGLShader &shader) const {

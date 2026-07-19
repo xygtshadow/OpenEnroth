@@ -2163,6 +2163,8 @@ void OpenGLRenderer::EndTextNew() {
     TextUniforms uniforms;
     uniforms.projection = projmat;
     uniforms.view = viewmat;
+    // See the matching comment in DrawTwodVerts().
+    uniforms.texelScale = isNativeResMode() ? _uiTransform.scale : 1.0f;
     uniforms.submit(textshader);
 
     // set textures
@@ -3843,6 +3845,10 @@ void OpenGLRenderer::DrawTwodVerts() {
     uniforms.projection = projmat;
     uniforms.view = viewmat;
     uniforms.paltex2D = paltex2D_id;
+    // In native-res mode UI quads draw 1:1 in virtual space and the viewport magnifies them to
+    // device pixels - sharp-bilinear needs that magnification factor. 1.0 disables it in the
+    // shader, keeping the default path bit-identical.
+    uniforms.texelScale = isNativeResMode() ? _uiTransform.scale : 1.0f;
     uniforms.submit(twodshader);
 
     size_t offset = 0;

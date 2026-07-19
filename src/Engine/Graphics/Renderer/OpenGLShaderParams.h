@@ -64,6 +64,7 @@ struct TwoDUniforms {
     glm::mat4 view = {};
     int paltex2D = 1;
     int texture0 = 0;
+    float texelScale = 1.0f; // Device pixels per texel for sharp-bilinear sampling, 1.0 = off.
 
     void submit(const OpenGLShader &shader) const;
 };
@@ -73,6 +74,7 @@ struct TextUniforms {
     glm::mat4 view = {};
     int texture0 = 0;
     int texture1 = 1;
+    float texelScale = 1.0f; // Device pixels per texel for sharp-bilinear sampling, 1.0 = off.
 
     void submit(const OpenGLShader &shader) const;
 };
