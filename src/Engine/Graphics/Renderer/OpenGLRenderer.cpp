@@ -213,8 +213,10 @@ OpenGLRenderer::~OpenGLRenderer() {
 }
 
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
-    // TODO(hires): Task 5 - device-size readbacks. In native-res mode this reads an
-    // outputRender-sized (virtual 640x480) corner of the window-sized default framebuffer.
+    // TODO(hires): broken in native-res mode - reads an outputRender-sized (virtual 640x480)
+    // bottom-left corner of the window-sized default framebuffer instead of the whole frame.
+    // Needs to read device-sized pixels and downsample where callers expect virtual dimensions.
+    // (Task 5.)
     RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
     if (_usesScalingFramebuffer()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
@@ -775,6 +777,10 @@ void OpenGLRenderer::DrawIndoorSkyPolygon(int uNumVertices, GraphicsImage *textu
 
 RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int height) {
     // TODO(pskelton): should this call drawworld instead??
+    // TODO(hires): broken in native-res mode - on top of ReadScreenPixels() returning the wrong
+    // region (see there), the interval sampling below indexes the pixels with virtual
+    // pViewport/outputRender coordinates; both need mapping through _uiTransform once readbacks
+    // return device-sized pixels. (Task 5.)
 
     pCamera3D->_viewPitch = pParty->_viewPitch;
     pCamera3D->_viewYaw = pParty->_viewYaw;
@@ -980,8 +986,8 @@ void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
             // deviceRect() is the exact scaled, centered UI frame. NOT toDeviceOutward(): its
             // ceiled far edge can overshoot the frame by a pixel at some window sizes, stretching
             // the UI into the pillarbox bars.
-            Recti r = _uiTransform.deviceRect();
-            glViewport(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+            Recti r = _flipToGl(_uiTransform.deviceRect(), _uiTransform.deviceSize.h);
+            glViewport(r.x, r.y, r.w, r.h);
         } else {
             glViewport(0, 0, outputRender.w, outputRender.h);
         }
@@ -990,8 +996,8 @@ void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
         if (isNativeResMode()) {
             // Rounded outward so the scaled viewport always covers the exact virtual edge - the
             // HUD frame art overdraws the seam.
-            Recti r = _uiTransform.toDeviceOutward(pViewport);
-            glViewport(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+            Recti r = _flipToGl(_uiTransform.toDeviceOutward(pViewport), _uiTransform.deviceSize.h);
+            glViewport(r.x, r.y, r.w, r.h);
         } else {
             glViewport(pViewport.x, outputRender.h - (pViewport.y + pViewport.h - 1) - 1, pViewport.w, pViewport.h);
         }
@@ -1980,8 +1986,8 @@ void OpenGLRenderer::SetUIClipRect(const Recti &rect) {
     if (isNativeResMode()) {
         // Rounded outward: at fractional scales a nearest-rounded scissor could shave the last
         // device pixel row/column off the clipped art; adjacent UI art overdraws the seam.
-        Recti r = _uiTransform.toDeviceOutward(rect);
-        glScissor(r.x, _uiTransform.deviceSize.h - r.y - r.h, r.w, r.h);
+        Recti r = _flipToGl(_uiTransform.toDeviceOutward(rect), _uiTransform.deviceSize.h);
+        glScissor(r.x, r.y, r.w, r.h);
     } else {
         glScissor(rect.x, outputRender.h - rect.y - rect.h, rect.w, rect.h);  // invert glscissor co-ords 0,0 is BL
     }
@@ -2249,6 +2255,29 @@ void OpenGLRenderer::DrawTextNew(const Recti &srcRect, const Recti &dstRect, boo
     vert5.paletteid = 0;
 }
 
+void OpenGLRenderer::_clearLetterboxBars() {
+    Sizei device = _uiTransform.deviceSize;
+    Recti frame = _uiTransform.deviceRect() & Recti(Pointi(0, 0), device);  // Clamped so a cropping (negative-offset) frame yields no bars.
+    if (frame == Recti(Pointi(0, 0), device))
+        return;
+
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    Recti bars[4] = {
+        Recti(0, 0, frame.x, device.h),                                            // Left.
+        Recti(frame.x + frame.w, 0, device.w - frame.x - frame.w, device.h),       // Right.
+        Recti(frame.x, 0, frame.w, frame.y),                                       // Top.
+        Recti(frame.x, frame.y + frame.h, frame.w, device.h - frame.y - frame.h),  // Bottom.
+    };
+    for (const Recti &bar : bars) {
+        if (bar.isEmpty())
+            continue;
+        Recti g = _flipToGl(bar, device.h);
+        glScissor(g.x, g.y, g.w, g.h);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    glScissor(0, 0, device.w, device.h);
+}
+
 void OpenGLRenderer::flushAndScale() {
     // flush any undrawn items
     DrawTwodVerts();
@@ -2256,28 +2285,9 @@ void OpenGLRenderer::flushAndScale() {
     EndTextNew();
 
     if (isNativeResMode()) {
-        // No blit - the frame was drawn straight into the default framebuffer. Just wipe the
-        // pillarbox/letterbox bars around the scaled UI frame: nothing ever rasterizes there
-        // (the viewport transform bounds all drawing to the frame), but backbuffer contents are
-        // undefined after a swap, so the bars must be re-blackened every frame.
-        Sizei device = _uiTransform.deviceSize;
-        Recti frame = _uiTransform.deviceRect() & Recti(Pointi(0, 0), device);
-        if (frame != Recti(Pointi(0, 0), device)) {
-            glClearColor(0.0, 0.0, 0.0, 1.0);
-            Recti bars[4] = {
-                Recti(0, 0, frame.x, device.h),                                            // Left.
-                Recti(frame.x + frame.w, 0, device.w - frame.x - frame.w, device.h),       // Right.
-                Recti(frame.x, 0, frame.w, frame.y),                                       // Top.
-                Recti(frame.x, frame.y + frame.h, frame.w, device.h - frame.y - frame.h),  // Bottom.
-            };
-            for (const Recti &bar : bars) {
-                if (bar.isEmpty())
-                    continue;
-                glScissor(bar.x, device.h - bar.y - bar.h, bar.w, bar.h);
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-            glScissor(0, 0, device.w, device.h);
-        }
+        // No blit - the frame was drawn straight into the default framebuffer; just re-blacken
+        // the pillarbox/letterbox bars around the scaled UI frame.
+        _clearLetterboxBars();
         return;
     }
 
@@ -2316,7 +2326,8 @@ void OpenGLRenderer::swapBuffers() {
         glViewport(0, 0, outputRender.w, outputRender.h);
     } else if (isNativeResMode()) {
         // Reset to the full window so the next frame's first clear (BeginScene3D / ClearTarget)
-        // covers the pillarbox/letterbox bars; scissor stays enabled throughout in this mode.
+        // covers the pillarbox/letterbox bars. Scissor is meant to stay enabled throughout this
+        // mode - the glEnable just re-asserts that in case anything disabled it.
         glEnable(GL_SCISSOR_TEST);
         glViewport(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);
         glScissor(0, 0, _uiTransform.deviceSize.w, _uiTransform.deviceSize.h);

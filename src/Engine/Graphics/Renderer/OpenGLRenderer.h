@@ -108,6 +108,24 @@ class OpenGLRenderer : public BaseRenderer {
         return !isNativeResMode() && outputRender != outputPresent;
     }
 
+    /**
+     * @param r         Rect in top-left-origin coordinates.
+     * @param targetH   Height of the surface the rect targets, in the same space as @p r.
+     * @return          The same rect in GL's bottom-left-origin window coordinates, ready to pass
+     *                  to `glViewport`/`glScissor`.
+     */
+    [[nodiscard]] static Recti _flipToGl(const Recti &r, int targetH) {
+        return Recti(r.x, targetH - r.y - r.h, r.w, r.h);
+    }
+
+    /**
+     * Clears the pillarbox/letterbox bars around the scaled UI frame to black. Native-res mode
+     * only: nothing ever rasterizes in the bars (the viewport transform bounds all drawing to
+     * the frame), but backbuffer contents are undefined after a swap, so the bars must be
+     * re-blackened every frame.
+     */
+    void _clearLetterboxBars();
+
     virtual void DoRenderBillboards_D3D() override;
     void SetBillboardBlendOptions(RenderBillboardD3D::OpacityType a1);
 
