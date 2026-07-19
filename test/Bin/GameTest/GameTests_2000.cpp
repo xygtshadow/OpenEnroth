@@ -14,6 +14,7 @@
 #include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Outdoor.h"
+#include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Objects/Chest.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
@@ -31,6 +32,7 @@
 
 #include "Io/Mouse.h"
 
+#include "Utility/ScopeGuard.h"
 #include "Utility/Segment.h"
 
 #include "GameTestCommon.h"
@@ -1291,4 +1293,47 @@ GAME_TEST(Issues, Issue2507) {
     auto damageRange = hpTape.reverse().adjacentDeltas().minMax();
     EXPECT_GE(damageRange[0], 10);
     EXPECT_LE(damageRange[1], 80); // Per-hit damage is within the 10d8 range.
+}
+
+GAME_TEST(Hires, NativeResHeadlessGate) {
+    // MM7 counterpart of Mm6.NativeResHeadlessGate - a native-resolution mode (render_filter 0)
+    // crash gate that runs the frame loop and the full virtual->device->virtual mouse round-trip
+    // at a fractional scale: 1000x750 puts the UI transform at 1.5625x, where virtual coordinates
+    // land between device pixels.
+    game.startNewGame();
+
+    // The mode is snapshotted on Reinitialize, which the resize triggers, so set the filter
+    // first. Restore unconditionally - a failed ASSERT_* below returns from the test body, and
+    // skipping the restore would leak native-res mode into subsequent tests in this process.
+    int oldFilter = engine->config->graphics.RenderFilter.value();
+    engine->config->graphics.RenderFilter.setValue(0);
+    game.resizeWindow(1000, 750);
+    game.tick(2);
+    MM_AT_SCOPE_EXIT({
+        engine->config->graphics.RenderFilter.setValue(oldFilter);
+        game.resizeWindow(640, 480);
+        game.tick(2);
+    });
+    // outputPresent and the native-res mode snapshot are taken together in
+    // updateRenderDimensions, so the window size having propagated proves the mode switch did too.
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1000, 750));
+    ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+
+    // A stretch of ordinary frames, then a click at the center of the screen. Harness clicks are
+    // virtual-space: this one goes out through MapToPresent and comes back through MapToRender in
+    // the mouse handler - the full round-trip. Center-of-screen, never edge-precise, because the
+    // round-trip may drift by a pixel at fractional scales.
+    game.tick(10);
+    game.pressAndReleaseButton(BUTTON_LEFT, 320, 240);
+    game.tick(2);
+
+    // The click came back in virtual space (within round-trip tolerance), and the mode snapshot
+    // held through the frames.
+    Pointi clickPos = mouse->position();
+    EXPECT_GE(clickPos.x, 319);
+    EXPECT_LE(clickPos.x, 321);
+    EXPECT_GE(clickPos.y, 239);
+    EXPECT_LE(clickPos.y, 241);
+    EXPECT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+    EXPECT_EQ(render->GetPresentDimensions(), Sizei(1000, 750));
 }
