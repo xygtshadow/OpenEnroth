@@ -354,8 +354,10 @@ void reconstruct(const TileData_MM7 &src, TileData *dst) {
     reconstruct(src.textureName, &dst->textureName);
     dst->textureName = ascii::toLower(dst->textureName);
 
-    // Animated water only works with the hwtrdr* shore tiles - MM7's hardware-renderer art with transparent water
-    // regions. MM6 data has no hwtrdr* bitmaps, only the opaque wtrdr* originals, so keep those there.
+    // MM7's animated water needs the hwtrdr* shore tiles - its hardware-renderer art with transparent water
+    // regions. MM6 data has no hwtrdr* bitmaps, only the wtrdr* originals, so keep those names there - the
+    // bitmap loader gives their index-0 water regions the same transparency treatment (see transparentTextures
+    // in ImageLoader.cpp).
     if (engine->gameVersion() != GAME_VERSION_MM6 && ascii::noCaseStartsWith(dst->textureName, "wtrdr"))
         dst->textureName.insert(0, "h");
 

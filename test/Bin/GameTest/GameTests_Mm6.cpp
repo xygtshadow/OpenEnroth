@@ -8631,6 +8631,30 @@ GAME_TEST(Mm6, PalettesDrawRaw) {
     EXPECT_EQ(skyTex->rgba()[0][0], sky->palette.colors[sky->image[0][0]]);
 }
 
+// MM6's wtrdr* shore tiles mark their water region with palette index 0, whose palette color is the
+// teal marker (0, 252, 252). The terrain shader draws animated water wherever the shore texture is
+// transparent, so index-0 pixels must load with alpha 0 - MM7's hwtrdr* hardware shore set got this
+// treatment, but MM6's wtrdr* originals didn't, so every shoreline drew the opaque teal marker.
+GAME_TEST(Mm6, ShoreTilesTransparentWater) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    for (const char *name : {"wtrdrn", "wtrdrne", "wtrdrnw", "wtrdrs", "wtrdrse", "wtrdrsw",
+                             "wtrdre", "wtrdrw", "wtrdrxne", "wtrdrxnw", "wtrdrxse", "wtrdrxsw"}) {
+        LodImage *raw = pBitmaps_LOD->loadTexture(name, false);
+        ASSERT_NE(raw, nullptr) << name;
+        EXPECT_EQ(raw->palette.colors[0], Color(0, 252, 252)) << name;
+        int rawWater = std::ranges::count(raw->image.pixels(), 0);
+        EXPECT_GT(rawWater, 0) << name;
+
+        GraphicsImage *tex = assets->getBitmap(name);
+        ASSERT_NE(tex, nullptr) << name;
+        auto texPixels = tex->rgba().pixels();
+        int transparent = std::ranges::count_if(texPixels, [] (Color c) { return c.a == 0; });
+        EXPECT_EQ(transparent, rawWater) << name;
+    }
+}
+
 // MM6's dsft.bin packs the SFT flag bits into 2 bytes (MM7 widened them to 4), and OE read them as
 // 4 - shifting every following field of every record by two bytes. frameLength picked up the group
 // total time, which MM6 stores only on a group's first frame, so GetFrame() saw zero-length chained

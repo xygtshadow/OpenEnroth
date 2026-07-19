@@ -23,6 +23,9 @@
 #include "Library/Logger/Logger.h"
 
 // List of textures that require additional processing for transparent pixels.
+// hwtrdr* is MM7's hardware-renderer shore set, wtrdr* is MM6's shore set - both mark the
+// water region with palette index 0 (palette color 0 is a teal marker), and the terrain
+// shader draws animated water wherever the shore texture is transparent.
 // TODO(captainurist): #jsonify & move to compiled-in game data
 static const std::unordered_set<std::string_view> transparentTextures = {
     "hwtrdre",
@@ -36,7 +39,19 @@ static const std::unordered_set<std::string_view> transparentTextures = {
     "hwtrdrse",
     "hwtrdrw",
     "hwtrdrxnw",
-    "hwtrdrxsw"
+    "hwtrdrxsw",
+    "wtrdre",
+    "wtrdrne",
+    "wtrdrs",
+    "wtrdrsw",
+    "wtrdrxne",
+    "wtrdrxse",
+    "wtrdrn",
+    "wtrdrnw",
+    "wtrdrse",
+    "wtrdrw",
+    "wtrdrxnw",
+    "wtrdrxsw"
 };
 
 static Palette MakePaletteAlpha(const Palette &palette) {
