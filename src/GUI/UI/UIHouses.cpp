@@ -1098,12 +1098,12 @@ void GUIWindow_House::drawNpcHouseDialogueResponse() {
 void GUIWindow_House::reinitDialogueWindow() {
     if (pDialogueWindow) {
         // reset dialogue window to default state, so it can be reused for different NPCs dialogues without creating new one
-        pDialogueWindow->frameRect = { 0, 0, render->GetPresentDimensions().w, 345 };
+        pDialogueWindow->frameRect = { 0, 0, render->GetRenderDimensions().w, 345 };
         pDialogueWindow->sHint = "";
         pDialogueWindow->receives_keyboard_input = false;
         pDialogueWindow->DeleteButtons();
     } else {
-        pDialogueWindow = std::make_unique<GUIWindow>(WINDOW_Dialogue, Pointi(0, 0), Sizei(render->GetPresentDimensions().w, 345));
+        pDialogueWindow = std::make_unique<GUIWindow>(WINDOW_Dialogue, Pointi(0, 0), Sizei(render->GetRenderDimensions().w, 345));
     }
 
     pBtn_ExitCancel = pDialogueWindow->CreateButton(houseExitButtonPos(), houseExitButtonSize(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,

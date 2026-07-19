@@ -8921,3 +8921,44 @@ GAME_TEST(Mm6, KeyBindingsWindowVirtualSpace) {
     game.tick(2);
     game.goToGame();
 }
+
+GAME_TEST(Mm6, HouseDialogueWindowVirtualSpace) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Same wrong-space bug as Mm6.KeyBindingsWindowVirtualSpace, in reinitDialogueWindow: the
+    // house dialogue window's width came from GetPresentDimensions() - window pixels - in the
+    // virtual-space UI, where it is a text-layout rect. Make the two spaces differ.
+    game.resizeWindow(1024, 768);
+    game.tick(2);
+    ASSERT_EQ(render->GetPresentDimensions(), Sizei(1024, 768));
+    ASSERT_EQ(render->GetRenderDimensions(), Sizei(640, 480));
+
+    // The Knife Shoppe's door face is wired to local event 17, an ungated SpeakInHouse(1); its
+    // proprietor greeting runs reinitDialogueWindow.
+    const BLVFace *door = nullptr;
+    for (const BSPModel &model : pOutdoor->pBModels)
+        for (const BLVFace &face : model.faces)
+            if (face.eventId == 17 && face.Clickable())
+                door = &face;
+    ASSERT_NE(door, nullptr);
+    Vec3f doorCenter = door->boundingBox.center();
+    Vec3f pos = doorCenter + door->facePlane.normal * 130;
+    pos.z = door->boundingBox.z1;
+    int yawDegrees = TrigLUT.atan2(doorCenter.x - pos.x, doorCenter.y - pos.y) * 90 / 512;
+    game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+    game.tick(1);
+    game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+    ASSERT_NE(pDialogueWindow, nullptr);
+    EXPECT_EQ(pDialogueWindow->frameRect, Recti(0, 0, 640, 345));
+
+    game.resizeWindow(640, 480); // Don't leak the window size into subsequent tests.
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+}
