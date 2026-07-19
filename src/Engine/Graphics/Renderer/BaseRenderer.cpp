@@ -585,10 +585,15 @@ Sizei BaseRenderer::GetPresentDimensions() {
 void BaseRenderer::updateRenderDimensions() {
     outputPresent = window->size();
 
-    if (config->graphics.RenderFilter.value() != 0)
+    if (isNativeResMode()) {
+        // Native-resolution mode: outputRender is the VIRTUAL UI size, not the window size. The
+        // 3D scene renders at window resolution while the UI stays in the 640x480 space, mapped
+        // onto the window through _uiTransform.
+        outputRender = {640, 480};
+        _uiTransform = UiScaleTransform::forWindow(outputPresent);
+    } else {
         outputRender = {config->graphics.RenderWidth.value(), config->graphics.RenderHeight.value()};
-    else
-        outputRender = outputPresent;
+    }
 
     // Set viewport from config values (inclusive TL/BR coordinates).
     int tlX = config->graphics.ViewPortX1.value();  // 8 in vanilla
@@ -599,6 +604,9 @@ void BaseRenderer::updateRenderDimensions() {
 }
 
 Pointi BaseRenderer::MapToRender(Pointi position) {
+    if (isNativeResMode())
+        return _uiTransform.toVirtual(position);
+
     Sizef renDims = { (float)GetRenderDimensions().w, (float)GetRenderDimensions().h };
     Sizef prDims = { (float)GetPresentDimensions().w, (float)GetPresentDimensions().h };
     Pointi result = position;
@@ -618,6 +626,9 @@ Pointi BaseRenderer::MapToRender(Pointi position) {
 }
 
 Pointi BaseRenderer::MapToPresent(Pointi position) {
+    if (isNativeResMode())
+        return _uiTransform.toDevice(position);
+
     Sizef renDims = { (float)GetRenderDimensions().w, (float)GetRenderDimensions().h };
     Sizef prDims = { (float)GetPresentDimensions().w, (float)GetPresentDimensions().h };
     Pointi result = position;
@@ -634,4 +645,8 @@ Pointi BaseRenderer::MapToPresent(Pointi position) {
     }
 
     return result;
+}
+
+bool BaseRenderer::isNativeResMode() const {
+    return config->graphics.RenderFilter.value() == 0;
 }

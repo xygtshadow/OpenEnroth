@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "Engine/Graphics/Renderer/UiScaleTransform.h"
+
 #include "Renderer.h"
 
 class BaseRenderer : public Renderer {
@@ -41,6 +43,14 @@ class BaseRenderer : public Renderer {
     virtual Pointi MapToRender(Pointi position) override;
     virtual Pointi MapToPresent(Pointi position) override;
 
+    /**
+     * @return  Whether the renderer runs in native-resolution mode (`render_filter` == 0). In this
+     *          mode `outputRender` holds the virtual 640x480 UI size rather than the window size,
+     *          and mouse coordinates map between window and virtual space through the UI scale
+     *          transform instead of the framebuffer letterbox math.
+     */
+    [[nodiscard]] bool isNativeResMode() const;
+
  protected:
     unsigned int NextBillboardIndex();
     void SortBillboards();
@@ -49,6 +59,7 @@ class BaseRenderer : public Renderer {
  protected:
     Sizei outputRender = {0, 0};
     Sizei outputPresent = {0, 0};
+    UiScaleTransform _uiTransform;
 
  private:
     void updateRenderDimensions();
