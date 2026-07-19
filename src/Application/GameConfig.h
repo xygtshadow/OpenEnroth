@@ -470,7 +470,7 @@ class GameConfig : public Config {
         Int RenderFilter = {this, "render_filter", 2, &ValidateRenderFilter,
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
                             " 0 - native-resolution mode: no scaled framebuffer, the 3D world renders at window resolution"
-                            " and the UI scales smoothly to fit (sharp-bilinear, aspect ratio preserved, pillarboxed),"
+                            " and the UI scales smoothly to fit (sharp-bilinear, aspect ratio preserved, pillar-/letterboxed),"
                             " 1 - linear filter, 2 - nearest filter"};
 
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes, replicating MM7.EXE's palette processing. Ignored for MM6, which draws palette colors raw."};
