@@ -584,11 +584,12 @@ Sizei BaseRenderer::GetPresentDimensions() {
 
 void BaseRenderer::updateRenderDimensions() {
     outputPresent = window->size();
+    _nativeResMode = config->graphics.RenderFilter.value() == 0;
 
-    if (isNativeResMode()) {
-        // Native-resolution mode: outputRender is the VIRTUAL UI size, not the window size. The
-        // 3D scene renders at window resolution while the UI stays in the 640x480 space, mapped
-        // onto the window through _uiTransform.
+    if (_nativeResMode) {
+        // Native-resolution mode: outputRender is the VIRTUAL UI size, not the window size. All
+        // engine code keeps drawing in the 640x480 space; the GL renderer maps that virtual-space
+        // drawing onto the window through _uiTransform.
         outputRender = {640, 480};
         _uiTransform = UiScaleTransform::forWindow(outputPresent);
     } else {
@@ -648,5 +649,5 @@ Pointi BaseRenderer::MapToPresent(Pointi position) {
 }
 
 bool BaseRenderer::isNativeResMode() const {
-    return config->graphics.RenderFilter.value() == 0;
+    return _nativeResMode;
 }

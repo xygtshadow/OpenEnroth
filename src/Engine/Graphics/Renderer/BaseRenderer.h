@@ -48,6 +48,10 @@ class BaseRenderer : public Renderer {
      *          mode `outputRender` holds the virtual 640x480 UI size rather than the window size,
      *          and mouse coordinates map between window and virtual space through the UI scale
      *          transform instead of the framebuffer letterbox math.
+     *
+     *          The mode is snapshotted in `updateRenderDimensions()` together with `outputRender`
+     *          and `_uiTransform`, so a config change only takes effect on the next
+     *          `Reinitialize()` and the three can never disagree mid-frame.
      */
     [[nodiscard]] bool isNativeResMode() const;
 
@@ -59,6 +63,7 @@ class BaseRenderer : public Renderer {
  protected:
     Sizei outputRender = {0, 0};
     Sizei outputPresent = {0, 0};
+    bool _nativeResMode = false;
     UiScaleTransform _uiTransform;
 
  private:
