@@ -304,11 +304,12 @@ class AVVideoStream : public AVStreamWrapper {
 };
 
 static Recti calculateVideoRectangle(const IMovie &movie) {
-    Sizei scaleSize;
-    if (render->GetPresentDimensions() != render->GetRenderDimensions())
-        scaleSize = render->GetRenderDimensions();
-    else
-        scaleSize = window->size();
+    // Movie frames draw through the virtual-space 2D path (render->DrawImage), so the movie is
+    // letterboxed into the render dimensions, never the window: the renderer maps virtual space
+    // onto the window (scaling framebuffer or native-res UI transform) at present time. The old
+    // window->size() fallback only fired when render == present dimensions, where it was the
+    // same value.
+    Sizei scaleSize = render->GetRenderDimensions();
     float ratio_width = (float)scaleSize.w / movie.GetWidth();
     float ratio_height = (float)scaleSize.h / movie.GetHeight();
     float ratio = std::min(ratio_width, ratio_height);
