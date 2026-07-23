@@ -21,6 +21,7 @@
 #include "Engine/Resources/EngineFileSystem.h"
 #include "Engine/Resources/LodTextureCache.h"
 #include "Engine/Resources/ResourceManager.h"
+#include "Engine/SaveLoad.h"
 #include "Engine/mm7_data.h"
 
 #include "Utility/Math/TrigLut.h"
@@ -3056,6 +3057,49 @@ GAME_TEST(Mm6, SaveLoadRoundtrip) {
     ASSERT_NE(deadPeasant, pActors.end());
     EXPECT_EQ(deadPeasant->aiState, Dead);
     EXPECT_EQ(deadPeasant->hp, 0);
+}
+
+GAME_TEST(Mm6, SaveMenuListsMm6Saves) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // The Save menu used to probe hard-coded "save{:03}.mm7" file names instead of the
+    // version-keyed saveFileExtension(), so an MM6 session's own saves never showed up:
+    // every slot read "Empty Save" right after saving, inviting a silent overwrite.
+    ufs->remove("saves");
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Save into slot 0 through the real Save menu, naming the save "0". Two slot clicks:
+    // the first selects the slot, the second starts the name text input.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressGuiButton("GameMenu_SaveGame");
+    game.tick(10);
+    game.pressGuiButton("SaveMenu_Slot0");
+    game.tick(2);
+    game.pressGuiButton("SaveMenu_Slot0");
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_DIGIT_0);
+    game.tick(2);
+    game.pressGuiButton("SaveMenu_Save");
+    game.tick(10);
+    EXPECT_TRUE(ufs->exists("saves/save000.mm6")); // The save itself is version-keyed...
+
+    // ...and reopening the Save menu must list it, not "Empty Save".
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressGuiButton("GameMenu_SaveGame");
+    game.tick(10);
+    EXPECT_TRUE(pSavegameList->pSavegameUsedSlots[0]);
+    EXPECT_EQ(pSavegameList->pSavegameHeader[0].name, "0");
+
+    // Close the menu so the test ends back on the game screen.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
 }
 
 GAME_TEST(Mm6, EndgameWinAndLose) {
