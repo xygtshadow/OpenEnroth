@@ -21,6 +21,29 @@ class Localization;
 
 std::string displayNameForDamageType(DamageType damageType, Localization *localization);
 
+/**
+ * Translates an MM6 damage-type code onto the engine's `DamageType` enum, which follows MM7's numbering.
+ *
+ * MM6 numbers damage types Phys=0, Magic=1, Fire=2, Elec=3, Cold=4, Poison=5, Energy=6, with Elec/Cold/Poison
+ * being MM7's Air/Water/Earth. This coding appears in MM6 monster stat records and in MM6 .evt ReceiveDamage
+ * records.
+ *
+ * @param mm6DamageType                 MM6 damage-type code, 0..6.
+ * @return                              Matching `DamageType` enum value (`DAMAGE_PHYSICAL` for out-of-range input).
+ */
+inline DamageType damageTypeFromMm6(int mm6DamageType) {
+    switch (mm6DamageType) {
+    case 0: return DAMAGE_PHYSICAL;
+    case 1: return DAMAGE_MAGIC;
+    case 2: return DAMAGE_FIRE;
+    case 3: return DAMAGE_AIR;
+    case 4: return DAMAGE_WATER;
+    case 5: return DAMAGE_EARTH;
+    case 6: return DAMAGE_ENERGY;
+    default: return DAMAGE_PHYSICAL;
+    }
+}
+
 
 //
 // ItemTreasureLevel

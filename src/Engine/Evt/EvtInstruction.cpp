@@ -5,6 +5,7 @@
 
 #include "Engine/Evt/EvtEnums.h"
 #include "Engine/Objects/Decoration.h"
+#include "Engine/Objects/ItemEnumFunctions.h"
 #include "Engine/Tables/HouseTable.h"
 #include "Engine/Tables/NPCTable.h"
 #include "Engine/Engine.h"
@@ -991,7 +992,13 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size, GameVersi
         case EVENT_ReceiveDamage:
             requireSize(11);
             ir.who = static_cast<EvtTargetCharacter>(fromStream<uint8_t>(stream));
-            ir.data.damage_descr.damage_type = static_cast<DamageType>(fromStream<uint8_t>(stream));
+            // MM6 numbers damage types differently (Phys=0, Magic=1, Fire=2, ...), so the byte must be
+            // translated onto the engine's MM7-shaped DamageType or resistances resolve against the wrong element.
+            if (version == GAME_VERSION_MM6) {
+                ir.data.damage_descr.damage_type = damageTypeFromMm6(fromStream<uint8_t>(stream));
+            } else {
+                ir.data.damage_descr.damage_type = static_cast<DamageType>(fromStream<uint8_t>(stream));
+            }
             ir.data.damage_descr.damage = fromStream<uint32_t>(stream);
             break;
         case EVENT_SetSnow:  // TODO(yoctozepto): not present in used MM7 data; likely present in MM6

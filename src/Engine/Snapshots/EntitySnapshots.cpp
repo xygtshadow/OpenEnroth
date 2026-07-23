@@ -10,6 +10,7 @@
 #include "Engine/MapInfo.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Objects/Decoration.h"
+#include "Engine/Objects/ItemEnumFunctions.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/DecorationList.h"
 #include "Engine/Graphics/Outdoor.h"
@@ -1417,18 +1418,9 @@ void reconstruct(const ActorJob_MM7 &src, ActorJob *dst) {
 }
 
 // MM6 damage type coding is Phys=0, Magic=1, Fire=2, Elec=3, Cold=4, Poison=5, Energy=6, with Elec/Cold/Poison
-// being MM7's Air/Water/Earth.
+// being MM7's Air/Water/Earth. The mapping itself is shared with the .evt ReceiveDamage parser.
 static uint8_t reconstructMm6DamageType(uint8_t type) {
-    switch (type) {
-    case 0: return std::to_underlying(DAMAGE_PHYSICAL);
-    case 1: return std::to_underlying(DAMAGE_MAGIC);
-    case 2: return std::to_underlying(DAMAGE_FIRE);
-    case 3: return std::to_underlying(DAMAGE_AIR);
-    case 4: return std::to_underlying(DAMAGE_WATER);
-    case 5: return std::to_underlying(DAMAGE_EARTH);
-    case 6: return std::to_underlying(DAMAGE_ENERGY);
-    default: return std::to_underlying(DAMAGE_PHYSICAL);
-    }
+    return std::to_underlying(damageTypeFromMm6(type));
 }
 
 // MM6 missile coding (the monsters.txt keyword order, MM6.EXE parsers @0x447afa/@0x447e34) is None=0,
