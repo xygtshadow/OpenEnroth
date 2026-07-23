@@ -189,6 +189,17 @@ std::optional<GameVersion> detectGameVersion(std::string_view dataPath) {
     return std::nullopt;
 }
 
+std::optional<GameVersion> detectGameVersion(Environment *environment) {
+    for (GameVersion version : {GAME_VERSION_MM7, GAME_VERSION_MM6}) {
+        for (const std::string &candidate : resolveGamePaths(environment, version)) {
+            std::string missingFile;
+            if (std::filesystem::exists(candidate) && validateGamePath(candidate, version, &missingFile))
+                return version;
+        }
+    }
+    return std::nullopt;
+}
+
 std::string resolveMm7UserPath(Environment *environment) {
 #ifdef _WINDOWS
     std::string savedGames = environment->path(PATH_WINDOWS_SAVED_GAMES);
