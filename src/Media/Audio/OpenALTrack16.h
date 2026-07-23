@@ -21,6 +21,7 @@ class OpenALTrack16 : public IAudioTrack {
     virtual bool Stop() override;
     virtual bool Pause() override;
     virtual bool Resume() override;
+    virtual bool IsPlaying() override;
     virtual bool SetVolume(float volume) override;
     virtual float GetVolume() override;
 

@@ -65,6 +65,7 @@
 #include "Engine/Tables/NPCTable.h"
 #include "Engine/Tables/TileTable.h"
 #include "Engine/Tables/TransitionTable.h"
+#include "Engine/Time/Timer.h"
 
 #include "Engine/AssetsManager.h"
 
@@ -97,6 +98,7 @@
 #include "Library/LodFormats/LodImage.h"
 
 #include "Media/MediaPlayer.h"
+#include "Media/Audio/AudioPlayer.h"
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -6223,6 +6225,40 @@ GAME_TEST(Mm6, SegueAssets) {
     std::string overflowing(200, 'W');
     EXPECT_GT(font->GetLineWidth(overflowing), textWidth);
     EXPECT_EQ(font->AlignText_Center(textWidth, overflowing), 0);
+}
+
+GAME_TEST(Mm6, CreditsKeepMainMenuMusic) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // MM6's credits are a movie clip routed through VideoState (MM6.EXE 0x4A6C90), whose enter()
+    // pauses the menu music and the event timer. exit() must undo both: back in the menu,
+    // MainMenuState::enter()'s MusicPlayTrack is swallowed by the currentMusicTrack identity check
+    // (the track never changed), so nothing else ever resumes the music and the menu stays silent
+    // for the rest of the session.
+    game.goToMainMenu();
+    ASSERT_TRUE(pAudioPlayer->isMusicPlaying());
+
+    // The test harness runs with debug.NoVideo, which makes VideoState::enter() bail out before it
+    // pauses anything - let the credits clip really play. prepareForNextTest resets the flag for
+    // the tests that follow, but restore it below anyway so this test's own trailing ticks match
+    // the harness defaults.
+    engine->config->debug.NoVideo.setValue(false);
+
+    game.pressGuiButton("MainMenu_Credits");
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_VIDEO);
+    EXPECT_FALSE(pAudioPlayer->isMusicPlaying()); // Paused while the clip is up.
+
+    // Any key skips the clip and drops back to the main menu.
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    engine->config->debug.NoVideo.setValue(true);
+    ASSERT_EQ(GetCurrentMenuID(), MENU_MAIN);
+    ASSERT_NE(current_screen_type, SCREEN_VIDEO);
+
+    EXPECT_TRUE(pAudioPlayer->isMusicPlaying());
+    EXPECT_FALSE(pEventTimer->isPaused());
 }
 
 // The prologue ("segue") screen's window, or nullptr if the screen isn't up. It's an fsm-owned
