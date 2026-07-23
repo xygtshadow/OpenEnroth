@@ -3687,6 +3687,59 @@ GAME_TEST(Mm6, ClassNames) {
     EXPECT_TRUE(localization->className(CLASS_LICH).empty());
 }
 
+// Buff display names are cached from fixed global.txt row ids that were chosen for MM7's row list.
+// MM6's global.txt shares most of those rows (Heroism@440..Prot Magic@462, Shield@279, the
+// condition-style actor buffs), but the rest hold unrelated MM6 strings ("Backward", "Train",
+// "SOUND VOLUME", ...) or don't exist in MM6's 595-row file at all. This gate pins the MM6 names to
+// MM6's own rows - named for what translateForCast actually feeds into each engine buff slot - and
+// keeps the slots no MM6 cast can reach blank instead of showing MM7-row garbage.
+GAME_TEST(Mm6, BuffNames) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Party buffs whose MM7 row ids hold unrelated strings in MM6's global.txt.
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_RESIST_FIRE), "Prot Fire");    // Was "Backward".
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_RESIST_AIR), "Prot Elec");     // Was "Set".
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_RESIST_WATER), "Prot Cold");   // Was "Select".
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_RESIST_BODY), "Prot Poison");  // Was "Shopkeeper".
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_DAY_OF_GODS), "Day of the Gods"); // Was "Stocked"; comes from spells.txt.
+
+    // Rows that coincide between the MM6 and MM7 global.txt row lists keep working unchanged.
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_TORCHLIGHT), "Torch Light");
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_WIZARD_EYE), "Wizard Eye");
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_PROTECTION_FROM_MAGIC), "Prot Magic");
+    EXPECT_EQ(localization->partyBuffName(PARTY_BUFF_WATER_WALK), "Water Walk");
+
+    // Character buffs, named for the MM6 spell that lands on the slot via translateForCast:
+    // Lucky Day -> Fate, Power -> Hammerhands, Guardian Angel -> Preservation.
+    EXPECT_EQ(localization->characterBuffName(CHARACTER_BUFF_FATE), "Lucky Day");        // Was "Subtract from Stat".
+    EXPECT_EQ(localization->characterBuffName(CHARACTER_BUFF_HAMMERHANDS), "Power");     // Was "Train".
+    EXPECT_EQ(localization->characterBuffName(CHARACTER_BUFF_PRESERVATION), "Guardian"); // Was "Use".
+    EXPECT_EQ(localization->characterBuffName(CHARACTER_BUFF_BLESS), "Bless");
+    EXPECT_EQ(localization->characterBuffName(CHARACTER_BUFF_STONESKIN), "Stoneskin");
+
+    // Actor buffs: MM6 Feeblemind runs the MM7 Berserk handler, and the Day of Protection /
+    // Hour of Power names only exist in MM6's spells.txt.
+    EXPECT_EQ(localization->actorBuffName(ACTOR_BUFF_BERSERK), "Feebleminded");
+    EXPECT_EQ(localization->actorBuffName(ACTOR_BUFF_FATE), "Lucky Day");
+    EXPECT_EQ(localization->actorBuffName(ACTOR_BUFF_DAY_OF_PROTECTION), "Day of Protection");
+    EXPECT_EQ(localization->actorBuffName(ACTOR_BUFF_HOUR_OF_POWER), "Hour of Power");
+
+    // Buff slots no MM6 cast can reach are blank, not MM7-row garbage.
+    EXPECT_TRUE(localization->partyBuffName(PARTY_BUFF_RESIST_EARTH).empty());   // Was "SOUND VOLUME".
+    EXPECT_TRUE(localization->partyBuffName(PARTY_BUFF_RESIST_MIND).empty());    // Was "Spell".
+    EXPECT_TRUE(localization->partyBuffName(PARTY_BUFF_DETECT_LIFE).empty());    // Was "Stablemaster".
+    EXPECT_TRUE(localization->partyBuffName(PARTY_BUFF_INVISIBILITY).empty());   // Was "Starving".
+    EXPECT_TRUE(localization->partyBuffName(PARTY_BUFF_IMMOLATION).empty());     // Was "STEP MODE".
+    EXPECT_TRUE(localization->characterBuffName(CHARACTER_BUFF_PAIN_REFLECTION).empty()); // Was "Travel to New Area".
+    EXPECT_TRUE(localization->characterBuffName(CHARACTER_BUFF_REGENERATION).empty());    // Was "Virgo".
+    EXPECT_TRUE(localization->characterBuffName(CHARACTER_BUFF_ACCURACY).empty());        // Was "Walking".
+    EXPECT_TRUE(localization->characterBuffName(CHARACTER_BUFF_SPEED).empty());           // Was "High Priest".
+    EXPECT_TRUE(localization->actorBuffName(ACTOR_BUFF_PAIN_REFLECTION).empty());         // Was "Travel to New Area".
+}
+
 // The MM6 and MM7 spell tables share the identical 9-school x 11-spell id layout, but the spell that sits
 // at a given id often differs between the two games. The cast runtime dispatches on MM7-named SpellId
 // constants, so an MM6 spell has to be routed through translateForCast to the MM7 spell whose effect (and
