@@ -60,10 +60,7 @@ GUIWindow_Save::GUIWindow_Save() : GUIWindow(WINDOW_Save, {0, 0}, render->GetRen
     LodReader pLODFile;
     for (int i = 0; i < MAX_SAVE_SLOTS; ++i) {
         // std::string file_name = pSavegameList->pFileList[i];
-        std::string file_name = fmt::format("save{:03}.mm7", i);
-        if (file_name.empty()) {
-            file_name = "1.mm7";
-        }
+        std::string file_name = fmt::format("save{:03}{}", i, saveFileExtension());
 
         std::string str = fmt::format("saves/{}", file_name);
         if (!ufs->exists(str)) {
