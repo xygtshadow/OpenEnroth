@@ -150,6 +150,9 @@ As typing out all the events to send inside the test code can be pretty tedious,
 * Fix the bug.
 * Load a save that used to reproduce the bug that you've just fixed.
 * Press `Ctrl+Shift+R` to start recording an event trace. Check logs to make sure that trace recording has started.
+  Note that recording pins the classic (original MM7) keybindings for its duration — with the modern WASD defaults
+  your keys will temporarily change (move with the arrow keys, interact with `Space`, attack with `A`, etc.).
+  Your own bindings are restored when the recording stops.
 * Perform the steps that used to reproduce the bug.
 * Press `Ctrl+Shift+R` again to stop trace recording. You will get two files generated in the current folder – `trace.json` and `trace.mm7`.
 * Rename them into something more suiting (e.g. `issue_XXX.json` and `issue_XXX.mm7`) and place them into `test/Data/`.

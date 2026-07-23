@@ -66,7 +66,7 @@ void EngineTraceRecorder::startRecording(EngineController *game, const Blob &sav
 
     component<EngineTraceSimpleRecorder>()->startRecording();
 
-    logger->info("Tracing started.");
+    logger->info("Tracing started. Classic keybindings are pinned while recording; your own bindings will be restored when recording stops.");
 }
 
 EngineTraceRecording EngineTraceRecorder::finishRecording(EngineController *game) {
