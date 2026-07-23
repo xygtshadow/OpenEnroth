@@ -4383,6 +4383,47 @@ GAME_TEST(Mm6, DayOfTheGods) {
     }
 }
 
+// MM6 Day of Protection (94) casts the protection family - Protection from Fire, Cold, Electricity,
+// Poison and Magic, plus Feather Fall and Wizard Eye - on the party at 2x/3x/4x Dark skill power for
+// Novice/Expert/Master, lasting skill+4 hours (MM6.EXE 0x4295fe). It translates onto MM7's Day of
+// Protection, whose effect is Master-only - a legal MM6 Novice/Expert cast hit its assert(false) (and
+// silently got the Master 4x numbers in Release) - and whose buff set is MM7-shaped (Mind/Earth
+// resistances instead of Protection from Magic).
+GAME_TEST(Mm6, DayOfProtectionTiers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    const std::array<PartyBuff, 7> buffs = {
+        PARTY_BUFF_RESIST_FIRE, PARTY_BUFF_RESIST_WATER, PARTY_BUFF_RESIST_AIR, PARTY_BUFF_RESIST_BODY,
+        PARTY_BUFF_PROTECTION_FROM_MAGIC, PARTY_BUFF_FEATHER_FALL, PARTY_BUFF_WIZARD_EYE};
+
+    // (mastery, power multiplier). Novice/Expert do NOT abort - that is the bug this fixes. Duration is
+    // skill+4 hours at every mastery.
+    struct Tier { Mastery mastery; int mult; };
+    for (const Tier &tier : {Tier{MASTERY_NOVICE, 2}, Tier{MASTERY_EXPERT, 3}, Tier{MASTERY_MASTER, 4}}) {
+        for (SpellBuff &buff : pParty->pPartyBuffs)
+            buff.Reset();
+        Duration expectedDuration = Duration::fromHours(10 + 4);
+        Time castStart = pParty->GetPlayingTime();
+        pushSpellOrRangedAttack(static_cast<SpellId>(94), 0, CombinedSkillValue(10, tier.mastery), 0, 1);
+        game.tick(1);
+        Time castEnd = pParty->GetPlayingTime();
+        for (PartyBuff buff : buffs) {
+            EXPECT_TRUE(pParty->pPartyBuffs[buff].Active())
+                << "mastery " << std::to_underlying(tier.mastery) << " buff " << std::to_underlying(buff);
+            EXPECT_EQ(pParty->pPartyBuffs[buff].power, tier.mult * 10)
+                << "mastery " << std::to_underlying(tier.mastery) << " buff " << std::to_underlying(buff);
+            EXPECT_GE(pParty->pPartyBuffs[buff].expireTime, castStart + expectedDuration);
+            EXPECT_LE(pParty->pPartyBuffs[buff].expireTime, castEnd + expectedDuration);
+        }
+        // MM6 has no Mind/Earth protection spells - the MM7 effect's set must not leak through.
+        EXPECT_FALSE(pParty->pPartyBuffs[PARTY_BUFF_RESIST_MIND].Active());
+        EXPECT_FALSE(pParty->pPartyBuffs[PARTY_BUFF_RESIST_EARTH].Active());
+    }
+}
+
 // MM6 computes spell damage with its own per-spell formulas (MM6.EXE CalcSpellDamage @0x47F0A0), keyed on the
 // NATIVE spell id and independent of mastery. CalcSpellDamage must reproduce them exactly instead of borrowing
 // the MM7 effect spell's numbers through the translateForCast remap. Cross-checked against MM6's spells.txt
