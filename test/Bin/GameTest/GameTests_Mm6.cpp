@@ -1608,6 +1608,62 @@ GAME_TEST(Mm6, QuestNpcDialogueInTavern) {
     game.tick(5);
 }
 
+// A generated citizen's 5000+ actor brand is serialized with the map's actor delta, but the
+// records it points into are not: pAdditionalNPC is process-local, and uNewlNPCBufPos resets on
+// every level load. A brand that survived a reload would therefore read a default-constructed
+// (empty) citizen after a restart, or alias whatever citizen takes slot 0 next in the same
+// session - talk to peasant P, reload, talk to peasant Q, and P and Q become the same record.
+// Street citizens are per-map-session, so level load clears the stale brands and the next talk
+// regenerates a fresh citizen.
+GAME_TEST(Mm6, StreetCitizenBrandClearedOnReload) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    auto talkToActor = [&](int actorIndex) {
+        Vec3f target = pActors[actorIndex].pos;
+        Vec3f from = target + Vec3f(-160, 0, 0);
+        int yawDegrees = TrigLUT.atan2(target.x - from.x, target.y - from.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, from, yawDegrees);
+        game.tick(1);
+        game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
+        game.tick(2);
+    };
+
+    // Talk to a peasant: it gets branded with the first citizen slot.
+    auto peasant = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return isPeasant(actor.monsterInfo.id, GAME_VERSION_MM6) && actor.CanAct();
+    });
+    ASSERT_NE(peasant, pActors.end());
+    int peasantIndex = std::distance(pActors.begin(), peasant);
+    talkToActor(peasantIndex);
+    ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    EXPECT_EQ(pActors[peasantIndex].npcId, 5000);
+    EXPECT_EQ(pNPCStats->uNewlNPCBufPos, 1);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+
+    // Reload. The citizen buffer restarts empty, so the stale brand must go with it.
+    Blob save = game.saveGame();
+    game.loadGame(save);
+    game.tick(1);
+    EXPECT_EQ(pNPCStats->uNewlNPCBufPos, 0);
+    for (const Actor &actor : pActors)
+        EXPECT_LT(actor.npcId, 5000);
+
+    // Talking again regenerates a fresh citizen in slot 0 instead of reusing the stale handle.
+    talkToActor(peasantIndex);
+    ASSERT_EQ(current_screen_type, SCREEN_NPC_DIALOGUE);
+    ASSERT_GE(speakingNpcId, 5000);
+    EXPECT_EQ(pActors[peasantIndex].npcId, 5000);
+    EXPECT_EQ(pNPCStats->uNewlNPCBufPos, 1);
+    EXPECT_FALSE(getNPCData(speakingNpcId)->name.empty());
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+}
+
 // Walks the party up to A Lonely Knight, New Sorpigal's tavern, and enters through its door
 // (local event 11, an ungated SpeakInHouse(92)). The party must already be in New Sorpigal.
 static void enterLonelyKnightTavern(EngineController &game) {

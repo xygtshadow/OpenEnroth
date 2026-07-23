@@ -881,7 +881,16 @@ void Engine::_461103_load_level_sub() {
     // (InteractWithActor), because a town holds far more peasants than pAdditionalNPC has slots
     // (New Sorpigal alone places ~120 peasants). MM7's eager per-peasant generation below would
     // overflow the buffer.
-    if (engine->gameVersion() != GAME_VERSION_MM6) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // The 5000+ street-citizen brands ride along in the actor delta, but the records they
+        // point into don't: pAdditionalNPC is process-local and uNewlNPCBufPos was just reset.
+        // A surviving brand would read a default-constructed citizen (fresh session) or alias
+        // whichever citizen takes its slot next (same session), so clear them - citizens are
+        // per-map-session, and the next talk regenerates a fresh one.
+        for (Actor &actor : pActors)
+            if (actor.npcId >= 5000)
+                actor.npcId = 0;
+    } else {
         for (Actor &actor : pActors) {
             MonsterTier tier = monsterTierForMonsterId(actor.monsterInfo.id);
             if (tier == MONSTER_TIER_A)
