@@ -9243,3 +9243,55 @@ GAME_TEST(Mm6, NativeResHeadlessGate) {
     EXPECT_GE(clickPos.y, 239);
     EXPECT_LE(clickPos.y, 241);
 }
+
+// The MM7 zombie transformation swaps in face/voice ids 23/24 - MM6 has no zombie art or voice
+// bank, and those ids overflow its 12-entry face/voice tables (mm6SpeechSubvariantCounts,
+// kMm6DollBodyPos, ...). Zombified MM6 characters must keep their own face and voice.
+GAME_TEST(Mm6, ZombieKeepsMm6FaceVoice) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &active = pParty->activeCharacter();
+    int face = active.uCurrentFace;
+    int voice = active.uVoiceID;
+    active.SetCondition(CONDITION_DEAD, 0);
+    active.SetCondition(CONDITION_ZOMBIE, 0); // Aborted in playReaction on the MM7 zombie voice id before the fix.
+    game.tick(1);
+    EXPECT_TRUE(active.conditions.has(CONDITION_ZOMBIE));
+    EXPECT_EQ(active.uCurrentFace, face);
+    EXPECT_EQ(active.uVoiceID, voice);
+}
+
+// Out-of-range face/voice ids can still reach MM6 characters (the MM7-shaped temple-heal zombie
+// path, imported or hand-edited saves). The 12-entry doll/voice table lookups must clamp - the
+// way the HUD portrait loader already does - instead of indexing out of bounds.
+GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &active = pParty->activeCharacter();
+    int face = active.uCurrentFace;
+    int voice = active.uVoiceID;
+    active.uCurrentFace = 23; // MM7's male zombie face - past everything MM6 data has.
+    active.uVoiceID = 23;
+
+    active.playReaction(SPEECH_CHEATED_DEATH); // Indexed mm6SpeechSubvariantCounts[...][23] before the fix.
+    game.tick(1);
+
+    // The paper doll indexes kMm6DollBodyPos / kMm6DollArm1Pos with the face id on every draw.
+    game.pressAndReleaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    active.uCurrentFace = face;
+    active.uVoiceID = voice;
+}

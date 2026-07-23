@@ -673,12 +673,16 @@ void Character::SetCondition(Condition condition, int blockable) {
             uPrevFace = uCurrentFace;
             uPrevVoiceID = uVoiceID;
 
-            if (IsMale()) {
-                uCurrentFace = 23;
-                uVoiceID = 23;
-            } else {
-                uCurrentFace = 24;
-                uVoiceID = 24;
+            // Faces/voices 23/24 are MM7's zombie set - MM6 has no zombie art or voice bank, and
+            // its 12-entry face/voice tables can't index them, so MM6 characters keep their own.
+            if (engine->gameVersion() != GAME_VERSION_MM6) {
+                if (IsMale()) {
+                    uCurrentFace = 23;
+                    uVoiceID = 23;
+                } else {
+                    uCurrentFace = 24;
+                    uVoiceID = 24;
+                }
             }
 
             playReaction(SPEECH_CHEATED_DEATH);
@@ -7049,9 +7053,12 @@ void Character::playReaction(SpeechId speech, int a3) {
             }
             if (speechCount) {
                 int pickedVariant = speechVariantsMm6[speech][vrng->random(speechCount)];
-                int numberOfSubvariants = mm6SpeechSubvariantCounts[pickedVariant - 1][uVoiceID];
+                // The voice is the face id 0-11; out-of-range ids (MM7's zombie 23/24 from the
+                // temple-heal path or edited saves) would index past the 12-wide subvariant rows.
+                int voice = std::clamp<int>(uVoiceID, 0, mm6SpeechSubvariantCounts[pickedVariant - 1].size() - 1);
+                int numberOfSubvariants = mm6SpeechSubvariantCounts[pickedVariant - 1][voice];
                 if (numberOfSubvariants > 0) {
-                    pickedSoundID = vrng->random(numberOfSubvariants) + 2 * pickedVariant + 100 * uVoiceID + 5000;
+                    pickedSoundID = vrng->random(numberOfSubvariants) + 2 * pickedVariant + 100 * voice + 5000;
                     pAudioPlayer->playSound((SoundId)pickedSoundID, SOUND_MODE_PID, Pid(OBJECT_Character, getCharacterIndex()));
                 }
             }

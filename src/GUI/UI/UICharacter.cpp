@@ -637,7 +637,9 @@ static void CharacterUI_LoadPaperdollTexturesMm6() {
     ui_ar_dn_dn = assets->getImage_Alpha("ar_dn_dn");
 
     for (int i = 0; i < pParty->pCharacters.size(); ++i) {
-        std::string prefix = mm6DollPrefix(pParty->pCharacters[i].uCurrentFace);
+        // Clamp like the HUD portrait loader - out-of-range faces (MM7's zombie 23/24 from the
+        // temple-heal path or edited saves) have no MM6 doll art.
+        std::string prefix = mm6DollPrefix(std::clamp<int>(pParty->pCharacters[i].uCurrentFace, 0, kMm6DollBodyPos.size() - 1));
         paperdollMm6Bods[i] = assets->getImage_Alpha(prefix + "bod");
         paperdollMm6Arm1s[i] = assets->getImage_Alpha(prefix + "arm1");
         paperdollMm6Arm2s[i] = assets->getImage_Alpha(prefix + "arm2");
@@ -700,7 +702,9 @@ static void CharacterUI_DrawPaperdollMm6(Character *player) {
     InventoryEntry itemOffHand = player->inventory.entry(ITEM_SLOT_OFF_HAND);
     bool twoHandedGrip = itemMainHand && (itemMainHand->type() == ITEM_TYPE_TWO_HANDED ||
                                           itemMainHand->skill() == SKILL_SPEAR && !itemOffHand);
-    int face = player->uCurrentFace;
+    // Clamp like the HUD portrait loader - out-of-range faces (MM7's zombie 23/24 from the
+    // temple-heal path or edited saves) have no rows in the 12-entry doll anchor tables.
+    int face = std::clamp<int>(player->uCurrentFace, 0, kMm6DollBodyPos.size() - 1);
     bool doZDraw = !bRingsShownInCharScreen;
 
     // Most items draw their own bitmap at the absolute items.txt anchor; doll-art substitutes
