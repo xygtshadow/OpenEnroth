@@ -41,6 +41,9 @@ struct PartyTimeStruct {
     IndexedArray<Time, HOUSE_FIRST_SHOP, HOUSE_LAST_SHOP> shopNextRefreshTime;
     IndexedArray<Time, HOUSE_FIRST_MAGIC_GUILD, HOUSE_LAST_MAGIC_GUILD> guildNextRefreshTime;
     IndexedArray<Time, HOUSE_FIRST_SHOP, HOUSE_LAST_SHOP> shopBanTimes;
+    // Set-dates of the MM6-only DaysCounter1-6 evt variables (VAR_DaysCounter1..6). MM6.EXE stores them right
+    // after the bounty-hunt times (0x90E85C); MM7's engine has no code touching its equivalent slots.
+    std::array<Time, 6> daysCounterValues;
     std::array<Time, 10> CounterEventValues;  // (0xACD314h in Silvo's binary)
     std::array<Time, 29> HistoryEventTimes;  // (0xACD364h in Silvo's binary)
     std::array<Time, 20> _s_times;  // 5d8 440h+8*51     //(0xACD44Ch in Silvo's binary)

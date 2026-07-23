@@ -4428,6 +4428,18 @@ bool Character::CompareVariable(EvtVariable VarNum, int pValue) {
             return this->uSkillPoints >= pValue;
         case VAR_MonthIs:
             return pParty->uCurrentMonth == pValue;
+        case VAR_DaysCounter1:
+        case VAR_DaysCounter2:
+        case VAR_DaysCounter3:
+        case VAR_DaysCounter4:
+        case VAR_DaysCounter5:
+        case VAR_DaysCounter6:
+        {
+            // MM6-only (MM6.EXE 0x44036c): a >= test on the difference in whole calendar days since the Set
+            // stamp, with no validity check - an unset counter compares against days since game start.
+            int idx = std::to_underlying(VarNum) - std::to_underlying(VAR_DaysCounter1);
+            return pParty->GetPlayingTime().toDays() - pParty->PartyTimes.daysCounterValues[idx].toDays() >= pValue;
+        }
         case VAR_Counter1:
         case VAR_Counter2:
         case VAR_Counter3:
@@ -4874,6 +4886,16 @@ void Character::SetVariable(EvtVariable var_type, int var_value) {
             this->uSkillPoints = var_value;
             return;
 
+        case VAR_DaysCounter1:
+        case VAR_DaysCounter2:
+        case VAR_DaysCounter3:
+        case VAR_DaysCounter4:
+        case VAR_DaysCounter5:
+        case VAR_DaysCounter6:
+            // MM6-only (MM6.EXE 0x44108e): stamp the current date, the operand is ignored.
+            pParty->PartyTimes.daysCounterValues[std::to_underlying(var_type) - std::to_underlying(VAR_DaysCounter1)] = pParty->GetPlayingTime();
+            return;
+
         case VAR_Counter1:
         case VAR_Counter2:
         case VAR_Counter3:
@@ -5105,6 +5127,12 @@ void Character::AddVariable(EvtVariable var_type, signed int val) {
 
     if (var_type >= VAR_Counter1 && var_type <= VAR_Counter10) {
         pParty->PartyTimes.CounterEventValues[std::to_underlying(var_type) - std::to_underlying(VAR_Counter1)] = pParty->GetPlayingTime();
+        return;
+    }
+
+    if (var_type >= VAR_DaysCounter1 && var_type <= VAR_DaysCounter6) {
+        // MM6-only (MM6.EXE 0x441ec0): Add stamps the current date exactly like Set, the operand is ignored.
+        pParty->PartyTimes.daysCounterValues[std::to_underlying(var_type) - std::to_underlying(VAR_DaysCounter1)] = pParty->GetPlayingTime();
         return;
     }
 
@@ -5687,6 +5715,12 @@ void Character::SubtractVariable(EvtVariable VarNum, signed int pValue) {
     }
     if (VarNum >= VAR_MapPersistentDecorVariable_0 && VarNum <= VAR_MapPersistentDecorVariable_24) {
         engine->_persistentVariables.decorVars[std::to_underlying(VarNum) - std::to_underlying(VAR_MapPersistentDecorVariable_0)] -= pValue;
+        return;
+    }
+
+    if (VarNum >= VAR_DaysCounter1 && VarNum <= VAR_DaysCounter6) {
+        // MM6-only (MM6.EXE 0x4429c9): Subtract clears the stamp, the operand is ignored.
+        pParty->PartyTimes.daysCounterValues[std::to_underlying(VarNum) - std::to_underlying(VAR_DaysCounter1)] = Time();
         return;
     }
 
