@@ -471,6 +471,30 @@ GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
     game.tick(20);
 }
 
+GAME_TEST(Mm6, MapActorGarbageNpcIds) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // Several shipped MM6 dungeon templates (d05, d12, d19, t4, zdwj02) store uninitialized
+    // map-editor garbage in the actor npcId slot - d05.dlv's Snergle record reads 30757. Such a
+    // value must not survive the load as an NPC link: GetDisplayName would otherwise index
+    // pAdditionalNPC[30757 - 5000] on a 100-entry array.
+    MapId snergleMines = pMapStats->GetMapInfo("d05.blv");
+    ASSERT_NE(snergleMines, MAP_INVALID);
+    game.teleportTo(snergleMines, Vec3f(0, 0, 0), 0);
+    EXPECT_EQ(uCurrentlyLoadedLevelType, LEVEL_INDOOR);
+
+    // MM6 map records never hold NPC handles - street citizens are only branded on first talk -
+    // so every freshly loaded actor must have a zero npcId and a displayable name.
+    ASSERT_FALSE(pActors.empty());
+    for (const Actor &actor : pActors) {
+        EXPECT_EQ(actor.npcId, 0);
+        EXPECT_FALSE(actor.GetDisplayName().empty());
+    }
+}
+
 GAME_TEST(Mm6, OpenChestInGoblinwatch) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
