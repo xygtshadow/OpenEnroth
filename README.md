@@ -73,8 +73,10 @@ Once you have innoextract, run:
 
 OpenEnroth runs both MM6 and MM7 from a single binary. The game to run is selected with the
 `--game-version mm6|mm7` command-line option. If the option is not supplied, the game is detected from
-the data folder (the current folder, or `--data-path` if given), with MM7 as the fallback — so dropping
-`OpenEnroth.exe` into a game folder and running it works for both games.
+the data folder (the current folder, or `--data-path` if given), and failing that from the
+`OPENENROTH_*_PATH` environment variables and the registry, checking MM7's locations before MM6's, with
+MM7 as the final fallback. So dropping `OpenEnroth.exe` into a game folder and running it works for both
+games, and an MM6-only install is found even when launching from somewhere else.
 
 ### Game Assets Path Override
 
@@ -88,9 +90,8 @@ export OPENENROTH_MM7_PATH="<path-to-mm7-game-assets>"
 export OPENENROTH_MM6_PATH="<path-to-mm6-game-assets>"
 ```
 
-Note that game-version auto-detection only probes the data folder, not these variables — so when
-launching MM6 from outside its game folder, also pass `--game-version mm6` to make OpenEnroth use
-`OPENENROTH_MM6_PATH`.
+These variables also feed game-version auto-detection, so an MM6-only install pointed to by
+`OPENENROTH_MM6_PATH` runs without any command-line options.
 
 ## Installing OpenEnroth
 
