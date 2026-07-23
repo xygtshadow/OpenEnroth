@@ -1217,6 +1217,11 @@ void IndoorLocation::PrepareDecorationsRenderList_BLV(unsigned int uDecorationID
     // error catching
     if (v11->spriteName == "null") assert(false);
 
+    // Octant frames can legitimately be missing from MM6 data (see loadSpriteFrame in Sprites.cpp),
+    // in which case the decoration is simply not drawn from this angle.
+    if (!v11->sprites[v9])
+        return;
+
     v30 = billboardFlagsForSprite(v11->flags, v9);
 
     if (render->AddBillboardIfVisible(v11->sprites[v9], v11->paletteId, pLevelDecorations[uDecorationID].vPosition, {v11->scale, v11->scale}, v30, Pid(OBJECT_Decoration, uDecorationID), uSectorID))

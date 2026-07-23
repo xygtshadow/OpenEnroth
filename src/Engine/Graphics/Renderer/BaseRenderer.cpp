@@ -107,6 +107,11 @@ void BaseRenderer::DrawSpriteObjects() {
             unsigned int angle = TrigLUT.atan2(object->vPosition.x - pCamera3D->vCameraPos.x, object->vPosition.y - pCamera3D->vCameraPos.y);
             int octant = ((TrigLUT.uIntegerPi + (TrigLUT.uIntegerPi >> 3) + object->uFacing - angle) >> 8) & 7;
 
+            // Octant frames can legitimately be missing from MM6 data (see loadSpriteFrame in Sprites.cpp),
+            // in which case the sprite is simply not drawn from this angle.
+            if (!frame->sprites[octant] || !frame->sprites[octant]->texture)
+                continue;
+
             // error catching
             if (frame->sprites[octant]->texture->height() == 0 || frame->sprites[octant]->texture->width() == 0) {
                 logger->trace("Trying to draw sprite with empty octant texture");
@@ -199,6 +204,11 @@ void BaseRenderer::PrepareDecorationsRenderList_ODM() {
                         8) &
                         7;
                     int v37 = v13;
+
+                    // Octant frames can legitimately be missing from MM6 data (see loadSpriteFrame in
+                    // Sprites.cpp), in which case the decoration is simply not drawn from this angle.
+                    if (!frame->sprites[v37])
+                        continue;
 
 
                     if (engine->config->graphics.AddMoreLights.value()) {
