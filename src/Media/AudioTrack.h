@@ -16,6 +16,7 @@ class IAudioTrack {
     virtual bool Stop() = 0;
     virtual bool Pause() = 0;
     virtual bool Resume() = 0;
+    virtual bool IsPlaying() = 0;
     virtual bool SetVolume(float volume) = 0;
     virtual float GetVolume() = 0;
 };

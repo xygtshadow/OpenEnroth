@@ -13,6 +13,7 @@ VideoState::VideoState(VideoState::Type type, std::string_view videoFileName) : 
 
 FsmAction VideoState::enter() {
     _skipVideo = false;
+    _pausedMedia = false;
     _previousScreenType = current_screen_type;
 
     if (engine->config->debug.NoVideo.value() ||
@@ -30,6 +31,7 @@ FsmAction VideoState::enter() {
     pEventTimer->setPaused(true);
     pAudioPlayer->pauseLooping();
     pAudioPlayer->MusicPause();
+    _pausedMedia = true;
 
     // Also hide the mouse cursor
     platform->setCursorShown(false);
@@ -58,6 +60,17 @@ void VideoState::exit() {
     // restore the screen type that was set before the video started
     current_screen_type = _previousScreenType;
     platform->setCursorShown(true);
+
+    // Undo enter()'s pauses, but only when they actually happened - the early-out paths above never
+    // pause anything. Without the resume, a paused music track survives into the next state, where
+    // MusicPlayTrack's same-track check keeps it paused forever (MM6's credits: main menu ->
+    // credits clip -> silent main menu, since the menu track never changed).
+    if (_pausedMedia) {
+        _pausedMedia = false;
+        pEventTimer->setPaused(false);
+        pAudioPlayer->resumeLooping();
+        pAudioPlayer->MusicResume();
+    }
 }
 
 bool VideoState::mousePressEvent(const PlatformMouseEvent *event) {

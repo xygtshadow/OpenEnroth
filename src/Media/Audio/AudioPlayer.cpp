@@ -111,6 +111,10 @@ void AudioPlayer::MusicResume() {
     }
 }
 
+bool AudioPlayer::isMusicPlaying() {
+    return pCurrentMusicTrack && pCurrentMusicTrack->IsPlaying();
+}
+
 void AudioPlayer::SetMusicVolume(int level) {
     level = std::clamp(level, 0, 9);
     uMusicVolume = pSoundVolumeLevels[level];
@@ -406,6 +410,10 @@ void AudioPlayer::pauseAllSounds() {
 
 void AudioPlayer::pauseLooping() {
     _loopingSoundPool.pause();
+}
+
+void AudioPlayer::resumeLooping() {
+    _loopingSoundPool.resume();
 }
 
 void AudioPlayer::soundDrain() {

@@ -109,6 +109,16 @@ bool OpenALTrack16::Pause() {
 
 bool OpenALTrack16::Resume() { return Play(); }
 
+bool OpenALTrack16::IsPlaying() {
+    if (!IsValid()) {
+        return false;
+    }
+
+    ALint status;
+    alGetSourcei(al_source, AL_SOURCE_STATE, &status);
+    return status == AL_PLAYING;
+}
+
 bool OpenALTrack16::SetVolume(float volume) {
     if (!IsValid()) {
         return false;

@@ -35,10 +35,12 @@ class AudioPlayer {
     void MusicStop();
     void MusicPause();
     void MusicResume();
+    bool isMusicPlaying();
 
     void UpdateSounds();
     void pauseAllSounds();
     void pauseLooping();
+    void resumeLooping();
     void resumeSounds();
     void stopSounds();
     void stopVoiceSounds();
