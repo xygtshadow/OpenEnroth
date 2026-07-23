@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -9,6 +10,7 @@
 
 #include "Engine/Evt/EvtProgram.h"
 #include "Engine/Evt/EvtEnums.h"
+#include "Engine/Objects/ItemEnums.h"
 
 #include "Utility/Memory/Blob.h"
 
@@ -58,6 +60,44 @@ GAME_TEST(EvtProgramMm6, Parses) {
     EXPECT_EQ(setTexture.data.outdoor_texture_descr.model, 84);
     EXPECT_EQ(setTexture.data.outdoor_texture_descr.face, 42);
     EXPECT_EQ(setTexture.str, "T1swBu");
+}
+
+// MM6 numbers damage types Phys=0, Magic=1, Fire=2, Elec=3, Cold=4, Poison=5, Energy=6 - a different coding
+// from the engine's MM7-shaped DamageType (Fire=0, Air=1, Water=2, Earth=3, Physical=4, Magic=5). ReceiveDamage
+// records store the raw MM6 byte, so parsing must translate it or every event-driven trap resolves against the
+// wrong resistance (e.g. pyramid.blv's unresistable physical trap would be checked against fire resistance).
+GAME_TEST(EvtProgramMm6, ReceiveDamageTypes) {
+    // ReceiveDamage records: size=11, opcode=9, then [who:u8][damageType:u8][damage:u32-le].
+    // One record per MM6 damage code 0..6, eventId = code + 1.
+    std::vector<std::vector<uint8_t>> records;
+    for (uint8_t code = 0; code <= 6; code++)
+        records.push_back({0x0a, static_cast<uint8_t>(code + 1), 0x00, 0x01, 0x09, 0x05, code, 0x05, 0x00, 0x00, 0x00});
+
+    EvtProgram program = EvtProgram::load(makeEvtBlob(records), GAME_VERSION_MM6);
+
+    static constexpr std::array<DamageType, 7> expected = {
+        DAMAGE_PHYSICAL, DAMAGE_MAGIC, DAMAGE_FIRE, DAMAGE_AIR, DAMAGE_WATER, DAMAGE_EARTH, DAMAGE_ENERGY};
+    for (int code = 0; code <= 6; code++) {
+        const EvtInstruction &damage = program.function(code + 1)[0];
+        EXPECT_EQ(damage.opcode, EVENT_ReceiveDamage);
+        EXPECT_EQ(damage.data.damage_descr.damage_type, expected[code]) << "MM6 damage code " << code;
+        EXPECT_EQ(damage.data.damage_descr.damage, 5);
+    }
+}
+
+// MM7 ReceiveDamage records already store the engine's DamageType numbering; the byte must stay untranslated.
+GAME_TEST(EvtProgramMm7, ReceiveDamageTypeIsRaw) {
+    Blob blob = makeEvtBlob({
+        // ReceiveDamage: eventId=1, who=CHOOSE_PARTY (5), damage type 4 (DAMAGE_PHYSICAL), 5 damage.
+        {0x0a, 0x01, 0x00, 0x01, 0x09, 0x05, 0x04, 0x05, 0x00, 0x00, 0x00},
+    });
+
+    EvtProgram program = EvtProgram::load(blob, GAME_VERSION_MM7);
+
+    const EvtInstruction &damage = program.function(1)[0];
+    EXPECT_EQ(damage.opcode, EVENT_ReceiveDamage);
+    EXPECT_EQ(damage.data.damage_descr.damage_type, DAMAGE_PHYSICAL);
+    EXPECT_EQ(damage.data.damage_descr.damage, 5);
 }
 
 // Guards the MM7 parse path through the version-parameter refactor: a valid MM7 record must still parse.
