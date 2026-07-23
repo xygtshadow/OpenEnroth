@@ -171,6 +171,62 @@ void Localization::initializeSpellNames() {
     this->_actorBuffNames[ACTOR_BUFF_HASTE]                    = this->_localizationStrings[LSTR_HASTE];
     this->_actorBuffNames[ACTOR_BUFF_PAIN_REFLECTION]          = this->_localizationStrings[LSTR_PAIN_REFLECTION];
     this->_actorBuffNames[ACTOR_BUFF_HAMMERHANDS]              = this->_localizationStrings[LSTR_HAMMERHANDS];
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's global.txt shares row ids with MM7's for most buff names (Heroism@440 through
+        // Prot Magic@462, Shield@279, and the condition-style actor buffs Afraid@4, Paralyzed@162,
+        // Stoned@220, Charmed@591, Shrunk@592, Slowed@593), so the assignments above already hold the
+        // right strings for those. The remaining MM7 row ids land on unrelated MM6 strings ("Backward",
+        // "Train", "SOUND VOLUME", ...) or past the end of MM6's 595-row file, so re-point them at
+        // MM6's own rows - named for the MM6 spell that translateForCast routes into each engine buff
+        // slot - and blank the slots no MM6 cast can reach.
+
+        // MM6's protections are party-wide "Prot <element>" buffs; Earth/Mind resistances don't exist,
+        // and the Detect Life / Immolation / Invisibility handlers are unreachable from an MM6 cast.
+        this->_partyBuffNames[PARTY_BUFF_RESIST_FIRE]  = this->_localizationStrings[LSTR_PROT_FIRE];
+        this->_partyBuffNames[PARTY_BUFF_RESIST_AIR]   = this->_localizationStrings[LSTR_PROT_ELEC];
+        this->_partyBuffNames[PARTY_BUFF_RESIST_WATER] = this->_localizationStrings[LSTR_PROT_COLD];
+        this->_partyBuffNames[PARTY_BUFF_RESIST_BODY]  = this->_localizationStrings[LSTR_PROT_POISON];
+        this->_partyBuffNames[PARTY_BUFF_RESIST_EARTH] = {};
+        this->_partyBuffNames[PARTY_BUFF_RESIST_MIND]  = {};
+        this->_partyBuffNames[PARTY_BUFF_DETECT_LIFE]  = {};
+        this->_partyBuffNames[PARTY_BUFF_IMMOLATION]   = {};
+        this->_partyBuffNames[PARTY_BUFF_INVISIBILITY] = {};
+        // PARTY_BUFF_DAY_OF_GODS has no global.txt row in MM6 - Engine::SecondaryInitialization fills
+        // its name in from spells.txt.
+        this->_partyBuffNames[PARTY_BUFF_DAY_OF_GODS]  = {};
+
+        // Character buffs, named for the MM6 spell that lands on each slot: Lucky Day -> Fate,
+        // Power -> Hammerhands, Guardian Angel -> Preservation. The temp-stat, Pain Reflection,
+        // Regeneration and Water Breathing handlers are unreachable from an MM6 cast.
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_FIRE]     = this->_localizationStrings[LSTR_PROT_FIRE];
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_AIR]      = this->_localizationStrings[LSTR_PROT_ELEC];
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_WATER]    = this->_localizationStrings[LSTR_PROT_COLD];
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_BODY]     = this->_localizationStrings[LSTR_PROT_POISON];
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_EARTH]    = {};
+        this->_characterBuffNames[CHARACTER_BUFF_RESIST_MIND]     = {};
+        this->_characterBuffNames[CHARACTER_BUFF_FATE]            = this->_localizationStrings[LSTR_LUCKY_DAY];
+        this->_characterBuffNames[CHARACTER_BUFF_HAMMERHANDS]     = this->_localizationStrings[LSTR_POWER];
+        this->_characterBuffNames[CHARACTER_BUFF_PRESERVATION]    = this->_localizationStrings[LSTR_GUARDIAN];
+        this->_characterBuffNames[CHARACTER_BUFF_PAIN_REFLECTION] = {};
+        this->_characterBuffNames[CHARACTER_BUFF_REGENERATION]    = {};
+        this->_characterBuffNames[CHARACTER_BUFF_ACCURACY]        = {};
+        this->_characterBuffNames[CHARACTER_BUFF_ENDURANCE]       = {};
+        this->_characterBuffNames[CHARACTER_BUFF_INTELLIGENCE]    = {};
+        this->_characterBuffNames[CHARACTER_BUFF_LUCK]            = {};
+        this->_characterBuffNames[CHARACTER_BUFF_STRENGTH]        = {};
+        this->_characterBuffNames[CHARACTER_BUFF_PERSONALITY]     = {};
+        this->_characterBuffNames[CHARACTER_BUFF_SPEED]           = {};
+        this->_characterBuffNames[CHARACTER_BUFF_WATER_WALK]      = {};
+
+        // Actor buffs: MM6 Feeblemind runs the MM7 Berserk handler. Summoned / Enslaved rows don't
+        // exist in MM6's global.txt (already empty), and Day of Protection / Hour of Power get their
+        // names from spells.txt in Engine::SecondaryInitialization.
+        this->_actorBuffNames[ACTOR_BUFF_BERSERK]         = this->_localizationStrings[LSTR_FEEBLEMINDED];
+        this->_actorBuffNames[ACTOR_BUFF_FATE]            = this->_localizationStrings[LSTR_LUCKY_DAY];
+        this->_actorBuffNames[ACTOR_BUFF_HAMMERHANDS]     = this->_localizationStrings[LSTR_POWER];
+        this->_actorBuffNames[ACTOR_BUFF_PAIN_REFLECTION] = {};
+    }
 }
 
 void Localization::initializeNpcProfessionNames() {

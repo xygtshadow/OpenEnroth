@@ -149,6 +149,19 @@ class Localization {
         _npcProfessionNames[prof] = std::move(name);
     }
 
+    /**
+     * Overrides a buff display name. A few MM6 buff names exist only in spells.txt, which is parsed
+     * after `Localization::initialize` runs - `Engine::SecondaryInitialization` fills them in from
+     * `pSpellStats` once it's populated.
+     */
+    void setPartyBuffName(PartyBuff buff, std::string name) {
+        _partyBuffNames[buff] = std::move(name);
+    }
+
+    void setActorBuffName(ActorBuff buff, std::string name) {
+        _actorBuffNames[buff] = std::move(name);
+    }
+
     const std::string &specialAttackName(MonsterSpecialAttack index) const {
         return _specialAttackNames[index];
     }

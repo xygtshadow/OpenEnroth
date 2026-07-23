@@ -730,8 +730,17 @@ void Engine::SecondaryInitialization() {
     // be populated first. The two tables are otherwise independent, so this ordering is safe for MM7 too.
     pSpellStats = new SpellStats();
     pSpellStats->Initialize(engine->resources()->eventsData("spells.txt"), gameVersion());
-    if (gameVersion() == GAME_VERSION_MM6)
+    if (gameVersion() == GAME_VERSION_MM6) {
         applyMm6SpellDatas();  // Replace the MM7 mana/recovery numbers in pSpellDatas with MM6's.
+
+        // A few MM6 buff names exist only in spells.txt - MM6's global.txt has no rows for them, so
+        // Localization::initializeSpellNames left these slots blank. The SpellId constants are MM7-named
+        // slot ids; in an MM6 session pInfos holds MM6's spell at that slot (see translateForCast):
+        // 83 = Day of the Gods, 85 = Hour of Power, 94 = Day of Protection.
+        localization->setPartyBuffName(PARTY_BUFF_DAY_OF_GODS, pSpellStats->pInfos[SPELL_LIGHT_DAY_OF_THE_GODS].name);
+        localization->setActorBuffName(ACTOR_BUFF_HOUR_OF_POWER, pSpellStats->pInfos[SPELL_LIGHT_DAY_OF_PROTECTION].name);
+        localization->setActorBuffName(ACTOR_BUFF_DAY_OF_PROTECTION, pSpellStats->pInfos[SPELL_DARK_CONTROL_UNDEAD].name);
+    }
 
     pMonsterStats = new MonsterStats();
     pMonsterStats->Initialize(engine->resources()->eventsData("monsters.txt"), gameVersion());
