@@ -22,11 +22,12 @@ jobs:
     uses: ./.github/workflows/build_all.yml
     secrets: inherit
     with:
-      # Must match env.TAG_NAME (the env context is unavailable in reusable-workflow `with:`).
-      # The publish step inside build_all creates the release if it doesn't exist yet and
-      # replaces the same-named zip asset in place, so no pre-build release setup is needed —
-      # and a red build leaves the previous nightly's release, assets and tag untouched.
+      # Only used for the zip file name here (must match env.TAG_NAME; the env context is
+      # unavailable in reusable-workflow `with:`). With publishArtifacts the build uploads
+      # the zips as workflow artifacts instead of touching the release, so a red build
+      # leaves the previous nightly's release, assets and tag completely untouched.
       releaseTag: mm6-nightly
+      publishArtifacts: true
       targets: '["windows_x86_64"]'
       configurations: '["Debug"]'
       # The MM7 game-data cache is fed from a private repo via a secret this fork doesn't have.
@@ -37,21 +38,41 @@ jobs:
     needs: build_all
     runs-on: ubuntu-latest
     steps:
-      - name: Point release at the built commit
+      - name: Download built zips
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Publish to release
         shell: bash
         env:
           GH_TOKEN: '${{secrets.GITHUB_TOKEN}}'
         run: |
           set -euo pipefail
-          # A ref force-update moves the tag while keeping the release and its assets
-          # attached. Never delete the tag or the release here: `gh release delete
-          # --cleanup-tag` (or deleting the ref) orphans the release and destroys the
-          # last known-good binaries, which is exactly what this job used to do before
-          # anything was built.
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" \
-            -f sha="$GITHUB_SHA" -F force=true
+          title="MM6 nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})"
+          notes="Automated build of branch mm6-support @ $GITHUB_SHA"
+          # Never delete the release or its tag here: `gh release delete --cleanup-tag`
+          # before the build is exactly what used to destroy the last known-good
+          # binaries whenever anything later went red.
+          if ! gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "$title" \
+              --notes "$notes"
+          fi
+          # Replace the previous build's zips only now, after the whole build succeeded.
+          gh release upload "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --clobber *.zip
+          # Refreshing the metadata and advancing the tag are cosmetic; a failure there
+          # (API permission quirks) must not fail an otherwise successful publish.
           gh release edit "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --prerelease \
-            --title "MM6 nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})" \
-            --notes "Automated build of branch mm6-support @ $GITHUB_SHA"
+            --title "$title" \
+            --notes "$notes" \
+            || echo "::warning::Could not refresh the $TAG_NAME release title/notes"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" \
+            -f sha="$GITHUB_SHA" -F force=true \
+            || echo "::warning::Could not advance the $TAG_NAME tag; it still points at the previous nightly"
