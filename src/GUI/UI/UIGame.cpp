@@ -1369,13 +1369,14 @@ void GameUI_DrawCharacterSelectionFrame() {
             return;
         static constexpr std::array<int, 4> kMm6SelectionFrameX = {50, 163, 276, 388};
         static int mm6SelectionFramesetId = 0;
-        if (mm6SelectionFramesetId <= 0) {
+        if (mm6SelectionFramesetId <= 0)
             mm6SelectionFramesetId = pSpriteFrameTable->FastFindSprite("aframe1");
-            if (mm6SelectionFramesetId > 0)
-                pSpriteFrameTable->InitializeSprite(mm6SelectionFramesetId);
-        }
         if (mm6SelectionFramesetId <= 0)
             return;
+        // Re-init on every draw: a map change releases the ring's unreserved sprites and clears the
+        // frameset's LOADED flag, leaving sprites[] dangling. This repopulates them (and is a no-op
+        // while the flag is still set).
+        pSpriteFrameTable->InitializeSprite(mm6SelectionFramesetId);
         SpriteFrame *frame = pSpriteFrameTable->GetFrame(mm6SelectionFramesetId, pMiscTimer->time());
         if (!frame || !frame->sprites[0] || !frame->sprites[0]->texture)
             return;
