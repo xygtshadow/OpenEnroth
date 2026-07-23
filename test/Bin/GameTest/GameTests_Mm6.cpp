@@ -4175,6 +4175,95 @@ GAME_TEST(Mm6, GoldenTouch) {
     EXPECT_FALSE(caster.inventory.entry(itemIndex));
 }
 
+// MM6 Enchant Item (native id 29) is castable from Novice up - spells.txt row 29 tiers read "Weak
+// enchantments only" / "Stronger enchantments" / "Allows enchantment of weapons", and the spellbook learn
+// gate accordingly admits it at Expert. But it translates onto MM7's SPELL_WATER_ENCHANT_ITEM, a
+// Master-only spell whose handler assert(false)ed on Novice/Expert casts - so a legitimate MM6 Expert
+// cast aborted a Debug build (and burned mana on a guaranteed "Spell failed" in Release). The MM6 gates
+// never caught it because debug.AllMagic forces Grandmaster mastery.
+GAME_TEST(Mm6, EnchantItemTiers) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &caster = pParty->pCharacters[0];
+    caster.mana = 500;
+
+    // Pick items from MM6's own table: passive equipment worth >= 450 (below that the low-value rule
+    // breaks it) and a weapon worth >= 250 for the Master weapon tier.
+    ItemId armorId = ITEM_NULL, armorId2 = ITEM_NULL, weaponId = ITEM_NULL;
+    for (ItemId id : pItemTable->items.indices()) {
+        if (!isRegular(id))
+            continue;
+        Item item(id);
+        if (isPassiveEquipment(item.type()) && item.GetValue() >= 450) {
+            if (armorId == ITEM_NULL)
+                armorId = id;
+            else if (armorId2 == ITEM_NULL)
+                armorId2 = id;
+        }
+        if (weaponId == ITEM_NULL && isWeapon(item.type()) && item.GetValue() >= 250)
+            weaponId = id;
+    }
+    ASSERT_NE(armorId, ITEM_NULL);
+    ASSERT_NE(armorId2, ITEM_NULL);
+    ASSERT_NE(weaponId, ITEM_NULL);
+
+    // Casts Enchant Item (native id 29) on the given inventory slot, mirroring the item-picker click
+    // exactly like the GoldenTouch test above.
+    auto castEnchantOn = [&](int itemIndex, Mastery mastery) {
+        caster.timeToRecovery = 0_ticks; // Clear the previous cast's recovery so the next cast goes through.
+        caster.mana = 500;
+        pushSpellOrRangedAttack(static_cast<SpellId>(29), 0, CombinedSkillValue(10, mastery), 0, 0);
+        game.tick(1);
+        ASSERT_TRUE(IsEnchantingInProgress) << "mastery " << std::to_underlying(mastery);
+        CastSpellInfo *info = pGUIWindow_CastTargetedSpell->spellInfo();
+        info->flags &= ~ON_CAST_TargetedEnchantment;
+        info->targetCharacterIndex = 0;
+        info->targetInventoryIndex = itemIndex;
+        IsEnchantingInProgress = false;
+        // The real click also schedules this Escape, which closes the inventory screen and releases the
+        // targeted-spell window - without it the stale window blocks the next cast's item picker. A
+        // 1-tick timeout replaces the interactive 1-second one.
+        AfterEnchClickEventId = UIMSG_Escape;
+        AfterEnchClickEventSecondParam = 0;
+        AfterEnchClickEventTimeout = Duration::fromTicks(1);
+        game.tick(3);
+    };
+
+    // Expert on plain armor: skill 10 -> the success roll can't miss, so the item must come out
+    // enchanted (standard or special, depending on the roll) and unbroken. Aborted via assert(false)
+    // before the fix.
+    InventoryEntry armor = caster.inventory.add(Item(armorId));
+    ASSERT_TRUE(armor);
+    castEnchantOn(armor.index(), MASTERY_EXPERT);
+    EXPECT_TRUE(armor->standardEnchantment || armor->specialEnchantment != ITEM_ENCHANTMENT_NULL);
+    EXPECT_FALSE(armor->IsBroken());
+
+    // Novice on plain armor: also a legal MM6 cast ("Weak enchantments only"), also enchants.
+    InventoryEntry armor2 = caster.inventory.add(Item(armorId2));
+    ASSERT_TRUE(armor2);
+    castEnchantOn(armor2.index(), MASTERY_NOVICE);
+    EXPECT_TRUE(armor2->standardEnchantment || armor2->specialEnchantment != ITEM_ENCHANTMENT_NULL);
+    EXPECT_FALSE(armor2->IsBroken());
+
+    // Expert on a weapon: weapons need Master ("Allows enchantment of weapons"), so the cast fails
+    // cleanly - no enchantment, and the item is NOT broken.
+    InventoryEntry weapon = caster.inventory.add(Item(weaponId));
+    ASSERT_TRUE(weapon);
+    castEnchantOn(weapon.index(), MASTERY_EXPERT);
+    EXPECT_FALSE(weapon->standardEnchantment.has_value());
+    EXPECT_EQ(weapon->specialEnchantment, ITEM_ENCHANTMENT_NULL);
+    EXPECT_FALSE(weapon->IsBroken());
+
+    // Master on the same weapon: now allowed, and weapons always roll a special enchantment.
+    castEnchantOn(weapon.index(), MASTERY_MASTER);
+    EXPECT_NE(weapon->specialEnchantment, ITEM_ENCHANTMENT_NULL);
+    EXPECT_FALSE(weapon->IsBroken());
+}
+
 GAME_TEST(Mm6, SpellManaCosts) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
