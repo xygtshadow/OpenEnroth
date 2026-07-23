@@ -1699,11 +1699,21 @@ void CastSpellInfoHelpers::castSpell() {
                     // http://www.pottsland.com/mm6/enchant.shtml
                     // also see STDITEMS.tx and SPCITEMS.txt in Events.lod
 
-                    if ((spell_mastery == MASTERY_NOVICE || spell_mastery == MASTERY_EXPERT)) {
+                    // MM7's Enchant Item is Master-only, but MM6's (native id 29, translated onto this
+                    // effect) is castable from Novice up - spells.txt row 29 tiers: "Weak enchantments
+                    // only" / "Stronger enchantments" / "Allows enchantment of weapons".
+                    bool mm6Cast = engine->gameVersion() == GAME_VERSION_MM6;
+                    if (!mm6Cast && (spell_mastery == MASTERY_NOVICE || spell_mastery == MASTERY_EXPERT)) {
                         assert(false); // SPELL_WATER_ENCHANT_ITEM is a master level spell
                     }
 
-                    if ((spell_mastery == MASTERY_MASTER || spell_mastery == MASTERY_GRANDMASTER) &&
+                    // In MM6 every mastery can enchant, except that weapons need Master ("Allows
+                    // enchantment of weapons"); below that a weapon cast just fails, without breakage.
+                    bool masteryAllowsEnchant = mm6Cast
+                        ? spell_mastery >= MASTERY_MASTER || !isWeapon(this_equip_type)
+                        : spell_mastery == MASTERY_MASTER || spell_mastery == MASTERY_GRANDMASTER;
+
+                    if (masteryAllowsEnchant &&
                             isRegular(spell_item_to_enchant->itemId) &&
                             spell_item_to_enchant->specialEnchantment == ITEM_ENCHANTMENT_NULL &&
                             !spell_item_to_enchant->standardEnchantment &&
@@ -1762,10 +1772,22 @@ void CastSpellInfoHelpers::castSpell() {
                                     spell_item_to_enchant->standardEnchantment = ench_array[step];
 
                                     int ench_power = 0;
-                                    // master 3-8  - guess work needs checking
-                                    if (spell_mastery == MASTERY_MASTER) ench_power = grng->random(6) + 3;
-                                    // gm 6-12   - guess work needs checking
-                                    if (spell_mastery== MASTERY_GRANDMASTER) ench_power = grng->random(7) + 6;
+                                    if (mm6Cast) {
+                                        // MM6's weak/stronger/top progression; ranges are guesswork like
+                                        // the MM7 ones below.
+                                        if (spell_mastery == MASTERY_NOVICE) {
+                                            ench_power = grng->random(4) + 1; // novice 1-4
+                                        } else if (spell_mastery == MASTERY_EXPERT) {
+                                            ench_power = grng->random(6) + 3; // expert 3-8
+                                        } else {
+                                            ench_power = grng->random(7) + 6; // master 6-12
+                                        }
+                                    } else {
+                                        // master 3-8  - guess work needs checking
+                                        if (spell_mastery == MASTERY_MASTER) ench_power = grng->random(6) + 3;
+                                        // gm 6-12   - guess work needs checking
+                                        if (spell_mastery== MASTERY_GRANDMASTER) ench_power = grng->random(7) + 6;
+                                    }
 
                                     spell_item_to_enchant->standardEnchantmentStrength = ench_power;
                                     spell_item_to_enchant->flags |= ITEM_AURA_EFFECT_BLUE;
@@ -1780,10 +1802,13 @@ void CastSpellInfoHelpers::castSpell() {
                                     for (ItemEnchantment spec_ench_loop : pItemTable->specialEnchantments.indices()) {
                                         const std::string &bonusStatement = pItemTable->specialEnchantments[spec_ench_loop].description;
                                         if (!bonusStatement.empty()) {
-                                            if (pItemTable->specialEnchantments[spec_ench_loop].enchantmentLevel == 3) {
-                                                continue;
-                                            }
-                                            if (spell_mastery == MASTERY_MASTER && (pItemTable->specialEnchantments[spec_ench_loop].enchantmentLevel != 0)) {
+                                            // Mastery gates the enchantment tier: MM7 Master rolls only
+                                            // level-0 enchantments and GM everything below 3; MM6's
+                                            // weak/stronger/top tiers map to max levels 0/1/2.
+                                            int maxEnchLevel = mm6Cast
+                                                ? (spell_mastery == MASTERY_NOVICE ? 0 : spell_mastery == MASTERY_EXPERT ? 1 : 2)
+                                                : (spell_mastery == MASTERY_MASTER ? 0 : 2);
+                                            if (pItemTable->specialEnchantments[spec_ench_loop].enchantmentLevel > maxEnchLevel) {
                                                 continue;
                                             }
                                             int this_to_apply = pItemTable->specialEnchantments[spec_ench_loop].chanceByItemType[this_equip_type];
