@@ -99,13 +99,16 @@ static const std::array<TownPortalData, TOWN_PORTAL_DESTINATION_COUNT> townPorta
     {Vec3f( -9138,  14518,   97),    0, 0, static_cast<MapId>(7),  QBIT_INVALID}, // White Cap, Frozen Highlands
 }};
 
+// The click boxes at 0x4BCAE4 are NOT stored in destination order: MM6.EXE's click handler runs
+// the box index through the jump table at 0x42F958 (box 0..5 -> town 3/2/4/1/0/5). Rects below are
+// pre-reordered so that entry i is the on-image box for townPortalListMm6[i].
 static const std::array<Recti, TOWN_PORTAL_DESTINATION_COUNT> townPortalButtonsPosMm6 = {{
-    {346, 280, 62, 31}, // Blackshire
-    {360, 186, 46, 42}, // Free Haven
-    {318, 121, 52, 26}, // Mist
-    {223, 156, 51, 30}, // New Sorpigal
-    {113, 150, 51, 33}, // Silver Cove
-    {192,  81, 54, 30}, // White Cap
+    {113, 150, 51, 33}, // Blackshire   (EXE box 4)
+    {223, 156, 51, 30}, // Free Haven   (EXE box 3)
+    {360, 186, 46, 42}, // Mist         (EXE box 1)
+    {346, 280, 62, 31}, // New Sorpigal (EXE box 0)
+    {318, 121, 52, 26}, // Silver Cove  (EXE box 2)
+    {192,  81, 54, 30}, // White Cap    (EXE box 5)
 }};
 
 static const TownPortalData &townPortalDestination(int townId) {
