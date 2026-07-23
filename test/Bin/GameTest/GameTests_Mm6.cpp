@@ -3336,12 +3336,25 @@ GAME_TEST(Mm6, TownPortal) {
 
     game.startNewGame();
 
-    // Cast Town Portal (all six MM6 towns are open - MM6 has no unlock quest bits) and
-    // click Free Haven on MM6's own map image.
+    // Cast Town Portal (all six MM6 towns are open - MM6 has no unlock quest bits) and click
+    // towns on MM6's own map image. Clicks are anchored to positions on the picture, not to
+    // marker indices, so a wrong rect/destination pairing fails here (MM6.EXE pairs click box i
+    // with destination i through the jump table at 0x42F958, not identity).
     engine->config->debug.AllMagic.setValue(true);
     game.castSpell(1, SPELL_WATER_TOWN_PORTAL);
     game.tick(2);
-    game.pressGuiButton("TownPortalBook_Marker1"); // Free Haven.
+    game.pressAndReleaseButton(BUTTON_LEFT, 377, 295); // The "New Sorpigal" label box on the image.
+    game.tick(2);
+
+    // The party starts in New Sorpigal, so this is a same-map teleport straight to the pose.
+    EXPECT_EQ(pMapStats->pInfos[engine->_currentLoadedMapId].fileName, "oute3.odm"); // New Sorpigal.
+    EXPECT_NEAR(pParty->pos.x, -9705, 8); // MM6.EXE TownPortalInfo[3] fountain pose.
+    EXPECT_NEAR(pParty->pos.y, -6858, 8);
+    game.tick(10);
+
+    game.castSpell(2, SPELL_WATER_TOWN_PORTAL);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 248, 171); // The "Free Haven" label box on the image.
     game.tick(2);
     game.skipLoadingScreen();
     game.tick(10);
