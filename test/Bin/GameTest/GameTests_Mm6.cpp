@@ -3750,6 +3750,43 @@ GAME_TEST(Mm6, ClassDescriptions) {
     EXPECT_TRUE(localization->classDescription(CLASS_LICH).empty());
 }
 
+// Class NAMES must come from MM6's class.txt column 0 as well - the fixed MM7 global.txt row ids
+// that initializeClassNames() uses mean something completely different in MM6's global.txt
+// (LSTR_PRIEST_OF_LIGHT = row 44 = "Combat", LSTR_MASTER_ARCHER = row 119 = "Items"), so a
+// twice-promoted Cleric displayed as "<name> the Combat" and a twice-promoted Archer as
+// "<name> the Items" on the character sheet, status bar and game-over screen.
+GAME_TEST(Mm6, ClassNames) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The six startable classes.
+    EXPECT_EQ(localization->className(CLASS_KNIGHT), "Knight");
+    EXPECT_EQ(localization->className(CLASS_CLERIC), "Cleric");
+    EXPECT_EQ(localization->className(CLASS_SORCERER), "Sorcerer");
+    EXPECT_EQ(localization->className(CLASS_PALADIN), "Paladin");
+    EXPECT_EQ(localization->className(CLASS_ARCHER), "Archer");
+    EXPECT_EQ(localization->className(CLASS_DRUID), "Druid");
+
+    // Promotion tiers, incl. the MM6-specific names that differ from the MM7 slot they map onto.
+    EXPECT_EQ(localization->className(CLASS_CAVALIER), "Cavalier");
+    EXPECT_EQ(localization->className(CLASS_CHAMPION), "Champion");
+    EXPECT_EQ(localization->className(CLASS_PRIEST), "Priest");
+    EXPECT_EQ(localization->className(CLASS_PRIEST_OF_SUN), "High Priest");  // MM6 High Priest, not "Combat".
+    EXPECT_EQ(localization->className(CLASS_WARRIOR_MAGE), "Battle Mage");   // MM6 Battle Mage, not MM7 "Warrior Mage".
+    EXPECT_EQ(localization->className(CLASS_MASTER_ARCHER), "Warrior Mage"); // MM6 Warrior Mage, not "Items".
+    EXPECT_EQ(localization->className(CLASS_ARCHAMGE), "Arch Mage");
+    EXPECT_EQ(localization->className(CLASS_GREAT_DRUID), "Great Druid");
+    EXPECT_EQ(localization->className(CLASS_ARCH_DRUID), "Arch Druid");
+
+    // MM7-only classes have no MM6 rows and must stay empty.
+    EXPECT_TRUE(localization->className(CLASS_THIEF).empty());
+    EXPECT_TRUE(localization->className(CLASS_MONK).empty());
+    EXPECT_TRUE(localization->className(CLASS_BLACK_KNIGHT).empty());
+    EXPECT_TRUE(localization->className(CLASS_LICH).empty());
+}
+
 // The MM6 and MM7 spell tables share the identical 9-school x 11-spell id layout, but the spell that sits
 // at a given id often differs between the two games. The cast runtime dispatches on MM7-named SpellId
 // constants, so an MM6 spell has to be routed through translateForCast to the MM7 spell whose effect (and

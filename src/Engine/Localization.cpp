@@ -315,6 +315,23 @@ void Localization::initializeSkillNames() {
 }
 
 void Localization::initializeClassNames() {
+    // class.txt table structure: name (localized) | description (localized) | base class name (not localized, not used).
+    Blob classBlob = engine->resources()->eventsData("class.txt");
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's class.txt has 18 rows in MM6 class-byte order, not the enum's MM7 order, so each row
+        // goes through classFromMm6ClassByte. Names also come from class.txt - the fixed MM7 global.txt
+        // row ids used below hold unrelated strings in MM6's global.txt (LSTR_PRIEST_OF_LIGHT = "Combat",
+        // LSTR_MASTER_ARCHER = "Items"). The 18 MM7-only slots keep their empty defaults.
+        int row = 0;
+        for (std::string_view line : split(classBlob.str()).by("\r\n").drop(1).skip("").take(18)) {
+            std::array<std::string_view, 3> tokens = split(line).by('\t');
+            Class classType = classFromMm6ClassByte(row++);
+            _classNames[classType] = removeQuotes(tokens[0]);
+            _classDescriptions[classType] = removeQuotes(tokens[1]);
+        }
+        return;
+    }
+
     this->_classNames[CLASS_KNIGHT] = this->_localizationStrings[LSTR_KNIGHT];
     this->_classNames[CLASS_CAVALIER] = this->_localizationStrings[LSTR_CAVALIER];
     this->_classNames[CLASS_CHAMPION] = this->_localizationStrings[LSTR_CHAMPION];
@@ -360,21 +377,9 @@ void Localization::initializeClassNames() {
     this->_classNames[CLASS_ARCHAMGE] = this->_localizationStrings[LSTR_ARCHMAGE];
     this->_classNames[CLASS_LICH] = this->_localizationStrings[LSTR_LICH];
 
-    // class.txt table structure: name (localized) | description (localized) | base class name (not localized, not used).
-    Blob classBlob = engine->resources()->eventsData("class.txt");
-    if (engine->gameVersion() == GAME_VERSION_MM6) {
-        // MM6's class.txt has 18 rows in MM6 class-byte order, not the enum's MM7 order, so each row
-        // goes through classFromMm6ClassByte. The 18 MM7-only slots keep their empty defaults.
-        int row = 0;
-        for (std::string_view line : split(classBlob.str()).by("\r\n").drop(1).skip("").take(18)) {
-            std::array<std::string_view, 3> tokens = split(line).by('\t');
-            _classDescriptions[classFromMm6ClassByte(row++)] = removeQuotes(tokens[1]);
-        }
-    } else {
-        for (auto [line, i] : split(classBlob.str()).by("\r\n").drop(1).skip("").zip(_classDescriptions.indices())) {
-            std::array<std::string_view, 3> tokens = split(line).by('\t');
-            _classDescriptions[i] = removeQuotes(tokens[1]);
-        }
+    for (auto [line, i] : split(classBlob.str()).by("\r\n").drop(1).skip("").zip(_classDescriptions.indices())) {
+        std::array<std::string_view, 3> tokens = split(line).by('\t');
+        _classDescriptions[i] = removeQuotes(tokens[1]);
     }
 }
 
