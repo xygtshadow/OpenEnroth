@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 
-# A new push cancels the in-flight run so its jobs don't upload stale binaries to the recreated release.
+# A new push cancels the in-flight run so its jobs don't upload stale binaries to the release.
 concurrency:
   group: build-mm6-release
   cancel-in-progress: true
@@ -18,39 +18,40 @@ env:
   TAG_NAME: mm6-nightly
 
 jobs:
-  recreateRelease:
-    name: Recreate MM6 Release
-    runs-on: ubuntu-latest
-    outputs:
-      tagName: ${{steps.outputReleaseTag.outputs.tagName}}
-    steps:
-      - name: Recreate release at current commit
-        shell: bash
-        env:
-          GH_TOKEN: '${{secrets.GITHUB_TOKEN}}'
-        run: |
-          set -uo pipefail
-          gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || echo "No previous $TAG_NAME release to delete"
-          sleep 10
-          gh release create "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "MM6 nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})" \
-            --notes "Automated build of branch mm6-support @ $GITHUB_SHA"
-
-      - name: Output Release Tag
-        id: outputReleaseTag
-        run: |
-          echo "tagName=${{env.TAG_NAME}}" >> "$GITHUB_OUTPUT"
-
   build_all:
-    needs: recreateRelease
     uses: ./.github/workflows/build_all.yml
     secrets: inherit
     with:
-      releaseTag: '${{needs.recreateRelease.outputs.tagName}}'
+      # Must match env.TAG_NAME (the env context is unavailable in reusable-workflow `with:`).
+      # The publish step inside build_all creates the release if it doesn't exist yet and
+      # replaces the same-named zip asset in place, so no pre-build release setup is needed —
+      # and a red build leaves the previous nightly's release, assets and tag untouched.
+      releaseTag: mm6-nightly
       targets: '["windows_x86_64"]'
       configurations: '["Debug"]'
       # The MM7 game-data cache is fed from a private repo via a secret this fork doesn't have.
       skipGameTests: true
+
+  finalizeRelease:
+    name: Finalize MM6 Release
+    needs: build_all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Point release at the built commit
+        shell: bash
+        env:
+          GH_TOKEN: '${{secrets.GITHUB_TOKEN}}'
+        run: |
+          set -euo pipefail
+          # A ref force-update moves the tag while keeping the release and its assets
+          # attached. Never delete the tag or the release here: `gh release delete
+          # --cleanup-tag` (or deleting the ref) orphans the release and destroys the
+          # last known-good binaries, which is exactly what this job used to do before
+          # anything was built.
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" \
+            -f sha="$GITHUB_SHA" -F force=true
+          gh release edit "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "MM6 nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})" \
+            --notes "Automated build of branch mm6-support @ $GITHUB_SHA"
