@@ -362,9 +362,19 @@ void Localization::initializeClassNames() {
 
     // class.txt table structure: name (localized) | description (localized) | base class name (not localized, not used).
     Blob classBlob = engine->resources()->eventsData("class.txt");
-    for (auto [line, i] : split(classBlob.str()).by("\r\n").drop(1).skip("").zip(_classDescriptions.indices())) {
-        std::array<std::string_view, 3> tokens = split(line).by('\t');
-        _classDescriptions[i] = removeQuotes(tokens[1]);
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6's class.txt has 18 rows in MM6 class-byte order, not the enum's MM7 order, so each row
+        // goes through classFromMm6ClassByte. The 18 MM7-only slots keep their empty defaults.
+        int row = 0;
+        for (std::string_view line : split(classBlob.str()).by("\r\n").drop(1).skip("").take(18)) {
+            std::array<std::string_view, 3> tokens = split(line).by('\t');
+            _classDescriptions[classFromMm6ClassByte(row++)] = removeQuotes(tokens[1]);
+        }
+    } else {
+        for (auto [line, i] : split(classBlob.str()).by("\r\n").drop(1).skip("").zip(_classDescriptions.indices())) {
+            std::array<std::string_view, 3> tokens = split(line).by('\t');
+            _classDescriptions[i] = removeQuotes(tokens[1]);
+        }
     }
 }
 

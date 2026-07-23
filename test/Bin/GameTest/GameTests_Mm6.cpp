@@ -3617,6 +3617,39 @@ GAME_TEST(Mm6, SpellNamesLoad) {
     EXPECT_FALSE(pSpellStats->pInfos[SPELL_DARK_SOULDRINKER].name.empty()); // MM6 id 99 = Dark Containment
 }
 
+// The engine's Class enum follows MM7's 36-slot numbering, but MM6's class.txt has 18 rows in MM6
+// class-byte order (base * 3 + tier). Each row must land on the slot classFromMm6ClassByte maps it
+// to - zipping the rows onto the enum in file order puts the Cleric description on CLASS_BLACK_KNIGHT
+// and leaves 5 of the 6 startable classes with wrong or empty creation-screen hints.
+GAME_TEST(Mm6, ClassDescriptions) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The six startable classes shown on the party-creation screen.
+    EXPECT_TRUE(localization->classDescription(CLASS_KNIGHT).starts_with("The Knight class"));
+    EXPECT_TRUE(localization->classDescription(CLASS_CLERIC).starts_with("Clerics in Enroth"));
+    EXPECT_TRUE(localization->classDescription(CLASS_SORCERER).starts_with("Students of the realm"));
+    EXPECT_TRUE(localization->classDescription(CLASS_PALADIN).starts_with("A cross between Knight and Cleric"));
+    EXPECT_TRUE(localization->classDescription(CLASS_ARCHER).starts_with("Like Paladins"));
+    EXPECT_TRUE(localization->classDescription(CLASS_DRUID).starts_with("Druids are a hybrid"));
+
+    // Promotion tiers occupy the first three slots of each MM7 class line.
+    EXPECT_TRUE(localization->classDescription(CLASS_CHAMPION).starts_with("The Champion class"));
+    EXPECT_TRUE(localization->classDescription(CLASS_PRIEST_OF_SUN).starts_with("High Priest is"));  // MM6 High Priest.
+    EXPECT_TRUE(localization->classDescription(CLASS_WARRIOR_MAGE).starts_with("Battle Mage is"));   // MM6 Battle Mage.
+    EXPECT_TRUE(localization->classDescription(CLASS_MASTER_ARCHER).starts_with("Warrior Mage is")); // MM6 Warrior Mage.
+    EXPECT_TRUE(localization->classDescription(CLASS_ARCHAMGE).starts_with("Arch Mages are"));
+    EXPECT_TRUE(localization->classDescription(CLASS_ARCH_DRUID).starts_with("Arch Druids are"));
+
+    // MM7-only classes have no MM6 rows and must stay empty.
+    EXPECT_TRUE(localization->classDescription(CLASS_THIEF).empty());
+    EXPECT_TRUE(localization->classDescription(CLASS_MONK).empty());
+    EXPECT_TRUE(localization->classDescription(CLASS_BLACK_KNIGHT).empty());
+    EXPECT_TRUE(localization->classDescription(CLASS_LICH).empty());
+}
+
 // The MM6 and MM7 spell tables share the identical 9-school x 11-spell id layout, but the spell that sits
 // at a given id often differs between the two games. The cast runtime dispatches on MM7-named SpellId
 // constants, so an MM6 spell has to be routed through translateForCast to the MM7 spell whose effect (and
