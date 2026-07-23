@@ -613,16 +613,24 @@ const IndexedArray<uint16_t, SPELL_FIRST_WITH_SPRITE, SPELL_LAST_WITH_SPRITE> Sp
     {SPELL_LASER_PROJECTILE, 00000}
 }};
 
+// Frees the pOverlays slot owned by a buff, if any. overlayId is not guaranteed to be a valid
+// 1-based slot index: savegames carry the field verbatim, and old Hammerhands casts stored the
+// caster's skill level in it - drop out-of-range ids instead of indexing past pOverlays[50].
+static void freeBuffOverlaySlot(uint16_t *overlayId) {
+    if (*overlayId) {
+        if (*overlayId <= pActiveOverlayList->pOverlays.size())
+            pActiveOverlayList->pOverlays[*overlayId - 1].Reset();
+        *overlayId = 0;
+    }
+}
+
 void SpellBuff::Reset() {
     skillMastery = MASTERY_NONE;
     power = 0;
     expireTime = Time();
     caster = 0;
     isGM = false;
-    if (overlayId) {
-        pActiveOverlayList->pOverlays[overlayId - 1].Reset();
-        overlayId = 0;
-    }
+    freeBuffOverlaySlot(&overlayId);
 }
 
 bool SpellBuff::IsBuffExpiredToTime(Time time) {
@@ -632,10 +640,7 @@ bool SpellBuff::IsBuffExpiredToTime(Time time) {
         skillMastery = MASTERY_NONE;
         // Free the owned overlay slot like Reset() does - just zeroing the id would leave a buff-owned
         // (never-expiring) ActiveOverlay on screen forever when the buff runs out on its own.
-        if (overlayId) {
-            pActiveOverlayList->pOverlays[overlayId - 1].Reset();
-            overlayId = 0;
-        }
+        freeBuffOverlaySlot(&overlayId);
         return true;
     }
     return false;
@@ -654,10 +659,8 @@ bool SpellBuff::Apply(Time expire_time, Mastery uSkillMastery,
     this->skillMastery = uSkillMastery;
     this->power = uPower;
     this->expireTime = expire_time;
-    if (this->overlayId && this->overlayId != uOverlayID) {
-        pActiveOverlayList->pOverlays[this->overlayId - 1].Reset();
-        this->overlayId = 0;
-    }
+    if (this->overlayId != uOverlayID)
+        freeBuffOverlaySlot(&this->overlayId);
     this->overlayId = uOverlayID;
     this->caster = caster;
 

@@ -4,7 +4,9 @@
 
 #include "Application/Paths/GameVersion.h"
 
+#include "Engine/Graphics/Overlays.h"
 #include "Engine/Random/Random.h"
+#include "Engine/Spells/SpellBuff.h"
 #include "Engine/Spells/Spells.h"
 #include "Engine/Spells/SpellEnums.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
@@ -143,4 +145,39 @@ GAME_TEST(Spells, ShiftClickCastableFlags) {
     EXPECT_FALSE(IsSpellQuickCastableOnShiftClick(SPELL_SPIRIT_TURN_UNDEAD));
     EXPECT_FALSE(IsSpellQuickCastableOnShiftClick(SPELL_DARK_SOULDRINKER));
     EXPECT_FALSE(IsSpellQuickCastableOnShiftClick(SPELL_LIGHT_DISPEL_MAGIC));
+}
+
+// SpellBuff::overlayId is not always a valid 1-based pOverlays slot: savegames carry the field
+// verbatim, and Hammerhands used to pass the caster's skill level (up to 63) as the overlay id.
+// pOverlays has only 50 slots, so an out-of-range id must be dropped, not indexed - freeing
+// "slot" 55 is a heap write past the end of the ActiveOverlayList allocation.
+GAME_TEST(Spells, OutOfRangeBuffOverlayIdIsDroppedNotIndexed) {
+    // Natural expiry frees the owned slot - a garbage id must not reach pOverlays[54].
+    SpellBuff buff;
+    buff.expireTime = Time::fromHours(1);
+    buff.overlayId = 55;
+    EXPECT_TRUE(buff.IsBuffExpiredToTime(Time::fromHours(2)));
+    EXPECT_EQ(buff.overlayId, 0);
+
+    // Reset() indexes the same way.
+    buff.expireTime = Time::fromHours(1);
+    buff.overlayId = 60;
+    buff.Reset();
+    EXPECT_EQ(buff.overlayId, 0);
+
+    // Apply() frees a leftover slot with a different id before taking the new one - same indexing.
+    buff.overlayId = 51;
+    EXPECT_TRUE(buff.Apply(Time::fromHours(3), MASTERY_EXPERT, 5, 0, 0));
+    EXPECT_EQ(buff.overlayId, 0);
+
+    // A valid id must still free its (1-based) slot on expiry.
+    ActiveOverlay saved = pActiveOverlayList->pOverlays[49];
+    pActiveOverlayList->pOverlays[49].animLength = 123;
+    buff.Reset();
+    buff.expireTime = Time::fromHours(1);
+    buff.overlayId = 50;
+    EXPECT_TRUE(buff.IsBuffExpiredToTime(Time::fromHours(2)));
+    EXPECT_EQ(buff.overlayId, 0);
+    EXPECT_EQ(pActiveOverlayList->pOverlays[49].animLength, 0);
+    pActiveOverlayList->pOverlays[49] = saved;
 }
