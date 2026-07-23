@@ -466,8 +466,11 @@ void reconstruct(const Character_MM7 &src, CharacterInventory *dst, ContextTag<i
 
 struct PartyTimeStruct_MM7 {
     std::array<int64_t, 5> bountyHuntingNextGenerationTime;
-    std::array<int64_t, 5> bountyHuntingNextGenerationTimeUnused; // Only first five elements are actually used, these are always zero.
-    int64_t shopsNextGenerationTime0; // Shop generation time for house id 0 which is invalid value.
+    // Six qwords that are dead in MM7's own Party.bin (five bounty-hunt slots past the five town halls, plus
+    // the shop-generation slot for the invalid house id 0 - MM7 never reads or writes any of them). OpenEnroth
+    // keeps the MM6-only DaysCounter1-6 set-dates here; MM7 sessions never set them, so they stay zero and the
+    // serialized bytes are unchanged.
+    std::array<int64_t, 6> daysCounterValues;
     std::array<int64_t, 52> shopsNextGenerationTime;
     std::array<int64_t, 32> guildsNextGenerationTime;
     int64_t shopBanTime0;

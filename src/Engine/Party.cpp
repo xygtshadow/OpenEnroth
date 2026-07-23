@@ -70,6 +70,7 @@ void Party::Zero() {
     playing_time = Time(0, 0, 0);
     last_regenerated = Time(0, 0, 0);
     PartyTimes.bountyHuntNextGenTime.fill(Time());
+    PartyTimes.daysCounterValues.fill(Time());
     PartyTimes.CounterEventValues.fill(Time());
     PartyTimes.HistoryEventTimes.fill(Time());
     PartyTimes.shopNextRefreshTime.fill(Time());

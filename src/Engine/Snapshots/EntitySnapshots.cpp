@@ -590,11 +590,10 @@ void snapshot(const Party &src, Party_MM7 *dst) {
     snapshot(src.last_regenerated, &dst->lastRegenerationTime);
 
     snapshot(src.PartyTimes.bountyHuntNextGenTime, &dst->partyTimes.bountyHuntingNextGenerationTime);
-    dst->partyTimes.bountyHuntingNextGenerationTimeUnused.fill(0);
+    snapshot(src.PartyTimes.daysCounterValues, &dst->partyTimes.daysCounterValues);
 
-    // Initially was one array but was splitted in two to simplify access with first element as zero
-    // because it is corresponding to invalid house ID
-    dst->partyTimes.shopsNextGenerationTime0 = 0;
+    // The shops array starts at house id 1 - the serialized layout's slot for the invalid house id 0 is part
+    // of the daysCounterValues block above.
     snapshot(src.PartyTimes.shopNextRefreshTime, &dst->partyTimes.shopsNextGenerationTime);
     snapshot(src.PartyTimes.guildNextRefreshTime, &dst->partyTimes.guildsNextGenerationTime);
 
@@ -731,6 +730,7 @@ void reconstruct(const Party_MM7 &src, Party *dst) {
     reconstruct(src.lastRegenerationTime, &dst->last_regenerated);
 
     reconstruct(src.partyTimes.bountyHuntingNextGenerationTime, &dst->PartyTimes.bountyHuntNextGenTime);
+    reconstruct(src.partyTimes.daysCounterValues, &dst->PartyTimes.daysCounterValues);
     reconstruct(src.partyTimes.shopsNextGenerationTime, &dst->PartyTimes.shopNextRefreshTime);
     reconstruct(src.partyTimes.guildsNextGenerationTime, &dst->PartyTimes.guildNextRefreshTime);
     reconstruct(src.partyTimes.shopBanTimes, &dst->PartyTimes.shopBanTimes);

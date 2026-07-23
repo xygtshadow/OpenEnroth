@@ -33,6 +33,10 @@ static std::string getVariableSetStr(EvtVariable type, int value) {
         return fmt::format("Counter[{}], PlayingTime", std::to_underlying(type) - std::to_underlying(VAR_Counter1));
     }
 
+    if (type >= VAR_DaysCounter1 && type <= VAR_DaysCounter6) {
+        return fmt::format("DaysCounter[{}], CurrentDate", std::to_underlying(type) - std::to_underlying(VAR_DaysCounter1));
+    }
+
     if (type >= VAR_UnknownTimeEvent0 && type <= VAR_UnknownTimeEvent19) {
         return fmt::format("UnkTimeEvent[{}], PlayingTime", std::to_underlying(type) - std::to_underlying(VAR_UnknownTimeEvent0));
     }
@@ -354,6 +358,10 @@ static std::string getVariableCompareStr(EvtVariable type, int value) {
 
     if (type >= VAR_Counter1 && type <= VAR_Counter10) {
         return fmt::format("Counter[{}] + Hours({}) <= PlayingTime", std::to_underlying(type) - std::to_underlying(VAR_Counter1), value);
+    }
+
+    if (type >= VAR_DaysCounter1 && type <= VAR_DaysCounter6) {
+        return fmt::format("DaysSince(DaysCounter[{}]) >= {}", std::to_underlying(type) - std::to_underlying(VAR_DaysCounter1), value);
     }
 
     if (type >= VAR_UnknownTimeEvent0 && type <= VAR_UnknownTimeEvent19) {
@@ -896,7 +904,7 @@ static EvtVariable evtVariableFromMm6(uint8_t type) {
     if (type == 0xD7) // Reputation. 0xD7 + 0x12 = 0xE9, which the engine doesn't model - remap to what it does.
         return VAR_ReputationInCurrentLocation;
     if (type <= 0xE2) // Conditions (0x57 = Cursed), MapVars, AutoNotes, PlayerBits, ..., MonthIs (0xE2, MM6's last).
-        return EvtVariable(type + 0x12);
+        return EvtVariable(type + 0x12); // Incl. DaysCounter1-6 (0xD8..0xDD -> VAR_DaysCounter1..6).
 
     throw Exception("Unknown MM6 evt variable id: {}", type);
 }

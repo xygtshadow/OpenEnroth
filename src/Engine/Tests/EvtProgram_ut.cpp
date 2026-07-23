@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,6 +13,8 @@
 #include "Engine/Evt/EvtEnums.h"
 #include "Engine/Objects/CharacterEnums.h"
 #include "Engine/Objects/ItemEnums.h"
+#include "Engine/Party.h"
+#include "Engine/Snapshots/EntitySnapshots.h"
 
 #include "Utility/Memory/Blob.h"
 
@@ -141,6 +144,71 @@ GAME_TEST(EvtProgramMm7, CheckSkillMasteryIsRaw) {
     EXPECT_EQ(check.data.check_skill_descr.skill_mastery, MASTERY_MASTER);
     EXPECT_EQ(check.data.check_skill_descr.skill_level, 10);
     EXPECT_EQ(check.target_step, 7);
+}
+
+// MM6 evt variable ids 0xD8..0xDD are DaysCounter1..6 - date-difference timers whose MM7-numbering slots
+// 0xEA..0xEF MM7's own engine no longer handles (they fall into SetVariable's default in MM7.EXE, and no
+// shipped MM7 event record uses them). Per MM6.EXE (Set case 0x44108e, Compare case 0x44036c): Set stamps
+// the current date - the operand is ignored - and Compare is a >= test on the difference in whole calendar
+// days, not on elapsed time. global.evt's quest-reward chain (event 79 Set, event 80 Compare vs 31) pays
+// 25000 gold if the quest took under 31 days and 5000 otherwise; with the counter unmodeled both operations
+// silently no-op and the late-reward branch is unreachable.
+GAME_TEST(EvtProgramMm6, DaysCounters) {
+    // Set(var, 0) records for all six MM6 counter ids 0xD8..0xDD, eventId = index + 1, plus the shape of
+    // global.evt event 80 step 4 as event 7: Compare(var 0xD8, 31) -> step 7.
+    std::vector<std::vector<uint8_t>> records;
+    for (uint8_t i = 0; i < 6; i++)
+        records.push_back({0x09, static_cast<uint8_t>(i + 1), 0x00, 0x01, 0x12, static_cast<uint8_t>(0xd8 + i), 0x00, 0x00, 0x00, 0x00});
+    records.push_back({0x0a, 0x07, 0x00, 0x01, 0x0e, 0xd8, 0x1f, 0x00, 0x00, 0x00, 0x07});
+
+    EvtProgram program = EvtProgram::load(makeEvtBlob(records), GAME_VERSION_MM6);
+
+    for (int i = 0; i < 6; i++) {
+        const EvtInstruction &set = program.function(i + 1)[0];
+        EXPECT_EQ(set.opcode, EVENT_Set);
+        EXPECT_EQ(std::to_underlying(set.data.variable_descr.type), std::to_underlying(VAR_DaysCounter1) + i) << "MM6 variable id " << 0xd8 + i;
+    }
+
+    const EvtInstruction &compare = program.function(7)[0];
+    EXPECT_EQ(compare.data.variable_descr.type, VAR_DaysCounter1);
+    EXPECT_EQ(compare.data.variable_descr.value, 31);
+    EXPECT_EQ(compare.target_step, 7);
+    EvtVariable counter = compare.data.variable_descr.type;
+
+    // Drive the engine sides of Set and Compare directly.
+    Character &character = pParty->pCharacters[0];
+    Time savedTime = pParty->GetPlayingTime();
+
+    pParty->GetPlayingTime() = Time::fromDays(100) + Duration::fromHours(23);
+    character.SetVariable(counter, 0);
+    EXPECT_TRUE(character.CompareVariable(counter, 0)); // Same day.
+    EXPECT_FALSE(character.CompareVariable(counter, 1));
+
+    pParty->GetPlayingTime() = Time::fromDays(101); // One game hour after the stamp, but a new calendar day.
+    EXPECT_TRUE(character.CompareVariable(counter, 1));
+
+    pParty->GetPlayingTime() = Time::fromDays(131);
+    EXPECT_TRUE(character.CompareVariable(counter, 31)); // The late 5000-gold branch becomes reachable.
+    EXPECT_FALSE(character.CompareVariable(counter, 32));
+
+    // Add stamps like Set, Subtract clears the stamp (MM6.EXE 0x441ec0 / 0x4429c9).
+    character.SubtractVariable(counter, 0);
+    EXPECT_TRUE(character.CompareVariable(counter, 131)); // Cleared: compares against days since game start.
+    character.AddVariable(counter, 0);
+    EXPECT_FALSE(character.CompareVariable(counter, 1)); // Stamped again.
+
+    // The stamp must survive the save format - it lives in Party_MM7's dead bounty/shop-slot qwords.
+    Party_MM7 partySnapshot;
+    snapshot(*pParty, &partySnapshot);
+    EXPECT_EQ(partySnapshot.partyTimes.daysCounterValues[0], pParty->PartyTimes.daysCounterValues[0].ticks());
+    EXPECT_NE(partySnapshot.partyTimes.daysCounterValues[0], 0);
+
+    auto reconstructedParty = std::make_unique<Party>();
+    reconstruct(partySnapshot, reconstructedParty.get());
+    EXPECT_EQ(reconstructedParty->PartyTimes.daysCounterValues[0], pParty->PartyTimes.daysCounterValues[0]);
+    EXPECT_EQ(reconstructedParty->PartyTimes.daysCounterValues[1], Time()); // Unset counters stay unset.
+
+    pParty->GetPlayingTime() = savedTime;
 }
 
 // Guards the MM7 parse path through the version-parameter refactor: a valid MM7 record must still parse.

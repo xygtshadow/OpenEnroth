@@ -229,6 +229,16 @@ enum class EvtVariable {
     VAR_IsLuckMoreThanBase = 0xE6,
     VAR_PlayerBits = 0xE7,
     VAR_NPCs2 = 0xE8,
+    // DaysCounter1-6 are date-difference timers that only MM6 uses (its evt ids 0xD8..0xDD map here): Set/Add
+    // stamp the current date ignoring the operand, Subtract clears the stamp, and Compare tests the difference
+    // in whole calendar days. MM7's own engine dropped them (no switch cases in MM7.EXE) and no shipped MM7
+    // event record references these ids.
+    VAR_DaysCounter1 = 0xEA,
+    VAR_DaysCounter2 = 0xEB,
+    VAR_DaysCounter3 = 0xEC,
+    VAR_DaysCounter4 = 0xED,
+    VAR_DaysCounter5 = 0xEE,
+    VAR_DaysCounter6 = 0xEF,
     VAR_IsFlying = 0xF0,
     VAR_HiredNPCHasSpeciality = 0xF1,
     VAR_CircusPrises = 0xF2,
