@@ -9,7 +9,9 @@
 OpenEnroth is an open-source reimplementation of the Might & Magic VI-VIII game engine, allowing you to play the
 original games on modern platforms. It uses the original game data, so you will need a copy of the game to play.
 
-Currently only MM7 is playable. MM6 and MM8 support is planned — check the
+Currently MM7 is fully playable, and this branch also makes MM6 playable — pass `--game-version mm6`,
+or just run OpenEnroth from your MM6 folder (see [Selecting the game](#selecting-the-game)).
+MM8 support is planned — check the
 [milestones](https://github.com/OpenEnroth/OpenEnroth/milestones) to see where we're at.
 
 Supported platforms: **Windows**, **Linux**, **macOS**, and **Android** (experimental).
@@ -32,11 +34,13 @@ Join our Discord to discuss, track progress, or get involved in development.
 
 # Getting Started
 
-You will need two things: the OpenEnroth binary and the original Might and Magic VII game data.
+You will need two things: the OpenEnroth binary and the original game data (Might and Magic VI or VII).
 
 ## Getting the game data
 
-You can buy Might and Magic VII from [GOG.com](https://www.gog.com/en/game/might_and_magic_7_for_blood_and_honor).
+You can buy Might and Magic VII from [GOG.com](https://www.gog.com/en/game/might_and_magic_7_for_blood_and_honor);
+Might and Magic VI is available there as part of the
+[Might and Magic 6-pack](https://www.gog.com/en/game/might_and_magic_6_limited_edition).
 Copies from other sources (e.g. an original retail disc) should also work.
 
 At the very least, OpenEnroth requires the `ANIMS`, `DATA`, `MUSIC` and `SOUNDS` directories from the game data.
@@ -65,15 +69,28 @@ Once you have innoextract, run:
 
 `innoextract -e -d <new game data directory> <path to GOG installer .exe>`
 
+### Selecting the game
+
+OpenEnroth runs both MM6 and MM7 from a single binary. The game to run is selected with the
+`--game-version mm6|mm7` command-line option. If the option is not supplied, the game is detected from
+the data folder (the current folder, or `--data-path` if given), with MM7 as the fallback — so dropping
+`OpenEnroth.exe` into a game folder and running it works for both games.
+
 ### Game Assets Path Override
 
-You can set an environment variable called `OPENENROTH_MM7_PATH` to point to the location of the game data.
-If set, OpenEnroth will look for game assets only in that location. You may want to add this to your shell
-profile (e.g. `~/.profile` on Linux or `~/.zshrc` on Mac):
+You can set the environment variables `OPENENROTH_MM7_PATH` / `OPENENROTH_MM6_PATH` to point to the
+location of the respective game's data. If set, OpenEnroth will look for that game's assets only in
+that location. You may want to add this to your shell profile (e.g. `~/.profile` on Linux or
+`~/.zshrc` on Mac):
 
 ```
 export OPENENROTH_MM7_PATH="<path-to-mm7-game-assets>"
+export OPENENROTH_MM6_PATH="<path-to-mm6-game-assets>"
 ```
+
+Note that game-version auto-detection only probes the data folder, not these variables — so when
+launching MM6 from outside its game folder, also pass `--game-version mm6` to make OpenEnroth use
+`OPENENROTH_MM6_PATH`.
 
 ## Installing OpenEnroth
 
