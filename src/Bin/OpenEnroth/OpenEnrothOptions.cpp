@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <ranges>
 #include <vector>
@@ -36,7 +37,8 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
     CLI::Option *gameVersionOption = app->add_option(
         "--game-version", gameVersion,
         "Which Might and Magic game to run, one of 'mm6' or 'mm7'. "
-        "If not supplied, the game is detected from the data folder, with 'mm7' as the fallback.")->check(CLI::IsMember({"mm6", "mm7"}))->option_text("VERSION");
+        "If not supplied, the game is detected from the data folder, or, failing that, from the "
+        "environment variable and registry paths that --data-path documents, with 'mm7' as the fallback.")->check(CLI::IsMember({"mm6", "mm7"}))->option_text("VERSION");
     app->add_option(
         "--data-path", result.dataPath,
         fmt::format("Path to the game data folder. If not supplied, the path is taken from the '{}' or '{}' "
@@ -109,7 +111,15 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
         // No explicit --game-version, so detect the game from the data folder. This is what makes
         // "drop OpenEnroth.exe into the game folder and run it" work for both games.
         std::string probePath = !result.dataPath.empty() ? result.dataPath : std::filesystem::current_path().generic_string();
-        result.gameVersion = detectGameVersion(probePath).value_or(GAME_VERSION_MM7);
+        std::optional<GameVersion> detectedGameVersion = detectGameVersion(probePath);
+
+        // Nothing here, and the user didn't pin the data folder either - walk the candidate data paths
+        // (env overrides, registry) that the path resolver itself will use, so that e.g. an MM6-only
+        // install found through the registry doesn't fail as "missing MM7".
+        if (!detectedGameVersion && result.dataPath.empty())
+            detectedGameVersion = detectGameVersion(env.get());
+
+        result.gameVersion = detectedGameVersion.value_or(GAME_VERSION_MM7);
     }
 
     if (result.subcommand == SUBCOMMAND_RETRACE) {

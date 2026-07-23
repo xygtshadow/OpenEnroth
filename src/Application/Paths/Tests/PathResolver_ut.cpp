@@ -3,14 +3,44 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include "Testing/Unit/UnitTest.h"
 
 #include "Application/Paths/PathResolver.h"
 
+#include "Library/Environment/Interface/Environment.h"
 #include "Library/FileSystem/Directory/DirectoryFileSystem.h"
+#include "Library/Logger/BufferLogSink.h"
+#include "Library/Logger/Logger.h"
 
 #include "Utility/ScopeGuard.h"
+
+namespace {
+class TestEnvironment : public Environment {
+ public:
+    std::string queryRegistry(const std::string &path) const override {
+        auto pos = registry.find(path);
+        return pos == registry.end() ? std::string() : pos->second;
+    }
+
+    std::string path(EnvironmentPath path) const override {
+        return {};
+    }
+
+    std::string getenv(const std::string &key) const override {
+        auto pos = env.find(key);
+        return pos == env.end() ? std::string() : pos->second;
+    }
+
+    void setenv(const std::string &key, const std::string &value) const override {
+        env[key] = value;
+    }
+
+    mutable std::unordered_map<std::string, std::string> env;
+    std::unordered_map<std::string, std::string> registry;
+};
+} // anonymous namespace
 
 static void createInstall(std::string_view dir, std::initializer_list<const char *> files) {
     DirectoryFileSystem fs(dir);
@@ -116,6 +146,68 @@ UNIT_TEST(PathResolver, DetectsNothingInNonGameFolder) {
 
     EXPECT_EQ(detectGameVersion("tmp_detect_none"), std::nullopt);
     EXPECT_EQ(detectGameVersion("tmp_detect_nonexistent"), std::nullopt);
+}
+
+UNIT_TEST(PathResolver, DetectsMm6InstallFromEnvironmentOverride) {
+    // An MM6-only setup announced via OPENENROTH_MM6_PATH must be found even though the
+    // current folder holds no game data at all (issue: detection used to probe only cwd
+    // and fall back to MM7, so an MM6-only install failed as "missing MM7").
+    MM_AT_SCOPE_EXIT(std::filesystem::remove_all("tmp_envdetect_mm6"));
+    createInstall("tmp_envdetect_mm6", {
+        "anims/anims1.vid", "anims/anims2.vid",
+        "data/bitmaps.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+
+    BufferLogSink sink;
+    Logger testLogger(LOG_TRACE, &sink); // The path-override branch logs, and unit tests have no global logger.
+
+    TestEnvironment environment;
+    environment.env[mm6PathOverrideKey] = "tmp_envdetect_mm6";
+    EXPECT_EQ(detectGameVersion(&environment), GAME_VERSION_MM6);
+}
+
+UNIT_TEST(PathResolver, DetectsMm6InstallFromRegistry) {
+    MM_AT_SCOPE_EXIT(std::filesystem::remove_all("tmp_regdetect_mm6"));
+    createInstall("tmp_regdetect_mm6", {
+        "anims/anims1.vid", "anims/anims2.vid",
+        "data/bitmaps.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+
+    TestEnvironment environment;
+    environment.registry["HKEY_LOCAL_MACHINE/SOFTWARE/WOW6432Node/GOG.com/Games/1207661253/PATH"] =
+        "tmp_regdetect_mm6";
+    EXPECT_EQ(detectGameVersion(&environment), GAME_VERSION_MM6);
+}
+
+UNIT_TEST(PathResolver, DetectsMm7InstallBeforeMm6FromEnvironment) {
+    // With complete installs of both games resolvable, MM7 wins - same preference as
+    // the single-folder detection and the `--game-version` default.
+    MM_AT_SCOPE_EXIT({
+        std::filesystem::remove_all("tmp_envdetect_both6");
+        std::filesystem::remove_all("tmp_envdetect_both7");
+    });
+    createInstall("tmp_envdetect_both6", {
+        "anims/anims1.vid", "anims/anims2.vid",
+        "data/bitmaps.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+    createInstall("tmp_envdetect_both7", {
+        "anims/magic7.vid", "anims/might7.vid",
+        "data/bitmaps.lod", "data/events.lod", "data/games.lod",
+        "data/icons.lod", "data/sprites.lod", "sounds/audio.snd"});
+
+    BufferLogSink sink;
+    Logger testLogger(LOG_TRACE, &sink); // The path-override branch logs, and unit tests have no global logger.
+
+    TestEnvironment environment;
+    environment.env[mm6PathOverrideKey] = "tmp_envdetect_both6";
+    environment.env[mm7PathOverrideKey] = "tmp_envdetect_both7";
+    EXPECT_EQ(detectGameVersion(&environment), GAME_VERSION_MM7);
+}
+
+UNIT_TEST(PathResolver, DetectsNothingFromBareEnvironment) {
+    // No overrides, no registry keys, and the test process's cwd isn't a game folder.
+    TestEnvironment environment;
+    EXPECT_EQ(detectGameVersion(&environment), std::nullopt);
 }
 
 UNIT_TEST(PathResolver, DetectsMm7WhenBothGamesPresent) {

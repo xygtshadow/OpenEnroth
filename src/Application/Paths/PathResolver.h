@@ -43,4 +43,15 @@ bool validateGamePath(std::string_view dataPath, GameVersion version, std::strin
  */
 std::optional<GameVersion> detectGameVersion(std::string_view dataPath);
 
+/**
+ * Detects the game to run when neither `--game-version` nor a data path was given, by walking each supported game's
+ * own candidate data paths (`OPENENROTH_*_PATH` override, current folder, registry on Windows, ...) and validating
+ * each one. This is what makes an MM6-only install runnable without any command line arguments.
+ *
+ * @param environment               Environment to resolve the candidate paths against.
+ * @return                          Version of the first complete install found, checking all of MM7's candidates
+ *                                  before MM6's, or `std::nullopt` if no candidate holds one.
+ */
+std::optional<GameVersion> detectGameVersion(Environment *environment);
+
 std::string resolveMm7UserPath(Environment *environment);
