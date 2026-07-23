@@ -3,3 +3,5 @@ You *MUST* read `HACKING.md` before doing any changes in this repo. You *MUST* f
 Build `check_style` target to check style. You *MUST* always check style after your changes.
 
 Build `Run_UnitTest` and `Run_GameTest_Headless_Parallel` targets to test your changes. You *MUST* always run tests after your changes. If you can't find the game data - ask the user to help you locate it, *NEVER* silently skip game tests.
+
+Build `Run_RetraceTest_Headless_Parallel` after changes that can affect trace canonicality - config defaults, trace recording/playback, or game logic that desyncs traces. CI runs this target, and it is the only gate that catches non-canonical committed traces.

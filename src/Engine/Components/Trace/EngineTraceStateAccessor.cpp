@@ -1,6 +1,8 @@
 #include "EngineTraceStateAccessor.h"
 
+#include <array>
 #include <string>
+#include <utility>
 
 #include "Application/GameConfig.h"
 
@@ -16,10 +18,37 @@
 #include "Utility/String/Ascii.h"
 #include "Utility/String/Encoding.h"
 
+// The classic (original MM7) bindings for the actions that the modern default scheme rebinds.
+// Single source of truth for the pin that `applyClassicKeybindings` applies on both the recording
+// and the playback side, and for keeping these entries out of recorded config patches - both sides
+// pin them unconditionally, so serializing them would only make every committed trace
+// non-canonical whenever one of the shipped defaults changes.
+static constexpr std::array<std::pair<GameConfig::Key GameConfig::Keybindings::*, PlatformKey>, 11> classicKeybindings = {{
+    {&GameConfig::Keybindings::Forward, PlatformKey::KEY_UP},
+    {&GameConfig::Keybindings::Backward, PlatformKey::KEY_DOWN},
+    {&GameConfig::Keybindings::StepLeft, PlatformKey::KEY_LEFTBRACKET},
+    {&GameConfig::Keybindings::StepRight, PlatformKey::KEY_RIGHTBRACKET},
+    {&GameConfig::Keybindings::Jump, PlatformKey::KEY_X},
+    {&GameConfig::Keybindings::FlyUp, PlatformKey::KEY_PAGEUP},
+    {&GameConfig::Keybindings::FlyDown, PlatformKey::KEY_INSERT},
+    {&GameConfig::Keybindings::Attack, PlatformKey::KEY_A},
+    {&GameConfig::Keybindings::CastReady, PlatformKey::KEY_S},
+    {&GameConfig::Keybindings::EventTrigger, PlatformKey::KEY_SPACE},
+    {&GameConfig::Keybindings::Quest, PlatformKey::KEY_Q},
+}};
+
+static bool isClassicPinnedKeybinding(const GameConfig *config, const AnyConfigEntry *entry) {
+    for (const auto &[binding, key] : classicKeybindings)
+        if (&(config->keybindings.*binding) == entry)
+            return true;
+    return false;
+}
+
 static bool shouldSkip(const GameConfig *config, const ConfigSection *section, const AnyConfigEntry *entry) {
     return
         (section == &config->window && entry != &config->window.Width && entry != &config->window.Height) ||
         section == &config->graphics ||
+        isClassicPinnedKeybinding(config, entry) ||
         entry == &config->settings.MusicLevel ||
         entry == &config->settings.VoiceLevel ||
         entry == &config->settings.SoundLevel ||
@@ -73,17 +102,8 @@ void EngineTraceStateAccessor::prepareForPlayback(GameConfig *config, const Conf
 }
 
 void EngineTraceStateAccessor::applyClassicKeybindings(GameConfig *config) {
-    config->keybindings.Forward.setValue(PlatformKey::KEY_UP);
-    config->keybindings.Backward.setValue(PlatformKey::KEY_DOWN);
-    config->keybindings.StepLeft.setValue(PlatformKey::KEY_LEFTBRACKET);
-    config->keybindings.StepRight.setValue(PlatformKey::KEY_RIGHTBRACKET);
-    config->keybindings.Jump.setValue(PlatformKey::KEY_X);
-    config->keybindings.FlyUp.setValue(PlatformKey::KEY_PAGEUP);
-    config->keybindings.FlyDown.setValue(PlatformKey::KEY_INSERT);
-    config->keybindings.Attack.setValue(PlatformKey::KEY_A);
-    config->keybindings.CastReady.setValue(PlatformKey::KEY_S);
-    config->keybindings.EventTrigger.setValue(PlatformKey::KEY_SPACE);
-    config->keybindings.Quest.setValue(PlatformKey::KEY_Q);
+    for (const auto &[binding, key] : classicKeybindings)
+        (config->keybindings.*binding).setValue(key);
 }
 
 EventTraceGameState EngineTraceStateAccessor::makeGameState() {

@@ -30,3 +30,5 @@ target_link_libraries(engine_components_trace
         library_random
         library_trace
         utility)
+
+add_subdirectory(Tests)

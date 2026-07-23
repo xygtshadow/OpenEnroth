@@ -523,9 +523,11 @@ class GameConfig : public Config {
      public:
         explicit Keybindings(GameConfig *config) : ConfigSection(config, "keybindings") {}
 
-        // Changing a default binding here requires a matching update in
-        // EngineTraceStateAccessor::applyClassicKeybindings - recorded traces and scripted
-        // game tests replay raw keypresses that assume the bindings they were written under.
+        // Changing a default binding here requires adding the classic binding to the
+        // classicKeybindings pin table in EngineTraceStateAccessor.cpp - recorded traces and
+        // scripted game tests replay raw keypresses that assume the bindings they were written
+        // under. Pinned bindings are never serialized into trace config patches, so committed
+        // traces stay canonical when a pinned default changes.
 
         Key AlwaysRun = {this, INPUT_ACTION_TOGGLE_ALWAYS_RUN, "always_run", PlatformKey::KEY_U, "Always run toggle key."};
         Key Attack = {this, INPUT_ACTION_ATTACK, "attack", PlatformKey::KEY_Q, "Attack key."};
