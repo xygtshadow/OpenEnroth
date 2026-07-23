@@ -8279,6 +8279,43 @@ GAME_TEST(Mm6, MonsterProjectiles) {
     EXPECT_EQ(impactTurnsInto(SPRITE_MM6_PROJECTILE_POISON), impactSprite(SPRITE_MM6_PROJECTILE_POISON));
 }
 
+// MM6's projectile art ships with missing octant frames - sprites.lod has only arra0 and arra4
+// for the arrow frameset, so loadSpriteFrame (Sprites.cpp) leaves SpriteFrame::sprites null for
+// the side-on octants. The draw paths must skip those octants instead of dereferencing them.
+GAME_TEST(Mm6, ProjectileMissingOctantsDraw) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    ASSERT_FALSE(pActors.empty()); // New Sorpigal street peasants.
+    AIDirection dir;
+    dir.uDistance = 1000;
+    Actor::AI_RangedAttack(0, &dir, MONSTER_PROJECTILE_ARROW, ABILITY_ATTACK1);
+
+    int index = -1;
+    for (size_t i = 0; i < pSpriteObjects.size(); i++)
+        if (pSpriteObjects[i].spriteId == SPRITE_MM6_PROJECTILE_ARROW && pSpriteObjects[i].uObjectDescID != 0)
+            index = i;
+    ASSERT_NE(index, -1);
+
+    // The hazard only exists because the arrow frameset really is missing octants.
+    SpriteFrame *frame = pSpriteObjects[index].getSpriteFrame();
+    EXPECT_TRUE(std::ranges::any_of(frame->sprites, [](const Sprite *sprite) { return sprite == nullptr; }));
+
+    // Park the arrow mid-air in front of the camera and sweep its facing through all 8 octants -
+    // the side-on ones resolve to the missing frames while the draw list is being built.
+    for (int i = 0; i < 8; i++) {
+        SpriteObject &arrow = pSpriteObjects[index];
+        ASSERT_NE(arrow.uObjectDescID, 0);
+        arrow.vPosition = pParty->pos + Vec3f::fromPolar(300, pParty->_viewYaw, 0) + Vec3f(0, 0, 96);
+        arrow.vVelocity = Vec3f(0, 0, 0);
+        arrow.uFacing = i * 256;
+        game.tick(1);
+    }
+}
+
 // MM6's reputation is a single GLOBAL party value (MM6.EXE party+0xD8 @0x908D48, positive = good),
 // while the engine stores a per-map value in LocationInfo::reputation. The current map's slot stays
 // the working copy every consumer reads and writes (and the save format carries), and DoPrepareWorld
