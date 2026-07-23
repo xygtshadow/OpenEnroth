@@ -309,6 +309,23 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
             break;
         }
 
+        case SPELL_DARK_CONTROL_UNDEAD: {  // MM6 id 94 = Day of Protection.
+            // Casts the protection family - Protection from Fire, Cold, Electricity, Poison and Magic,
+            // plus Feather Fall and Wizard Eye - on the party, all at 2x/3x/4x Dark skill power for
+            // Novice/Expert/Master and lasting skill+4 hours (MM6.EXE 0x4295fe: power = mult*L, duration
+            // = (5*L+20)*720 game-seconds). The MM7 spell it translates onto is Master-only (its mastery
+            // switch asserts on Novice/Expert) and applies MM7's buff set - Mind/Earth resistances
+            // instead of Protection from Magic - so it cannot stand in for the MM6 spell at any tier.
+            int mult = spellMastery >= MASTERY_MASTER ? 4 : spellMastery == MASTERY_EXPERT ? 3 : 2;
+            int power = mult * spellLevel;
+            Time expireTime = pParty->GetPlayingTime() + Duration::fromHours(spellLevel + 4);
+            for (PartyBuff buff : {PARTY_BUFF_RESIST_FIRE, PARTY_BUFF_RESIST_WATER, PARTY_BUFF_RESIST_AIR,
+                                   PARTY_BUFF_RESIST_BODY, PARTY_BUFF_PROTECTION_FROM_MAGIC,
+                                   PARTY_BUFF_FEATHER_FALL, PARTY_BUFF_WIZARD_EYE})
+                pParty->pPartyBuffs[buff].Apply(expireTime, spellMastery, power, 0, 0);
+            break;
+        }
+
         case SPELL_DARK_SACRIFICE: {  // MM6 id 96 = Moon Ray.
             // Damages every monster in the caster's sight and heals every character by the SAME single roll
             // of 1-4 per point of skill - mastery plays no part (MM6.EXE 0x4297a1: damage = L + L rolls of
