@@ -1504,7 +1504,11 @@ static void reconstruct(const MonsterInfo_MM6 &src, MonsterInfo_MM7 *dst) {
 void reconstruct(const Actor_MM6 &src, Actor_MM7 *dst) {
     *dst = {};
     dst->name = src.name;
-    dst->npcId = src.npcId;
+    // MM6 map records never hold NPC handles - the npcId slot carries uninitialized map-editor
+    // garbage in several shipped dungeons (d05's Snergle reads 30757, d02's Queen Spider is
+    // negative). Real handles are only assigned later, by InteractWithActor's lazy street-citizen
+    // generator.
+    dst->npcId = 0;
     dst->field_22 = src.field_22;
     dst->attributes = src.attributes;
     dst->hp = src.hp;

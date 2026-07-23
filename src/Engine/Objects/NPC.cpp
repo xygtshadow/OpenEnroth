@@ -36,7 +36,12 @@ NPCData *getNPCData(int npcId) {
             }
             return &pNPCStats->pNPCData[npcId];
         } else {
-            return &pNPCStats->pAdditionalNPC[npcId - 5000];
+            size_t slot = npcId - 5000;
+            if (slot >= pNPCStats->pAdditionalNPC.size()) {
+                logger->warning("NPC id {} exceeds the additional NPC table!", npcId);
+                slot = 0;
+            }
+            return &pNPCStats->pAdditionalNPC[slot];
         }
     } else {
         FlatHirelings buf;
