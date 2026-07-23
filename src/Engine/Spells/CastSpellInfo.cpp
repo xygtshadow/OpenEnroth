@@ -2691,16 +2691,18 @@ void CastSpellInfoHelpers::castSpell() {
 
                 case SPELL_BODY_HAMMERHANDS:
                 {
+                    // Vanilla passed spell_level as uOverlayID here - a skill level is not a pOverlays
+                    // slot index (a decompilation artefact), so pass 0 like every other buff cast.
                     if (spell_mastery == MASTERY_GRANDMASTER) {
                         spell_fx_renderer->SetPartyBuffAnim(pCastSpell->uSpellID);
                         for (Character &character : pParty->pCharacters) {
                             character.pCharacterBuffs[CHARACTER_BUFF_HAMMERHANDS]
-                                .Apply(pParty->GetPlayingTime() + Duration::fromHours(spell_level), spell_mastery, spell_level, spell_level, 0);
+                                .Apply(pParty->GetPlayingTime() + Duration::fromHours(spell_level), spell_mastery, spell_level, 0, 0);
                         }
                     } else {
                     spell_fx_renderer->SetPlayerBuffAnim(pCastSpell->uSpellID, pCastSpell->targetCharacterIndex);
                     pParty->pCharacters[pCastSpell->targetCharacterIndex].pCharacterBuffs[CHARACTER_BUFF_HAMMERHANDS]
-                        .Apply(pParty->GetPlayingTime() + Duration::fromHours(spell_level), spell_mastery, spell_level, spell_level, 0);
+                        .Apply(pParty->GetPlayingTime() + Duration::fromHours(spell_level), spell_mastery, spell_level, 0, 0);
                     }
                     break;
                 }
