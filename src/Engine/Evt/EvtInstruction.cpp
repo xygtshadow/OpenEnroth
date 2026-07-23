@@ -1061,7 +1061,7 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size, GameVersi
         case EVENT_CastSpell:
             requireSize(32);
             ir.data.spell_descr.spell_id = static_cast<SpellId>(fromStream<uint8_t>(stream));
-            ir.data.spell_descr.spell_mastery = static_cast<Mastery>(fromStream<uint8_t>(stream) + 1);  // TODO(yoctozepto): why add 1? it is not done with Event_CheckSkill
+            ir.data.spell_descr.spell_mastery = static_cast<Mastery>(fromStream<uint8_t>(stream) + 1);  // CastSpell records store mastery 0-based in both games; CheckSkill only in MM6.
             ir.data.spell_descr.spell_level = fromStream<uint8_t>(stream);
             ir.data.spell_descr.fromx = fromStream<uint32_t>(stream);
             ir.data.spell_descr.fromy = fromStream<uint32_t>(stream);
@@ -1194,7 +1194,11 @@ EvtInstruction EvtInstruction::parse(InputStream &stream, size_t size, GameVersi
         case EVENT_CheckSkill:
             requireSize(12);
             ir.data.check_skill_descr.skill_type = static_cast<Skill>(fromStream<uint8_t>(stream));
-            ir.data.check_skill_descr.skill_mastery = static_cast<Mastery>(fromStream<uint8_t>(stream));
+            // MM6 stores the required mastery 0-based - the byte indexes MM6.EXE 0x43c94f's mastery-flag
+            // table (0=Novice, 1=Expert, 2=Master) - while MM7 records already carry the engine's 1-based
+            // Mastery values. Read raw, MM6's only CheckSkill (t7.evt, byte 0) becomes MASTERY_NONE, which
+            // CombinedSkillValue never pairs with a nonzero level, so the check could never pass.
+            ir.data.check_skill_descr.skill_mastery = static_cast<Mastery>(fromStream<uint8_t>(stream) + (version == GAME_VERSION_MM6 ? 1 : 0));
             ir.data.check_skill_descr.skill_level = fromStream<uint32_t>(stream);
             ir.target_step = fromStream<uint8_t>(stream);
             break;

@@ -554,7 +554,13 @@ int EvtInterpreter::executeOneEvent(int step, bool isNpc) {
             assert(_who != CHOOSE_PARTY); // TODO(Nik-RE-dev): original code for this option is dubious
             for (Character &character : iterateCharacters(_who, grng)) {
                 CombinedSkillValue val = character.getSkillValue(ir.data.check_skill_descr.skill_type);
-                if (val.level() >= ir.data.check_skill_descr.skill_level && val.mastery() == ir.data.check_skill_descr.skill_mastery)
+                // MM6 treats the required mastery as a floor: its only CheckSkill (t7.evt) asks for Novice
+                // and must pass at any mastery - MM6.EXE 0x43c94f hardwires the Novice flag slot to pass.
+                // MM7 matches the mastery exactly.
+                bool masteryPasses = engine->gameVersion() == GAME_VERSION_MM6
+                                         ? val.mastery() >= ir.data.check_skill_descr.skill_mastery
+                                         : val.mastery() == ir.data.check_skill_descr.skill_mastery;
+                if (val.level() >= ir.data.check_skill_descr.skill_level && masteryPasses)
                     return ir.target_step;
             }
             break;
