@@ -9189,6 +9189,51 @@ GAME_TEST(Mm6, ZombieKeepsMm6FaceVoice) {
     EXPECT_EQ(active.uVoiceID, voice);
 }
 
+// MM6 has no zombie mechanic - MM6.EXE's temple Heal case (0x49e027) only checks healable/gold,
+// zeroes the condition block and restores HP/mana, with no per-house branch. But MM7's evil-temple
+// ids collide with MM6 2dEvents rows (HOUSE_TEMPLE_DEYJA == 78 == Temple Baa), so healing a dead
+// character at a Temple Baa ran MM7's zombification - an MM7-only condition plus face/voice ids
+// 23/24 that overflow MM6's 12-entry tables.
+GAME_TEST(Mm6, TempleBaaHealNoZombie) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    pParty->SetGold(20000);
+    ASSERT_TRUE(enterHouse(HouseId(78))); // New Sorpigal's Temple Baa.
+    createHouseUI(HouseId(78));
+
+    // Healing a dead character is a plain resurrect - no zombification, no face/voice swap.
+    Character &active = pParty->activeCharacter();
+    int face = active.uCurrentFace;
+    int voice = active.uVoiceID;
+    active.conditions.set(CONDITION_DEAD, pParty->GetPlayingTime());
+    openProprietorDialogue(game);
+    clickProprietorOption(game, DIALOGUE_TEMPLE_HEAL);
+    EXPECT_FALSE(active.conditions.has(CONDITION_ZOMBIE));
+    EXPECT_FALSE(active.conditions.has(CONDITION_DEAD));
+    EXPECT_EQ(active.uCurrentFace, face);
+    EXPECT_EQ(active.uVoiceID, voice);
+    EXPECT_EQ(active.health, active.GetMaxHealth());
+
+    // A zombie from a contaminated pre-fix save is healable at a Temple Baa like at any other MM6
+    // temple: the condition is cleared and the pre-zombie face/voice come back.
+    active.uPrevFace = face;
+    active.uPrevVoiceID = voice;
+    active.uCurrentFace = 23;
+    active.uVoiceID = 23;
+    active.conditions.set(CONDITION_ZOMBIE, pParty->GetPlayingTime());
+    openProprietorDialogue(game);
+    game.tick(1); // Re-lay-out the option buttons now that the character is healable again.
+    clickProprietorOption(game, DIALOGUE_TEMPLE_HEAL);
+    EXPECT_FALSE(active.conditions.has(CONDITION_ZOMBIE));
+    EXPECT_EQ(active.uCurrentFace, face);
+    EXPECT_EQ(active.uVoiceID, voice);
+    leaveHouse(game);
+}
+
 // Out-of-range face/voice ids can still reach MM6 characters (the MM7-shaped temple-heal zombie
 // path, imported or hand-edited saves). The 12-entry doll/voice table lookups must clamp - the
 // way the HUD portrait loader already does - instead of indexing out of bounds.

@@ -42,7 +42,11 @@ void GUIWindow_Temple::healDialogue() {
     }
 
     bool setZombie = false;
-    if (houseId() == HOUSE_TEMPLE_DEYJA || houseId() == HOUSE_TEMPLE_PIT || houseId() == HOUSE_TEMPLE_MOUNT_NIGHON) {
+    // MM6 has no zombie mechanic - its heal (MM6.EXE 0x49e027) has no per-house branch, and the
+    // MM7 evil-temple ids collide with MM6 2dEvents rows (HOUSE_TEMPLE_DEYJA == 78 == Temple Baa).
+    bool isEvilTemple = engine->gameVersion() != GAME_VERSION_MM6 &&
+                        (houseId() == HOUSE_TEMPLE_DEYJA || houseId() == HOUSE_TEMPLE_PIT || houseId() == HOUSE_TEMPLE_MOUNT_NIGHON);
+    if (isEvilTemple) {
         setZombie = pParty->activeCharacter().conditions.has(CONDITION_ZOMBIE);
         if (!pParty->activeCharacter().conditions.has(CONDITION_ZOMBIE)) {
             if (pParty->activeCharacter().conditions.hasAny({CONDITION_ERADICATED, CONDITION_PETRIFIED, CONDITION_DEAD})) {
@@ -217,8 +221,10 @@ bool GUIWindow_Temple::isPlayerHealableByTemple(const Character &player) const {
         // fully healthy
         return false;
     } else if (player.GetMajorConditionIdx() == CONDITION_ZOMBIE) {
-        // zombie cant be healed at these tmeples
-        return houseId() != HOUSE_TEMPLE_DEYJA && houseId() != HOUSE_TEMPLE_PIT && houseId() != HOUSE_TEMPLE_MOUNT_NIGHON;
+        // zombie cant be healed at these tmeples - but MM6 temples aren't evil temples (see
+        // healDialogue) and cure a zombie from a contaminated save like any other condition
+        return engine->gameVersion() == GAME_VERSION_MM6 ||
+               (houseId() != HOUSE_TEMPLE_DEYJA && houseId() != HOUSE_TEMPLE_PIT && houseId() != HOUSE_TEMPLE_MOUNT_NIGHON);
     }
 
     return true;
