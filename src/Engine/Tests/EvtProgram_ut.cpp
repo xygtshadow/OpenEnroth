@@ -10,6 +10,7 @@
 
 #include "Engine/Evt/EvtProgram.h"
 #include "Engine/Evt/EvtEnums.h"
+#include "Engine/Objects/CharacterEnums.h"
 #include "Engine/Objects/ItemEnums.h"
 
 #include "Utility/Memory/Blob.h"
@@ -98,6 +99,48 @@ GAME_TEST(EvtProgramMm7, ReceiveDamageTypeIsRaw) {
     EXPECT_EQ(damage.opcode, EVENT_ReceiveDamage);
     EXPECT_EQ(damage.data.damage_descr.damage_type, DAMAGE_PHYSICAL);
     EXPECT_EQ(damage.data.damage_descr.damage, 5);
+}
+
+// MM6 stores CheckSkill's required mastery 0-based - the byte indexes MM6.EXE 0x43c94f's mastery-flag table
+// (0=Novice, 1=Expert, 2=Master), so it must be shifted onto the engine's 1-based Mastery enum. Parsed raw,
+// MM6's only CheckSkill record (t7.evt, byte 0) becomes MASTERY_NONE, which CombinedSkillValue never pairs
+// with a nonzero level - the check turns mathematically unsatisfiable.
+GAME_TEST(EvtProgramMm6, CheckSkillMastery) {
+    // CheckSkill records: size=12, opcode=43, then [skill:u8][mastery:u8][level:u32-le][targetStep:u8].
+    // One record per MM6 mastery code 0..2, eventId = code + 1; skill 26 = Perception, level 8 as in t7.evt.
+    std::vector<std::vector<uint8_t>> records;
+    for (uint8_t code = 0; code <= 2; code++)
+        records.push_back({0x0b, static_cast<uint8_t>(code + 1), 0x00, 0x01, 0x2b, 0x1a, code, 0x08, 0x00, 0x00, 0x00, 0x04});
+
+    EvtProgram program = EvtProgram::load(makeEvtBlob(records), GAME_VERSION_MM6);
+
+    static constexpr std::array<Mastery, 3> expected = {MASTERY_NOVICE, MASTERY_EXPERT, MASTERY_MASTER};
+    for (int code = 0; code <= 2; code++) {
+        const EvtInstruction &check = program.function(code + 1)[0];
+        EXPECT_EQ(check.opcode, EVENT_CheckSkill);
+        EXPECT_EQ(check.data.check_skill_descr.skill_type, SKILL_PERCEPTION);
+        EXPECT_EQ(check.data.check_skill_descr.skill_mastery, expected[code]) << "MM6 mastery code " << code;
+        EXPECT_EQ(check.data.check_skill_descr.skill_level, 8);
+        EXPECT_EQ(check.target_step, 4);
+    }
+}
+
+// MM7 CheckSkill records already store the engine's 1-based Mastery numbering (all three records in MM7's
+// events.lod carry byte 3 = MASTERY_MASTER); the byte must stay untranslated.
+GAME_TEST(EvtProgramMm7, CheckSkillMasteryIsRaw) {
+    Blob blob = makeEvtBlob({
+        // CheckSkill: eventId=1, skill 4 (Spear), mastery 3 (MASTERY_MASTER), level 10, target step 7.
+        {0x0b, 0x01, 0x00, 0x01, 0x2b, 0x04, 0x03, 0x0a, 0x00, 0x00, 0x00, 0x07},
+    });
+
+    EvtProgram program = EvtProgram::load(blob, GAME_VERSION_MM7);
+
+    const EvtInstruction &check = program.function(1)[0];
+    EXPECT_EQ(check.opcode, EVENT_CheckSkill);
+    EXPECT_EQ(check.data.check_skill_descr.skill_type, SKILL_SPEAR);
+    EXPECT_EQ(check.data.check_skill_descr.skill_mastery, MASTERY_MASTER);
+    EXPECT_EQ(check.data.check_skill_descr.skill_level, 10);
+    EXPECT_EQ(check.target_step, 7);
 }
 
 // Guards the MM7 parse path through the version-parameter refactor: a valid MM7 record must still parse.

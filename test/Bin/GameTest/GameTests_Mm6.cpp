@@ -808,6 +808,58 @@ GAME_TEST(Mm6, SwitchChangesDoorStateInGoblinwatch) {
     game.tick(20); // And the door animation keeps the game loop happy.
 }
 
+GAME_TEST(Mm6, CheckSkillPassesAnyMastery) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // t7.blv's riddle door is MM6's only CheckSkill: event 1 is CheckSkill(Perception, masteryByte=0,
+    // level=8) -> ChangeDoorState(door 1), else ReceiveDamage(50) on the active character. MM6 encodes
+    // the required mastery 0-based with 0 meaning "any mastery" (MM6.EXE 0x43c94f indexes a mastery-flag
+    // table whose Novice slot is hardwired to pass), so Perception 8 at ANY mastery must open the door.
+    // Expert here catches both a raw parse (MASTERY_NONE, unsatisfiable) and an exact-match comparison
+    // against the translated MASTERY_NOVICE.
+    MapId t7 = pMapStats->GetMapInfo("t7.blv");
+    ASSERT_NE(t7, MAP_INVALID);
+    game.teleportTo(t7, Vec3f(0, 0, 0), 0);
+    ASSERT_FALSE(pIndoor->pSpawnPoints.empty());
+    game.teleportTo(t7, pIndoor->pSpawnPoints[0].position, 0);
+    game.tick(1);
+
+    ASSERT_TRUE(engine->_localEventMap.hasEvent(1));
+    const std::vector<EvtInstruction> &script = engine->_localEventMap.function(1);
+    auto checkStep = std::ranges::find_if(script, [](const EvtInstruction &ir) { return ir.opcode == EVENT_CheckSkill; });
+    ASSERT_NE(checkStep, script.end());
+    EXPECT_EQ(checkStep->data.check_skill_descr.skill_type, SKILL_PERCEPTION);
+    EXPECT_EQ(checkStep->data.check_skill_descr.skill_level, 8);
+    auto doorStep = std::ranges::find_if(script, [](const EvtInstruction &ir) { return ir.opcode == EVENT_ChangeDoorState; });
+    ASSERT_NE(doorStep, script.end());
+
+    BLVDoor *door = nullptr;
+    for (BLVDoor &candidate : pIndoor->doors) {
+        if (candidate.doorId == static_cast<uint32_t>(doorStep->data.door_descr.door_id)) {
+            door = &candidate;
+            break;
+        }
+    }
+    ASSERT_NE(door, nullptr);
+    DoorState stateBefore = door->state;
+
+    pParty->setActiveCharacterIndex(1);
+    Character &scout = pParty->activeCharacter();
+    scout.pActiveSkills[SKILL_PERCEPTION] = CombinedSkillValue(8, MASTERY_EXPERT);
+    int hpBefore = scout.health;
+
+    eventProcessor(1, Pid(), 1);
+    game.tick(2);
+
+    EXPECT_NE(door->state, stateBefore); // The Perception check passed and opened the door...
+    EXPECT_EQ(scout.health, hpBefore);   // ...instead of burning the scout via the failure branch.
+    game.tick(20); // And the door animation keeps the game loop happy.
+}
+
 GAME_TEST(Mm6, AllMapEventsParse) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
