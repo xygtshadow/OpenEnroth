@@ -417,6 +417,32 @@ GAME_TEST(Mm6, EnterGoblinwatch) {
     game.tick(20);
 }
 
+GAME_TEST(Mm6, SelectionRingReloadedOnMapChange) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // The first HUD draw lazily resolves the "aframe1" frameset (the animated gold ring around the
+    // active character's portrait) and loads its sprites.
+    ASSERT_TRUE(pParty->hasActiveCharacter());
+    int framesetId = pSpriteFrameTable->FastFindSprite("aframe1");
+    ASSERT_GT(framesetId, 0);
+    ASSERT_TRUE(pSpriteFrameTable->pSpriteSFrames[framesetId].flags & SPRITE_FRAME_LOADED);
+
+    // A map change releases all unreserved sprites and clears every frameset's LOADED flag, leaving
+    // sprites[] dangling into the freed cache nodes. The next HUD draw must re-initialize the
+    // frameset so the ring points at live sprites again.
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+    game.tick(1);
+
+    EXPECT_TRUE(pSpriteFrameTable->pSpriteSFrames[framesetId].flags & SPRITE_FRAME_LOADED);
+    EXPECT_NE(pSpriteFrameTable->pSpriteSFrames[framesetId].sprites[0], nullptr);
+}
+
 GAME_TEST(Mm6, EnterTempleOfBaaThroughDoor) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
