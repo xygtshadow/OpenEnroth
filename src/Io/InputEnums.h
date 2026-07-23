@@ -84,8 +84,12 @@ enum class InputAction {
     INPUT_ACTION_FIRST_VALID = INPUT_ACTION_MOVE_FORWARD,
     INPUT_ACTION_LAST_VALID = INPUT_ACTION_ARCOMAGE_RIGHT,
 
-    INPUT_ACTION_FIRST_CONFIGURABLE = INPUT_ACTION_MOVE_FORWARD, // Configurable from the game options menu.
-    INPUT_ACTION_LAST_CONFIGURABLE = INPUT_ACTION_FLY_LAND,
+    // Owned by the controls menu: conflict-checked, DEFAULT-reset and applied by it. Only the
+    // first 28 actions fit the menu's two 14-slot pages and are rendered/rebindable there; the
+    // two strafe actions are covered by the conflict scan and the DEFAULT reset only, so that
+    // rebinding an action onto the modern A/D strafe defaults can't create a silent dual-bind.
+    INPUT_ACTION_FIRST_CONFIGURABLE = INPUT_ACTION_MOVE_FORWARD,
+    INPUT_ACTION_LAST_CONFIGURABLE = INPUT_ACTION_STRAFE_RIGHT,
 };
 using enum InputAction;
 

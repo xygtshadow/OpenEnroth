@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -100,6 +101,8 @@
 #include "Library/LodFormats/LodImage.h"
 
 #include "Media/MediaPlayer.h"
+
+extern std::unordered_set<InputAction> key_map_conflicted;  // 506E6C
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -406,6 +409,67 @@ GAME_TEST(Mm6, ModernControls) {
     game.pressAndReleaseButton(BUTTON_MIDDLE, 320, 240);
     game.tick(1);
     EXPECT_EQ(mouse->_mouseLook, Io::Mouse::MouseLookState::Disabled);
+}
+
+GAME_TEST(Mm6, StrafeKeybindingConflictChecked) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // The modern scheme puts strafe on A/D, but the strafe actions sit past the controls menu's
+    // two 14-slot pages and used to sit outside the configurable segment too - so the menu's
+    // conflict scan never saw them. Rebinding Attack onto A (the classic MM7 attack key, the
+    // single most likely rebind a returning player performs) was accepted silently, and holding
+    // A then attacked AND strafed every frame. Strafe is conflict-checked and DEFAULT-reset now;
+    // the menu art has exactly 2x14 engraved slots and two page tabs, so the two strafe rows
+    // themselves are still not rendered (rebinding strafe means editing openenroth.ini).
+
+    // The harness pins classic bindings before every test - apply the shipped modern defaults
+    // (Attack=Q, StepLeft=A) to reproduce the fresh-install scenario. The next test's
+    // prepareForNextTest() re-pins classic; the scope guard just keeps this test tidy on
+    // early EXPECT failures.
+    keyboardActionMapping->applyKeybindings(keyboardActionMapping->defaultKeybindings(KEYBINDINGS_ALL));
+    MM_AT_SCOPE_EXIT({
+        keyboardActionMapping->applyKeybindings(keyboardActionMapping->defaultKeybindings(KEYBINDINGS_ALL));
+    });
+
+    game.startNewGame();
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_MENU);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_OpenKeyMappingOptions, 0, 0);
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
+
+    // Rebind Attack onto A through the real rebind flow: select the Attack row, press A.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_ChangeKeyButton, std::to_underlying(INPUT_ACTION_ATTACK), 0);
+    game.tick(2);
+    game.pressAndReleaseKey(PlatformKey::KEY_A);
+    game.tick(2);
+
+    // The clash with strafe-left must be flagged...
+    EXPECT_TRUE(key_map_conflicted.contains(INPUT_ACTION_ATTACK));
+    EXPECT_TRUE(key_map_conflicted.contains(INPUT_ACTION_STRAFE_LEFT));
+
+    // ...and the RETURN button must refuse to close the menu while the conflict stands, exactly
+    // like it does for a conflict between two visible actions.
+    game.pressAndReleaseButton(BUTTON_LEFT, 348, 322);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
+
+    if (current_screen_type == SCREEN_KEYBOARD_OPTIONS) {
+        // DEFAULT resolves the conflict (it covers strafe now too), after which RETURN works.
+        game.pressGuiButton("KeyBinding_Default");
+        game.tick(2);
+        EXPECT_TRUE(key_map_conflicted.empty());
+        game.pressAndReleaseButton(BUTTON_LEFT, 348, 322);
+        game.tick(2);
+    }
+    EXPECT_EQ(current_screen_type, SCREEN_MENU);
+    EXPECT_EQ(engine->config->keybindings.Attack.value(), PlatformKey::KEY_Q);
+    EXPECT_EQ(engine->config->keybindings.StepLeft.value(), PlatformKey::KEY_A);
+
+    game.goToGame();
 }
 
 GAME_TEST(Mm6, KillAndLootPeasant) {
