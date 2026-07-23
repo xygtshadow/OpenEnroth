@@ -29,6 +29,11 @@ on:
         required: false
         default: false
         type: boolean
+      publishArtifacts:
+        description: Upload built zips as workflow artifacts instead of publishing them to the release tag
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       myCommit:
@@ -53,6 +58,11 @@ on:
         type: string
       skipGameTests:
         description: Skip tests that need game data (for forks without access to the data cache)
+        required: false
+        default: false
+        type: boolean
+      publishArtifacts:
+        description: Upload built zips as workflow artifacts instead of publishing them to the release tag
         required: false
         default: false
         type: boolean
@@ -350,8 +360,16 @@ jobs:
           filename: ${{runner.os}}_${{inputs.releaseTag}}_${{env.MATRIX_CONFIGURATION}}_${{env.MATRIX_ARCHITECTURE}}.zip
           path: dist
 
+      - name: '[darwin/windows/linux] Upload release artifact'
+        if: env.MATRIX_PLATFORM != 'android' && inputs.publishArtifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'release-${{matrix.target}}-${{matrix.configuration}}'
+          path: '${{runner.os}}_${{inputs.releaseTag}}_${{env.MATRIX_CONFIGURATION}}_${{env.MATRIX_ARCHITECTURE}}.zip'
+          if-no-files-found: error
+
       - name: '[darwin/windows/linux] Publish release'
-        if: env.MATRIX_PLATFORM != 'android' && inputs.releaseTag != ''
+        if: env.MATRIX_PLATFORM != 'android' && inputs.releaseTag != '' && !inputs.publishArtifacts
         uses: softprops/action-gh-release@v1
         with:
           prerelease: true
@@ -360,7 +378,7 @@ jobs:
             ${{runner.os}}_${{inputs.releaseTag}}_${{env.MATRIX_CONFIGURATION}}_${{env.MATRIX_ARCHITECTURE}}.zip
 
       - name: '[android] Publish release'
-        if: env.MATRIX_PLATFORM == 'android' && inputs.releaseTag != ''
+        if: env.MATRIX_PLATFORM == 'android' && inputs.releaseTag != '' && !inputs.publishArtifacts
         uses: softprops/action-gh-release@v1
         with:
           prerelease: true
