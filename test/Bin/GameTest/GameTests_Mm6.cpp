@@ -6452,6 +6452,33 @@ GAME_TEST(Mm6, CreditsKeepMainMenuMusic) {
     EXPECT_FALSE(pEventTimer->isPaused());
 }
 
+GAME_TEST(Mm6, MusicRestartsAtDifferentOffset) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // MM6's title theme is redbook track 13, played from +18.5s (MM6.EXE @0x4a6c19). Track 13 is
+    // also a level track - mapstats.txt column "Redbook" is 13 for Mire of the Damned - and loading
+    // a save there runs PlayLevelMusic() while the menu instance is still current, asking for the
+    // same track at 0s. MusicPlayTrack's identity check used to swallow that request, so the map
+    // played the menu instance instead: 18.5s in, and looping back to 18.5s forever.
+    game.goToMainMenu();
+    ASSERT_TRUE(pAudioPlayer->isMusicPlaying());
+
+    // Pausing first makes the restart observable: a request that really re-creates the track leaves
+    // music playing, a swallowed one leaves the paused menu instance in place.
+    pAudioPlayer->MusicPause();
+    ASSERT_FALSE(pAudioPlayer->isMusicPlaying());
+
+    pAudioPlayer->MusicPlayTrack(MUSIC_MM6_MAIN_MENU, 0.0f); // What a map load asks for.
+    EXPECT_TRUE(pAudioPlayer->isMusicPlaying());
+
+    // The same track at the same offset must still be a no-op - PlayLevelMusic() runs on every map
+    // load, and re-entering the same map must not restart its music.
+    pAudioPlayer->MusicPause();
+    pAudioPlayer->MusicPlayTrack(MUSIC_MM6_MAIN_MENU, 0.0f);
+    EXPECT_FALSE(pAudioPlayer->isMusicPlaying());
+}
+
 // The prologue ("segue") screen's window, or nullptr if the screen isn't up. It's an fsm-owned
 // window, so it isn't in pGUIWindow_CurrentMenu - only in the window list.
 static GUIWindow *findMm6SegueWindow() {
