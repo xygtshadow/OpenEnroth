@@ -8535,7 +8535,9 @@ GAME_TEST(Mm6, MainQuestEndToEnd) {
         createHouseUI(HouseId(house));
         game.tick(2);
         openProprietorDialogue(game);
-        ASSERT_NE(findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING), nullptr);
+        const GUIButton *priceFixing = findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING);
+        ASSERT_NE(priceFixing, nullptr);
+        EXPECT_EQ(priceFixing->sLabel, "Price Fixing"); // npctopic row 99 - pTopic is stored unshifted, unlike pText.
         clickProprietorOption(game, DIALOGUE_TRANSPORT_MM6_PRICE_FIXING);
         EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(house + 99)]);
         EXPECT_EQ(findProprietorOption(DIALOGUE_TRANSPORT_MM6_PRICE_FIXING), nullptr); // Already signed up.
