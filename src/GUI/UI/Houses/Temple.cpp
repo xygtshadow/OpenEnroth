@@ -23,7 +23,11 @@ void GUIWindow_Temple::mainDialogue() {
     int price = PriceCalculator::templeHealingCostForPlayer(&pParty->activeCharacter(), houseTable[houseId()].fPriceMultiplier);
     std::string healString = fmt::format("{} {} {}", localization->str(LSTR_HEAL), price, localization->str(LSTR_GOLD));
     std::vector<std::string> optionsText = {isPlayerHealableByTemple(pParty->activeCharacter()) ? healString : "",
-                                            localization->str(LSTR_DONATE), localization->str(LSTR_LEARN_SKILLS)};
+                                            localization->str(LSTR_DONATE)};
+    // LSTR_LEARN_SKILLS is global.txt row 160, which MM6 uses for "Oracle" - but MM6 temples have
+    // no third option anyway, see listDialogueOptions.
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        optionsText.push_back(localization->str(LSTR_LEARN_SKILLS));
 
     drawOptions(optionsText, colorTable.PaleCanary);
 }
@@ -190,6 +194,15 @@ void GUIWindow_Temple::houseSpecificDialogue() {
 }
 
 std::vector<DialogueId> GUIWindow_Temple::listDialogueOptions() {
+    // MM6 temples only heal and take donations: the MM6.EXE option factory's temple case (jump
+    // table @0x499318 index 22 -> 0x498584) creates exactly the Heal(0xa) and Donate(0xb)
+    // options - no skill teaching.
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        if (_currentDialogue == DIALOGUE_MAIN)
+            return {DIALOGUE_TEMPLE_HEAL, DIALOGUE_TEMPLE_DONATE};
+        return {};
+    }
+
     switch (_currentDialogue) {
       case DIALOGUE_MAIN:
         return {DIALOGUE_TEMPLE_HEAL, DIALOGUE_TEMPLE_DONATE, DIALOGUE_LEARN_SKILLS};

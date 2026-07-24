@@ -9962,6 +9962,24 @@ GAME_TEST(Mm6, TempleBaaHealNoZombie) {
     leaveHouse(game);
 }
 
+// MM6 temples heal and take donations, nothing else - the MM6.EXE option factory's temple case
+// (jump table @0x499318 index 22 -> 0x498584) creates exactly two options, Heal(0xa) and
+// Donate(0xb). The MM7 menu's third entry, DIALOGUE_LEARN_SKILLS, sold MM7-only skills at MM6
+// temples, and its label rendered as MM6 global.txt row 160 - "Oracle", not "Learn Skills".
+GAME_TEST(Mm6, TempleFlatMenu) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    ASSERT_TRUE(enterHouse(HouseId(78))); // New Sorpigal's Temple Baa.
+    createHouseUI(HouseId(78));
+    openProprietorDialogue(game);
+    EXPECT_EQ(listProprietorOptions(), (std::vector<DialogueId>{DIALOGUE_TEMPLE_HEAL, DIALOGUE_TEMPLE_DONATE}));
+    leaveHouse(game);
+}
+
 // Out-of-range face/voice ids can still reach MM6 characters (the MM7-shaped temple-heal zombie
 // path, imported or hand-edited saves). The 12-entry doll/voice table lookups must clamp - the
 // way the HUD portrait loader already does - instead of indexing out of bounds.
