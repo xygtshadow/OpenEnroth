@@ -31,22 +31,25 @@ static Blob makeHousesBlob(const std::vector<std::vector<std::string>> &rows) {
 // free-form text: the shop-stock columns A/C (13/15) describe stock as level+category text (e.g.
 // "L1 Weap"), and the auxiliary Picture/exit columns (8, 20-22) carry editor annotations (e.g. "2 story
 // poor house", "Throne", "Need Key"). Parsing those with MM7's numeric reads throws ("'L1 Weap' is not a
-// number"). MM6 also defines 557 houses (ids 1-557) where the engine's HouseId enum / houseTable is
-// MM7-shaped (1-525), so ids 526-557 (extra residences/tents/wagons) would index out of range. For MM6
-// the parser tolerates non-numeric numeric columns (leaving those fields at their defaults) and skips the
-// out-of-range houses, so engine bring-up proceeds; the faithful MM6 house/shop model is deferred (see
-// docs/pending/mm6-2devents-houses.md, coupled to docs/pending/mm6-item-model.md).
+// number"). MM6 also defines 557 houses (ids 1-557); houseTable extends to HOUSE_MM6_LAST (557) so they
+// all get real slots, and for MM6 the parser tolerates non-numeric numeric columns (leaving those fields
+// at their defaults) and skips ids outside the HouseId enum range instead of indexing houseTable out of
+// bounds, so engine bring-up proceeds even on unexpected data.
 GAME_TEST(HouseTableMm6, ToleratesTextColumnsAndSkipsOutOfRangeIds) {
-    // id 1 (in range, the real crash): "L1 Weap" in the A column. id 530 (out of range >525): would crash
-    // several times over if parsed - placed in the middle so the trailing id-204 row proves parsing
-    // continues past the skip. id 204 (in range): descriptive text in the auxiliary numeric columns.
+    // id 1 (in range, the real crash): "L1 Weap" in the A column. id HOUSE_LAST+1 (first id past the
+    // MM6-extended enum, out of range by construction): would crash several times over if parsed - placed
+    // in the middle so the trailing id-204 row proves parsing continues past the skip. The id is derived
+    // from HOUSE_LAST so a future enum extension can't silently pull it back into range - the original
+    // hard-coded "530" fixture went dead exactly that way when HOUSE_MM6_LAST extended the enum to 557.
+    // id 204 (in range): descriptive text in the auxiliary numeric columns.
+    std::string outOfRangeId = std::to_string(std::to_underlying(HOUSE_LAST) + 1);
     Blob blob = makeHousesBlob({
         {"2D Events by Type"},                                                                       // Header 1.
         {"#", "#", "Type", "Map", "Picture", "Name", "Proprieter Name", "Title", "Picture", "State", // Header 2.
          "Rep", "Per", "Val", "A", "B", "C", "Notes:", "Notes(2):", "Open", "Closed", "Pic", "Map", "Restrictions", "Text"},
         {"1", "1", "Weapon Shop", "E3", "2", "The Knife Shoppe", "Caine", "Blacksmith", "0", "0",
          "0", "0", "1.5", "L1 Weap", "L2 Dagger", "2", "Weapon Shop gets:", "", "6", "18", "0", "0", "0", ""},
-        {"530", "", "House", "P8", "0", "An out-of-range MM6 house", "", "", "2 story poor house", "0",
+        {outOfRangeId, "", "House", "P8", "0", "An out-of-range MM6 house", "", "", "2 story poor house", "0",
          "0", "0", "1", "L1 Misc", "", "-", "", "", "6", "18", "Throne", "2D 154", "Need Key", ""},
         {"204", "", "House", "C2", "5", "A Poor House", "", "", "2 story poor house", "0",
          "0", "0", "1", "L2 Misc", "", "-", "", "", "6", "18", "Throne", "2D 154", "Need Key", ""},
@@ -71,7 +74,7 @@ GAME_TEST(HouseTableMm6, ToleratesTextColumnsAndSkipsOutOfRangeIds) {
     EXPECT_EQ(shop.uOpenTime, 6u);
     EXPECT_EQ(shop.uCloseTime, 18u);
 
-    // id 204 parsed (so the in-between out-of-range id 530 was skipped, not fatal), with the auxiliary
+    // id 204 parsed (so the in-between out-of-range id was skipped, not fatal), with the auxiliary
     // text columns tolerated and left at their numeric defaults.
     const HouseData &house = houseTable[HOUSE_204];
     EXPECT_EQ(house.name, "A Poor House");
