@@ -7778,6 +7778,19 @@ GAME_TEST(Mm6, ArenaFightAndPrize) {
     EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_KNIGHT), nullptr);
     EXPECT_NE(findStreetDialogueOption(DIALOGUE_ARENA_SELECT_LORD), nullptr);
 
+    // A scripted sub-dialogue rebuilds the window's buttons from scratch, so the exit button has
+    // to be recreated with MM6's centered buttesc geometry (CreateButton stores w+1/h+1) - the
+    // same rect the initial window gets in Mm6.DialogueSkin. With MM7's {471,445} box the drawn
+    // button is inert and an invisible one covers the bottom-right HUD.
+    ASSERT_NE(pBtn_ExitCancel, nullptr);
+    EXPECT_EQ(pBtn_ExitCancel->rect, Recti(526, 313, 62, 29));
+    game.pressAndReleaseButton(BUTTON_LEFT, 557, 327); // Center of the drawn buttesc.
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    talkToArenaMaster();
+    selectStreetDialogueOption(game, DIALOGUE_SCRIPTED_LINE_1);
+
     // Pick Page: 6-8 monsters spawn at the fixed placements, drawn from every monsters.txt row
     // 1-171 whose level fits the tier window - for a level-1 party that's [1, 1] (MM6's floor is 1,
     // not MM7's 2). The dialogue closes and the party stands in the pit.
