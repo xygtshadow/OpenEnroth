@@ -58,7 +58,11 @@ GAME_TEST(TurnBasedOverlayMm6, BootsPastMissingIcons) {
     TurnBasedOverlay overlay;
     overlay.loadIcons(); // Must not abort on the missing turn-combat animations.
     overlay.update(1_ticks, TE_WAIT); // Must stay disabled and not touch the missing icons.
+    EXPECT_EQ(overlay.state(), TURN_BASED_OVERLAY_NONE);
+    EXPECT_FALSE(overlay.usesMm6Sprites());
     overlay.update(1_ticks, TE_ATTACK);
+    EXPECT_EQ(overlay.state(), TURN_BASED_OVERLAY_NONE);
+    EXPECT_FALSE(overlay.usesMm6Sprites());
 
     pIconsFrameTable = oldTable;
 }
@@ -84,6 +88,8 @@ GAME_TEST(TurnBasedOverlayMm7, LoadsIcons) {
     TurnBasedOverlay overlay;
     overlay.loadIcons();
     overlay.update(1_ticks, TE_WAIT); // Enters the initial animation, exercising _initialAnimationLength.
+    EXPECT_EQ(overlay.state(), TURN_BASED_OVERLAY_INITIAL); // The icons resolved, so the overlay actually engaged.
+    EXPECT_FALSE(overlay.usesMm6Sprites());
 
     pIconsFrameTable = oldTable;
 
