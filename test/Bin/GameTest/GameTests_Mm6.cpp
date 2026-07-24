@@ -3567,6 +3567,40 @@ GAME_TEST(Mm6, OverlaysRenderAndExpire) {
     pParty->pPartyBuffs[PARTY_BUFF_WIZARD_EYE].Reset();
 }
 
+// Screen-anchored overlays are painted from Engine::DrawGUI() on every frame, whatever the current screen,
+// so their animations have to keep advancing while a full-screen UI is open. Gating the update loop on
+// PauseGameDrawing() froze one-shot slots the moment the inventory (or any other full-screen screen) was
+// opened: the slot could neither animate nor reach its expiry, so the same frame kept being painted over the
+// portraits for as long as the screen stayed open.
+GAME_TEST(Mm6, OverlaysAdvanceWhileScreenOpen) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    // Overlay 1020 is Bless's one-shot cast fx; anchor 100 is character 0's portrait.
+    pActiveOverlayList->Reset();
+    int slotIndex = pActiveOverlayList->addScreenOverlay(1020, 100, 0_ticks, 65536);
+    ASSERT_GT(slotIndex, 0);
+    ActiveOverlay &castFx = pActiveOverlayList->pOverlays[slotIndex - 1];
+    ASSERT_GT(castFx.animLength, 0);
+    ASSERT_FALSE(castFx.flags & (OVERLAY_FLAG_BUFF_OWNED | OVERLAY_FLAG_LOOPING)); // A self-expiring one-shot.
+
+    // Open the inventory before the animation ends - the 3D scene is now skipped, but the overlay is not.
+    game.pressAndReleaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+    ASSERT_TRUE(PauseGameDrawing());
+    ASSERT_GT(castFx.animLength, 0); // Still mid-animation, so there is something left to advance.
+    int frameTimeWithScreenOpen = castFx.spriteFrameTime;
+    game.tick(2);
+    EXPECT_GT(castFx.spriteFrameTime, frameTimeWithScreenOpen); // The animation still advances.
+    for (int i = 0; i < 100 && castFx.animLength > 0; i++)
+        game.tick(1);
+    EXPECT_LE(castFx.animLength, 0); // And the one-shot still expires and frees its slot.
+}
+
 GAME_TEST(Mm6, SpellCastFx) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";

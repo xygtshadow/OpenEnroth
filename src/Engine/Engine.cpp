@@ -164,11 +164,16 @@ void Engine::drawWorld() {
             decal_builder->DrawBloodsplats();
 
             pActiveOverlayList->prepareBillboards();
-            // TODO(captainurist): same time source question as in ParticleEngine::UpdateParticles.
-            pActiveOverlayList->update(!pMiscTimer->isPaused() ? pEventTimer->dt() : 0_ticks);
         }
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
     }
+
+    // Screen-anchored overlays are drawn from DrawGUI() on every frame whatever the current screen, and one-shot
+    // slots are freed by this update loop alone - so it must run even when the 3D scene is skipped (any
+    // full-screen UI: inventory, character sheet, rest, houses, spellbook) or replaced by a house movie.
+    // Otherwise a slot spawned just before the screen opens freezes on one frame and never expires.
+    // TODO(captainurist): same time source question as in ParticleEngine::UpdateParticles.
+    pActiveOverlayList->update(!pMiscTimer->isPaused() ? pEventTimer->dt() : 0_ticks);
 }
 
 void Engine::drawOverlay() {
