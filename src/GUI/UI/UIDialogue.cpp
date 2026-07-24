@@ -232,16 +232,23 @@ int mm6BribeCost() {
     return std::max(10, (100 - mm6DiplomacyBonus(mm6Speaker())) * (pParty->_mm6NpcBribeCount + 1) / 2);
 }
 
+// The dialogue exit/cancel button: MM7 paints a wide box under the right panel, MM6's buttesc sits
+// centered on the marble panel's bottom row. Both the initial window and the button rebuild that a
+// scripted sub-dialogue does in selectNPCDialogueOption() go through here, so the two can't drift -
+// the draw at the end of GUIWindow_Dialogue::Update() blits the graphic at the MM6 position either
+// way, and a rebuild that kept MM7's rect would leave the drawn button inert.
+static GUIButton *createDialogueExitButton(GUIWindow *window) {
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
+    return window->CreateButton(isMm6 ? MM6_DIALOGUE_ESC_CENTERED_POS : Pointi(471, 445),
+                                isMm6 ? MM6_DIALOGUE_BUTTON_SIZE : Sizei(0xA9, 0x23),
+                                BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
+                                localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
+}
+
 GUIWindow_Dialogue::GUIWindow_Dialogue(DialogWindowType type) : GUIWindow(WINDOW_Dialogue, {0, 0}, render->GetRenderDimensions()) {
     prev_screen_type = current_screen_type;
     current_screen_type = SCREEN_NPC_DIALOGUE;
-    if (engine->gameVersion() == GAME_VERSION_MM6) {
-        pBtn_ExitCancel = CreateButton(MM6_DIALOGUE_ESC_CENTERED_POS, MM6_DIALOGUE_BUTTON_SIZE, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
-                                       localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
-    } else {
-        pBtn_ExitCancel = CreateButton({0x1D7u, 0x1BDu}, {0xA9u, 0x23u}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
-                                       localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
-    }
+    pBtn_ExitCancel = createDialogueExitButton(this);
 
     int text_line_height = assets->pFontArrus->GetHeight() - 3;
     NPCData *speakingNPC = getNPCData(speakingNpcId);
@@ -593,8 +600,7 @@ void selectNPCDialogueOption(DialogueId option) {
             std::vector<DialogueId> topics = listNPCDialogueOptions(newTopic);
             ((GUIWindow_Dialogue*)pDialogueWindow.get())->setDisplayedDialogueType(newTopic);
             pDialogueWindow->DeleteButtons();
-            pBtn_ExitCancel = pDialogueWindow->CreateButton({471, 445}, {0xA9u, 0x23u}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID,
-                                                            localization->str(LSTR_EXIT_DIALOGUE), {ui_exit_cancel_button_background});
+            pBtn_ExitCancel = createDialogueExitButton(pDialogueWindow.get());
 
             for (int i = 0; i < topics.size(); i++) {
                 pDialogueWindow->CreateButton({480, 160 + i * 30}, {140, 30}, BUTTON_TYPE_NORMAL, 0, UIMSG_SelectNPCDialogueOption, std::to_underlying(topics[i]), INPUT_ACTION_INVALID, "");
