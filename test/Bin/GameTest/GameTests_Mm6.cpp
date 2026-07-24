@@ -4375,6 +4375,58 @@ GAME_TEST(Mm6, FingerOfDeath) {
     EXPECT_GT(expAfter, expBefore); // The kill rewarded party experience.
 }
 
+// Corpses are fully pickable by the spell-target picker (the vis filter's decoration rule short-circuits
+// before the aiState test), and Actor::Die has no already-dead guard - so Finger of Death cast at a corpse
+// used to re-run the death (aiState back to Dying), re-roll the item drop and re-award the full kill
+// experience, repeatable for unbounded XP. The cast must reject non-live targets instead.
+GAME_TEST(Mm6, FingerOfDeathIgnoresCorpses) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    MapId goblinwatch = pMapStats->GetMapInfo("d01.blv");
+    ASSERT_NE(goblinwatch, MAP_INVALID);
+    game.teleportTo(goblinwatch, Vec3f(-1850, 4304, -512), 0); // First spawn point of d01.blv.
+    game.tick(1);
+
+    int monId = -1;
+    for (size_t i = 0; i < pActors.size(); i++) {
+        if (pActors[i].CanAct() && pActors[i].hp > 0 && pActors[i].monsterInfo.exp > 0) {
+            monId = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_NE(monId, -1);
+
+    // Kill it outright and wait out the death animation so a settled corpse is on the ground.
+    Actor::Die(monId);
+    for (int i = 0; i < 128 && pActors[monId].aiState != Dead; i++)
+        game.tick(1);
+    ASSERT_EQ(pActors[monId].aiState, Dead);
+
+    int expBefore = 0;
+    for (const Character &character : pParty->pCharacters)
+        expBefore += character.experience;
+
+    // Cast at the corpse at skill 20 Master -> 5% * 20 = 100% success were the target accepted. Cast through
+    // the real targeting window (overrideSoundId 0 -> ON_CAST_TargetedActor) and deliver the corpse Pid the
+    // way UIMSG_CastSpell_TargetActor does: PickMouseTarget's vis filter short-circuits on its decoration
+    // rule before the aiState test, so a clicked corpse arrives here unfiltered. (The quick-cast route is
+    // immune - castSpell's mouse-target fallback already checks CanAct.)
+    pushSpellOrRangedAttack(static_cast<SpellId>(95), 0, CombinedSkillValue(20, MASTERY_MASTER), 0, 0);
+    game.tick(1);
+    spellTargetPicked(Pid(OBJECT_Actor, monId), -1);
+    game.tick(1);
+
+    EXPECT_EQ(pActors[monId].aiState, Dead); // Not re-slain - the death did not re-run.
+
+    int expAfter = 0;
+    for (const Character &character : pParty->pCharacters)
+        expAfter += character.experience;
+    EXPECT_EQ(expAfter, expBefore); // No second kill reward.
+}
+
 // MM6's single-stat buff family - Lucky Day (48, Luck), Meditation (56, Intellect+Personality),
 // Precision (59, Accuracy), Speed (73, Speed) and Power (75, Might+Endurance) - has no MM7 counterpart,
 // so translateForCast runs each as an unrelated analog. castMm6UniqueSpell instead applies the real

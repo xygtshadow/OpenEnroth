@@ -222,7 +222,13 @@ static bool castMm6UniqueSpell(CastSpellInfo *pCastSpell, int spellLevel, Master
             // Attempts to immediately slay a single creature: 3/4/5% chance to succeed per point of skill at
             // Novice/Expert/Master. On success the target dies outright and rewards the party exactly like any
             // other kill; on a miss nothing happens.
-            if (spellTargetedAt.type() != OBJECT_Actor) {
+            // Corpses reach here through the targeting UI (the vis picker's decoration rule short-circuits
+            // before its aiState test), and Actor::Die has no already-dead guard - so a live-target check is
+            // needed to keep a clicked corpse from re-dying and re-awarding the kill experience.
+            if (spellTargetedAt.type() != OBJECT_Actor ||
+                    pActors[spellTargetedAt.id()].aiState == Dead ||
+                    pActors[spellTargetedAt.id()].aiState == Dying ||
+                    pActors[spellTargetedAt.id()].aiState == Removed) {
                 spellFailed(pCastSpell, LSTR_SPELL_FAILED);
                 setSpellRecovery(pCastSpell, failureRecoveryTime);
                 return true;
