@@ -243,7 +243,7 @@ void GUIWindow_Transport::mainDialogue() {
 
     for (DialogueId option : listDialogueOptions()) {
         if (option == DIALOGUE_TRANSPORT_MM6_PRICE_FIXING) {
-            optionsText.push_back(pNPCTopics[98].pTopic); // npctopic row 99 "Price Fixing".
+            optionsText.push_back(pNPCTopics[99].pTopic); // npctopic row 99 "Price Fixing" - pTopic is stored unshifted, unlike pText.
             hasActiveRoute = true;
             continue;
         }
