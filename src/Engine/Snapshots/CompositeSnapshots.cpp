@@ -583,9 +583,13 @@ void reconstruct(const OutdoorLocation_MM7 &src, OutdoorTerrain *dst) {
             dst->_originalTileMap[y][x] = mapToGlobalTileId(baseTileIds, src.tileMap[y * 128 + x]);
 
     dst->recalculateNormals();
-    dst->recalculateTransitions(&dst->_tileMap);
 
+    // Transitions must be recalculated on the fresh copy of the map that was just loaded. Doing it the other
+    // way around ran the pass on the previous map's tile ids (`OutdoorLocation` is a long-lived global) and
+    // then threw the result away. For MM7 that went unnoticed because `OutdoorLocation::Load` ends with a
+    // `changeSeason` call that recalculates transitions anyway, but MM6 has no seasons, so nothing did.
     dst->_tileMap = Image<int16_t>::copy(dst->_originalTileMap);
+    dst->recalculateTransitions(&dst->_tileMap);
 }
 
 void reconstruct(const OutdoorLocation_MM7 &src, OutdoorLocation *dst) {
