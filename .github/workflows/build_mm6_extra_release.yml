@@ -1,0 +1,78 @@
+name: Build MM6 Extra Release
+
+on:
+  workflow_dispatch: null
+  push:
+    branches:
+      - 'mm6-extra'
+
+permissions:
+  contents: write
+
+# A new push cancels the in-flight run so its jobs don't upload stale binaries to the release.
+concurrency:
+  group: build-mm6-extra-release
+  cancel-in-progress: true
+
+env:
+  TAG_NAME: mm6-extra-nightly
+
+jobs:
+  build_all:
+    uses: ./.github/workflows/build_all.yml
+    secrets: inherit
+    with:
+      # Only used for the zip file name here (must match env.TAG_NAME; the env context is
+      # unavailable in reusable-workflow `with:`). With publishArtifacts the build uploads
+      # the zips as workflow artifacts instead of touching the release, so a red build
+      # leaves the previous nightly's release, assets and tag completely untouched.
+      releaseTag: mm6-extra-nightly
+      publishArtifacts: true
+      targets: '["windows_x86_64"]'
+      configurations: '["Debug"]'
+      # The MM7 game-data cache is fed from a private repo via a secret this fork doesn't have.
+      skipGameTests: true
+
+  finalizeRelease:
+    name: Finalize MM6 Extra Release
+    needs: build_all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built zips
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Publish to release
+        shell: bash
+        env:
+          GH_TOKEN: '${{secrets.GITHUB_TOKEN}}'
+        run: |
+          set -euo pipefail
+          title="MM6 extra nightly $(date -u +%Y-%m-%d) (${GITHUB_SHA::9})"
+          notes="Automated build of branch mm6-extra @ $GITHUB_SHA"
+          # Never delete the release or its tag here: `gh release delete --cleanup-tag`
+          # before the build is exactly what used to destroy the last known-good
+          # binaries whenever anything later went red.
+          if ! gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "$title" \
+              --notes "$notes"
+          fi
+          # Replace the previous build's zips only now, after the whole build succeeded.
+          gh release upload "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --clobber *.zip
+          # Refreshing the metadata and advancing the tag are cosmetic; a failure there
+          # (API permission quirks) must not fail an otherwise successful publish.
+          gh release edit "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "$title" \
+            --notes "$notes" \
+            || echo "::warning::Could not refresh the $TAG_NAME release title/notes"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" \
+            -f sha="$GITHUB_SHA" -F force=true \
+            || echo "::warning::Could not advance the $TAG_NAME tag; it still points at the previous nightly"
