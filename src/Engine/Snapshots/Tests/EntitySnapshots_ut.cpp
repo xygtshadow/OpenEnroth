@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -10,7 +11,10 @@
 
 #include "Engine/Snapshots/EntitySnapshots.h"
 #include "Engine/Snapshots/CompositeSnapshots.h"
+#include "Engine/Data/TileEnums.h"
+#include "Engine/Graphics/OutdoorTerrain.h"
 #include "Engine/Graphics/Sprites.h"
+#include "Engine/Tables/TileTable.h"
 #include "Engine/Graphics/SpriteEnums.h"
 #include "Engine/Objects/DecorationList.h"
 #include "Engine/Objects/DecorationEnums.h"
@@ -425,4 +429,41 @@ GAME_TEST(SoundListMm6, ReconstructMapsFields) {
     EXPECT_EQ(dst.soundId, static_cast<SoundId>(8));
     EXPECT_EQ(dst.type, static_cast<SoundType>(1));
     EXPECT_TRUE(dst.flags & SOUND_FLAG_3D);
+}
+
+// Terrain transition tiles are applied by `OutdoorTerrain::recalculateTransitions`, and `reconstruct` is
+// the only thing that runs it for a map that's just been loaded. It used to run the pass before filling
+// the tile map, so it worked on whatever the previously loaded map had left there, and then dropped the
+// result. MM7 didn't notice because `OutdoorLocation::Load` ends with a `changeSeason` call that redoes
+// the pass, but MM6 has no seasons, so nothing recalculated transitions for it at all.
+GAME_TEST(OutdoorTerrain, ReconstructAppliesTransitions) {
+    int grassId = pTileTable->tileId(TILESET_GRASS, TILE_VARIANT_BASE1);
+    int waterId = pTileTable->tileId(TILESET_WATER, TILE_VARIANT_BASE1);
+    ASSERT_NE(grassId, 0);
+    ASSERT_NE(waterId, 0);
+
+    // An all-grass map with a single water tile in the middle. Tile map entries are per-map local ids:
+    // [90..126) index into the map's first tile type, [126..162) into the second one.
+    auto src = std::make_unique<OutdoorLocation_MM7>();
+    src->tileTypes[0].tileset = TILESET_MM7_GRASS;
+    src->tileTypes[1].tileset = TILESET_MM7_WATER;
+    src->tileMap.fill(90);
+    src->tileMap[64 * 128 + 64] = 126;
+
+    OutdoorTerrain terrain;
+    reconstruct(*src, &terrain);
+
+    EXPECT_EQ(terrain.tileIdByGrid(Pointi(64, 64)), waterId);
+
+    // The grass tile north of the water one borders it to the south, so it must come out as a grass
+    // south transition tile - and so on around the water tile. Without transitions all four stay plain
+    // grass, and the water tile is drawn with hard edges.
+    EXPECT_EQ(terrain.tileDataByGrid(Pointi(64, 63)).variant, TILE_VARIANT_TRANSITION_S);
+    EXPECT_EQ(terrain.tileDataByGrid(Pointi(64, 65)).variant, TILE_VARIANT_TRANSITION_N);
+    EXPECT_EQ(terrain.tileDataByGrid(Pointi(63, 64)).variant, TILE_VARIANT_TRANSITION_E);
+    EXPECT_EQ(terrain.tileDataByGrid(Pointi(65, 64)).variant, TILE_VARIANT_TRANSITION_W);
+    EXPECT_EQ(terrain.tileDataByGrid(Pointi(64, 63)).tileset, TILESET_GRASS);
+
+    // Grass that doesn't border anything else is left alone.
+    EXPECT_EQ(terrain.tileIdByGrid(Pointi(10, 10)), grassId);
 }
