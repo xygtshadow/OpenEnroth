@@ -4421,6 +4421,39 @@ GAME_TEST(Mm6, EnchantItemTiers) {
     EXPECT_FALSE(weapon->IsBroken());
 }
 
+GAME_TEST(Mm6, CastInInventoryExitButton) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    Character &caster = pParty->pCharacters[0];
+    caster.mana = 500;
+
+    // Enchant Item (native id 29) is one of MM6's four ON_CAST_TargetedEnchantment spells, so casting
+    // it opens the cast-in-inventory window with its own copy of the character-screen exit button.
+    pushSpellOrRangedAttack(static_cast<SpellId>(29), 0, CombinedSkillValue(10, MASTERY_MASTER), 0, 0);
+    game.tick(1);
+    ASSERT_TRUE(IsEnchantingInProgress);
+    ASSERT_EQ(current_screen_type, SCREEN_CASTING);
+    ASSERT_NE(pCharacterScreen_ExitBtn, nullptr);
+
+    // That button must carry the MM6 tab art - paperdoll_dbrds is only filled by the MM7 paperdoll
+    // loader, so under MM6 both textures used to be null.
+    ASSERT_EQ(pCharacterScreen_ExitBtn->vTextures.size(), 2);
+    EXPECT_NE(pCharacterScreen_ExitBtn->vTextures[0], nullptr);
+    EXPECT_NE(pCharacterScreen_ExitBtn->vTextures[1], nullptr);
+
+    // Click the two-pixel column covered by pCharacterScreen_ExitBtn (x 394-469) but not by the
+    // window's own pBtn_ExitCancel (x 392-467) - that is the click that routes to
+    // UIMSG_ClickExitCharacterWindowBtn, whose OnCancel2 blits vTextures[1] unconditionally.
+    game.pressAndReleaseButton(BUTTON_LEFT, 468, 330);
+    game.tick(3);
+    EXPECT_NE(current_screen_type, SCREEN_CASTING);
+    EXPECT_FALSE(IsEnchantingInProgress);
+}
+
 GAME_TEST(Mm6, SpellManaCosts) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
