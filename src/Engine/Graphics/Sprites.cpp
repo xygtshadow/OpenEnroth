@@ -201,7 +201,8 @@ int SpriteFrameTable::FastFindSprite(std::string_view pSpriteName) {
 
 //----- (0044D8D0) --------------------------------------------------------
 SpriteFrame *SpriteFrameTable::GetFrame(int uSpriteID, Duration uTime) {
-    SpriteFrame *v4 = &pSpriteSFrames[uSpriteID];
+    SpriteFrame *first = &pSpriteSFrames[uSpriteID];
+    SpriteFrame *v4 = first;
     if (!(v4->flags & SPRITE_FRAME_HAS_MORE) || !v4->animationLength)
         return v4;
 
@@ -209,12 +210,14 @@ SpriteFrame *SpriteFrameTable::GetFrame(int uSpriteID, Duration uTime) {
     for (Duration t = uTime % v4->animationLength; t >= v4->frameLength; ++v4)
         t -= v4->frameLength;
 
-    // TODO(pskelton): investigate and fix properly - dragon breath is missing last two frames??
-    // quick fix so it doesnt return empty sprite
-    while (v4->sprites[0] == NULL) {
-        //assert(false);
+    // Some framesets are missing trailing frames (MM7's dragon breath is short two), and MM6 even
+    // has framesets with no loadable sprites at all (light05/light07 animate over proje23* textures
+    // absent from MM6's sprites.lod). Fall back to the closest earlier frame of the SAME frameset -
+    // walking past its start would return a frame of whatever unrelated animation precedes it, or
+    // read out of bounds. If the whole frameset is empty, return its first frame; the draw paths
+    // null-check sprites[].
+    while (v4 > first && v4->sprites[0] == nullptr)
         --v4;
-    }
 
     return v4;
 }

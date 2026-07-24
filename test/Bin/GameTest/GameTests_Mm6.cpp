@@ -8840,6 +8840,42 @@ GAME_TEST(Mm6, ProjectileMissingOctantsDraw) {
     }
 }
 
+// MM6's dsft.bin also has whole framesets with no loadable sprites at all: "light05" and "light07"
+// (the Destroy Undead / Prismatic Light projectiles, dobjlist objects 8040/8070) animate over
+// proje23a..proje23f, none of which exist in MM6's sprites.lod, so every frame's sprites stay null.
+// GetFrame's missing-frame fallback walk must stay inside the requested frameset - it used to walk
+// backwards past the frameset start and return a frame of whatever unrelated animation happened to
+// precede it (spark01f), drawing a wrong sprite for the whole projectile lifetime, and would read
+// out of bounds if the preceding frames were unloaded too.
+GAME_TEST(Mm6, GetFrameStaysInsideFrameset) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(1);
+
+    int id = pSpriteFrameTable->FastFindSprite("light05");
+    ASSERT_NE(id, 0);
+    pSpriteFrameTable->InitializeSprite(id); // No-op, ObjectList::InitializeSprites already ran.
+
+    // Find the frameset extent, verifying the precondition: every frame of the animation is empty.
+    int end = id;
+    do {
+        EXPECT_TRUE(std::ranges::all_of(pSpriteFrameTable->pSpriteSFrames[end].sprites,
+                                        [](const Sprite *sprite) { return sprite == nullptr; }));
+    } while (pSpriteFrameTable->pSpriteSFrames[end++].flags & SPRITE_FRAME_HAS_MORE);
+
+    // Sample the whole animation - every returned frame must belong to the frameset.
+    Duration length = pSpriteFrameTable->pSpriteSFrames[id].animationLength;
+    ASSERT_NE(length, Duration());
+    for (Duration t; t < length; t += Duration::fromTicks(1)) {
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(id, t);
+        int frameIndex = static_cast<int>(frame - pSpriteFrameTable->pSpriteSFrames.data());
+        EXPECT_GE(frameIndex, id);
+        EXPECT_LT(frameIndex, end);
+    }
+}
+
 // MM6's reputation is a single GLOBAL party value (MM6.EXE party+0xD8 @0x908D48, positive = good),
 // while the engine stores a per-map value in LocationInfo::reputation. The current map's slot stays
 // the working copy every consumer reads and writes (and the save format carries), and DoPrepareWorld
