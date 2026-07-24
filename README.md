@@ -10,7 +10,7 @@ OpenEnroth is an open-source reimplementation of the Might & Magic VI-VIII game 
 original games on modern platforms. It uses the original game data, so you will need a copy of the game to play.
 
 Currently MM7 is fully playable, and this branch also makes MM6 playable — pass `--game-version mm6`,
-or just run OpenEnroth from your MM6 folder (see [Selecting the game](#selecting-the-game)).
+or just run OpenEnroth from your MM6 folder (see the "Selecting the game" section below).
 MM8 support is planned — check the
 [milestones](https://github.com/OpenEnroth/OpenEnroth/milestones) to see where we're at.
 
