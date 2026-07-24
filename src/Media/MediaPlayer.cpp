@@ -139,6 +139,17 @@ class AVStreamWrapper {
 
 class AVAudioStream : public AVStreamWrapper {
  public:
+    virtual ~AVAudioStream() override {
+        // ~AVStreamWrapper also calls close(), but a virtual call from a base destructor doesn't
+        // reach this override, so the converter has to be freed from here.
+        close();
+    }
+
+    virtual void close() override {
+        swr_free(&converter);  // No-op on a null context, and nulls the pointer.
+        AVStreamWrapper::close();
+    }
+
     virtual bool open(AVFormatContext *format_ctx) override {
         if (!AVStreamWrapper::open(format_ctx, AVMEDIA_TYPE_AUDIO)) {
             return false;
@@ -228,6 +239,17 @@ class AVAudioStream : public AVStreamWrapper {
 
 class AVVideoStream : public AVStreamWrapper {
  public:
+    virtual ~AVVideoStream() override {
+        // See the comment in ~AVAudioStream - the base destructor's close() call isn't virtual.
+        close();
+    }
+
+    virtual void close() override {
+        sws_freeContext(converter);  // No-op on a null context.
+        converter = nullptr;
+        AVStreamWrapper::close();
+    }
+
     virtual bool open(AVFormatContext *format_ctx) override {
         if (!AVStreamWrapper::open(format_ctx, AVMEDIA_TYPE_VIDEO)) {
             return false;
