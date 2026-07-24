@@ -1104,9 +1104,15 @@ std::unique_ptr<TargetedSpellUI> CastSpellInfo::GetCastSpellInInventoryWindow() 
     CharacterUI_LoadPaperdollTextures();
     current_screen_type = SCREEN_CASTING;
     std::unique_ptr<TargetedSpellUI> CS_inventory_window = std::make_unique<GUIWindow_Inventory_CastSpell>(Pointi(0, 0), render->GetRenderDimensions(), this, "");
+    // The MM6 paperdoll loader never fills paperdoll_dbrds, so the exit button has to take its art from
+    // the MM6 tab row like GUIWindow_CharacterRecord does - the MM7 textures would both be nullptr, and
+    // UIMSG_ClickExitCharacterWindowBtn's OnCancel2 blits vTextures[1] unconditionally. The MM7 geometry
+    // below already matches MM6's exit tab (kMm6CharTabButtonX[4], kMm6CharTabButtonY, 75x33).
+    bool isMm6 = engine->gameVersion() == GAME_VERSION_MM6;
     pCharacterScreen_ExitBtn = CS_inventory_window->CreateButton({394, 318}, {75, 33}, BUTTON_TYPE_NORMAL, 0,
         UIMSG_ClickExitCharacterWindowBtn, 0, INPUT_ACTION_INVALID, localization->str(LSTR_EXIT_DIALOGUE),
-        {{paperdoll_dbrds[2], paperdoll_dbrds[1]}});
+        isMm6 ? std::vector<GraphicsImage *>{paperdollMm6TabButtons[4][0], paperdollMm6TabButtons[4][1]}
+              : std::vector<GraphicsImage *>{paperdoll_dbrds[2], paperdoll_dbrds[1]});
     CS_inventory_window->CreateButton({0, 0}, {0x1DCu, 0x159u}, BUTTON_TYPE_NORMAL, 122, UIMSG_InventoryLeftClick, 0);
     pCharacterScreen_DollBtn = CS_inventory_window->CreateButton({0x1DCu, 0}, {0xA4u, 0x159u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ClickPaperdoll, 0);
 

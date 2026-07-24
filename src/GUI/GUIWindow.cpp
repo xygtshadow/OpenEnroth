@@ -473,11 +473,19 @@ void DialogueEnding() {
     pEventTimer->setPaused(false);
 }
 
+// Not every button carries both a released and a pressed image - MM7's paperdoll tab buttons only ever
+// fill the pressed slot, and version-specific windows can leave a slot empty altogether. DrawQuad2D
+// dereferences its texture unconditionally, so a missing image must be skipped here.
+static void drawButtonTexture(GUIButton *button, size_t index, Pointi position) {
+    if (index < button->vTextures.size() && button->vTextures[index])
+        render->DrawQuad2D(button->vTextures[index], position);
+}
+
 void OnButtonClick::Update() {
     if (_playSound) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawButtonTexture(_button, 0, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -488,7 +496,7 @@ void OnButtonClick::Update() {
 void OnButtonClick3::Update() {
     pAudioPlayer->playUISound(SOUND_StartMainChoice02);
 
-    render->DrawQuad2D(_button->vTextures[1], frameRect.topLeft());
+    drawButtonTexture(_button, 1, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -500,7 +508,7 @@ void OnButtonClick4::Update() {
     if (!sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[1], frameRect.topLeft());
+    drawButtonTexture(_button, 1, frameRect.topLeft());
 
     delete this;
 }
@@ -509,7 +517,7 @@ void OnSaveLoad::Update() {
     if (!sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawButtonTexture(_button, 0, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -527,7 +535,7 @@ void OnCancel::Update() {
     if (sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawButtonTexture(_button, 0, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -541,7 +549,7 @@ void OnCancel2::Update() {
     if (!sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[1], frameRect.topLeft());
+    drawButtonTexture(_button, 1, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -556,7 +564,7 @@ void OnCancel3::Update() {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
 
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawButtonTexture(_button, 0, frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
