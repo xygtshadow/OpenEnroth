@@ -45,7 +45,9 @@ extern OpenALSoundProvider *provider;
 AudioPlayer::~AudioPlayer() = default;
 
 void AudioPlayer::MusicPlayTrack(MusicId eTrack, float startSeconds) {
-    if (currentMusicTrack == eTrack) {
+    // The same track at a different start offset has to restart: MM6's title theme (track 13, played
+    // from +18.5s) is also Mire of the Damned's level track, which has to start at 0.
+    if (currentMusicTrack == eTrack && _currentMusicStartSeconds == startSeconds) {
         return;
     }
 
