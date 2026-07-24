@@ -5170,6 +5170,26 @@ GAME_TEST(Mm6, GuardianAngel) {
         EXPECT_EQ(character.health, 1);
 }
 
+// pParty is created once per process and New Game only runs Party::Reset() -> Party::Zero() on it, so
+// every transient MM6 field Zero() misses survives a return to the main menu and leaks into the fresh
+// game: an old Guardian Angel stays active (buff icon + the half-gold resurrect compact), and the bribe
+// counter keeps pricing bribes as if the previous game's bribes had happened.
+GAME_TEST(Mm6, NewGameClearsMm6PartyState) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    pParty->_mm6GuardianAngelExpireTime = pParty->GetPlayingTime() + Duration::fromDays(30);
+    pParty->_mm6GuardianAngelMastery = MASTERY_MASTER;
+    pParty->_mm6NpcBribeCount = 20;
+
+    game.startNewGame(); // Main menu -> New Game -> resetForNewGame() -> Party::Reset().
+
+    EXPECT_EQ(pParty->_mm6GuardianAngelExpireTime, Time());
+    EXPECT_EQ(pParty->_mm6GuardianAngelMastery, MASTERY_NONE);
+    EXPECT_EQ(pParty->_mm6NpcBribeCount, 0);
+}
+
 // Opens the proprietor dialogue in a freshly entered house. Houses with a single occupant open it
 // automatically; houses that also lodge npcdata NPCs (like MM6's town halls) show a portrait row
 // instead, and the proprietor - always first in houseNpcs - must be clicked.

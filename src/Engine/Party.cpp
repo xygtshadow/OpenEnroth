@@ -114,9 +114,12 @@ void Party::Zero() {
     _autonoteBits.reset();
     uNumArcomageWins = 0;
     uNumArcomageLoses = 0;
+    _mm6GuardianAngelExpireTime = Time();
+    _mm6GuardianAngelMastery = MASTERY_NONE;
     _mm6TavernsDrunkIn.clear();
     _mm6TavernRumors.clear();
     _mm6SeerNextPilgrimageReset = Time();
+    _mm6NpcBribeCount = 0;
     _mm6GlobalReputation = 0;
     _mm6GlobalReputationPrimed = false;
     bTurnBasedModeOn = false;
