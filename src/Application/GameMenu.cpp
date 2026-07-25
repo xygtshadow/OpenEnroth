@@ -278,6 +278,26 @@ void Menu::EventLoop() {
                 gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
                 continue;
             }
+            case UIMSG_ChangeMouseSensitivity: {
+                // Ten stops rather than a raw float: the MM6 slider indicator has ten frames, and the
+                // stop table is weighted to the low end where the useful range is. See UIGame.cpp.
+                VolumeSliderSkin skin = mouseSensitivitySliderSkin();
+                int stop = mouseSensitivityStop();
+                if (param == 4) {
+                    stop--;
+                    new OnButtonClick(skin.leftArrow, {0, 0}, pBtn_SliderLeft, std::string(), false);
+                } else if (param == 5) {
+                    stop++;
+                    new OnButtonClick(skin.rightArrow, {0, 0}, pBtn_SliderRight, std::string(), false);
+                } else {
+                    stop = (mouse->position().x - skin.bar.x) / skin.step;
+                }
+
+                // mouseSensitivityForStop clamps, so the arrows stop at the ends of the table.
+                engine->config->settings.MouseLookSensitivity.setValue(mouseSensitivityForStop(stop));
+                pAudioPlayer->playUISound(SOUND_ClickMovingSelector);
+                continue;
+            }
             case UIMSG_ToggleBloodsplats:
                 engine->config->graphics.BloodSplats.toggle();
                 continue;

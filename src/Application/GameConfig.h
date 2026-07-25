@@ -639,7 +639,9 @@ class GameConfig : public Config {
 
         Bool ExtendedMonsterInfo = {this, "extended_monster_info", true, "Display second and special attack in the Monster Info popup."};
 
-        Float MouseLookSensitivity = { this, "mouse_look_sens", 0.5f, "Mouse sensitivity in mouse look mode." };
+        Float MouseLookSensitivity = { this, "mouse_look_sens", 0.3f, "Mouse sensitivity in mouse look mode. "
+                                       "Adjustable in game on MM6's Keyboard & Mouse screen, which snaps it to one of "
+                                       "ten stops between 0.1 and 1.0 - a value set here is used as is until then." };
 
         Bool MouseLookEnabled = {this, "mouse_look_enabled", false, "Whether mouse look is enabled. Persisted between sessions."};
 

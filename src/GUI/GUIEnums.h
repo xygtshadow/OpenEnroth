@@ -221,6 +221,8 @@ enum UIMessageType : uint32_t {
     // The two buttons on MM6's new-game prologue ("segue") screen (MM6.EXE @0x452bd0).
     UIMSG_Mm6Segue_CreateParty = 2003,
     UIMSG_Mm6Segue_QuickStart = 2004,
+    // Mouse look sensitivity slider on MM6's Keyboard & Mouse screen - mm6-extra's own screen.
+    UIMSG_ChangeMouseSensitivity = 2005,
 
     UIMSG_Invalid = 0xffffffff
 };

@@ -190,6 +190,27 @@ VolumeSliderSkin volumeSliderSkin(int row);
 VolumeSliderSkin gammaSliderSkin();
 
 /**
+ * Mouse look sensitivity slider on MM6's key-binding screen. mm6-extra's own - vanilla MM6 has no such
+ * screen, and MM7's optkb art leaves no free strip for one, so the setting stays ini-only in MM7.
+ *
+ * @return                              Slider geometry, same contract as gammaSliderSkin().
+ */
+VolumeSliderSkin mouseSensitivitySliderSkin();
+
+/**
+ * @param stop                          Slider stop, clamped into range.
+ * @return                              Sensitivity value at that stop.
+ */
+float mouseSensitivityForStop(int stop);
+
+/**
+ * @return                              Stop nearest the configured sensitivity. A hand-edited ini value
+ *                                      that sits between stops renders at the nearest one and is left
+ *                                      alone until the player actually clicks the slider.
+ */
+int mouseSensitivityStop();
+
+/**
  * @return                              Number of key-binding rows on one page of the controls menu.
  *                                      MM7's optkb art has exactly 14 engraved slots. MM6 has no art
  *                                      for the screen at all, so OE draws its own panel there and can

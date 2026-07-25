@@ -6931,8 +6931,9 @@ GAME_TEST(Mm6, ExtraSettingsScreens) {
     game.pressGuiButton("Mm6_KeyboardSettings");
     game.tick(3);
     ASSERT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
-    // 16 key boxes over 8 rows x 2 columns, plus Page 1 / Page 2 / Default / Controls / Return.
-    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 21u);
+    // 16 key boxes over 8 rows x 2 columns, plus Page 1 / Page 2 / Default / Controls / Return and
+    // the mouse sensitivity slider's two arrows and bar.
+    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 24u);
 
     // Page 2's right column reaches Strafe Right at index 29, the last configurable action. Rebind
     // Strafe Left through the real flow: click its box, then press the new key.
@@ -6949,6 +6950,52 @@ GAME_TEST(Mm6, ExtraSettingsScreens) {
     game.pressGuiButton("KeyBinding_Default");
     game.tick(2);
     EXPECT_EQ(curr_key_map[INPUT_ACTION_STRAFE_LEFT], PlatformKey::KEY_A);
+
+    // Mouse sensitivity lives on the strip below the key rows: ten stops weighted to the low end,
+    // a 160px bar from x=180 at y=252 stepping 16px, arrows either side. It was ini-only before.
+    float sensitivity = engine->config->settings.MouseLookSensitivity.value();
+    MM_AT_SCOPE_EXIT({
+        engine->config->settings.MouseLookSensitivity.setValue(sensitivity);
+    });
+
+    engine->config->settings.MouseLookSensitivity.setValue(0.30f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 180 + 16 * 9 + 8, 260);  // Last stop.
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 1.00f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 180 + 16 * 2 + 8, 260);  // Third stop.
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.20f);
+
+    // The arrows step one stop each way...
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 260);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.25f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 166, 260);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.20f);
+
+    // ...and clamp at the ends rather than running off the table.
+    engine->config->settings.MouseLookSensitivity.setValue(0.10f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 166, 260);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.10f);
+    engine->config->settings.MouseLookSensitivity.setValue(1.00f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 260);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 1.00f);
+
+    // A hand-edited ini value that sits between stops renders at the nearest one and is left alone
+    // until the player actually clicks - drawing the screen must not rewrite it.
+    engine->config->settings.MouseLookSensitivity.setValue(0.37f);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.37f);
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 260);
+    game.tick(2);
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.value(), 0.50f);
+
+    // The shipped default is itself a stop - one between stops would jump on the first click.
+    EXPECT_FLOAT_EQ(engine->config->settings.MouseLookSensitivity.defaultValue(), 0.30f);
+
     game.pressGuiButton("Mm6_KeyBindingBack");
     game.tick(3);
     ASSERT_EQ(current_screen_type, SCREEN_OPTIONS);

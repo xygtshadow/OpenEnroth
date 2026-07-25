@@ -439,6 +439,23 @@ GUIWindow_GameKeyBindings::GUIWindow_GameKeyBindings()
                      UIMSG_ResetKeyMapping, 0);
         CreateButton("Mm6_KeyBindingBack", kMm6KeyBackRect.topLeft(), kMm6KeyBackRect.size(), BUTTON_TYPE_NORMAL, 0,
                      UIMSG_Game_OpenOptionsDialog, 0);
+
+        // The mouse look sensitivity slider, on the strip the key rows leave free. MM6 has the arrows
+        // and the level indicators - the same ones its Controls screen uses for the volume bars - but
+        // only the video window loads them, and either screen can be opened first.
+        options_menu_skin.uTextureID_ArrowLeft = assets->getImage_Alpha("con_ArrL");
+        options_menu_skin.uTextureID_ArrowRight = assets->getImage_Alpha("con_ArrR");
+        for (int i = 0; i < 9; i++)
+            game_ui_menu_options_video_gamma_positions[i] = assets->getImage_ColorKey(fmt::format("convol{}0", i + 1));
+        game_ui_menu_options_video_gamma_positions[9] = assets->getImage_ColorKey("convol00");
+
+        VolumeSliderSkin sensitivity = mouseSensitivitySliderSkin();
+        pBtn_SliderLeft = CreateButton(sensitivity.leftArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_ChangeMouseSensitivity, 4, INPUT_ACTION_INVALID, "", {options_menu_skin.uTextureID_ArrowLeft});
+        pBtn_SliderRight = CreateButton(sensitivity.rightArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0,
+            UIMSG_ChangeMouseSensitivity, 5, INPUT_ACTION_INVALID, "", {options_menu_skin.uTextureID_ArrowRight});
+        CreateButton(sensitivity.bar.topLeft(), sensitivity.bar.size(), BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_ChangeMouseSensitivity, 0);
         CreateButton("Mm6_KeyBindingReturn", kMm6KeyReturnRect.topLeft(), kMm6KeyReturnRect.size(), BUTTON_TYPE_NORMAL, 0,
                      UIMSG_Escape, 0);
 
@@ -510,7 +527,7 @@ void GUIWindow_GameKeyBindings::Update() {
     }
 
     if (engine->gameVersion() == GAME_VERSION_MM6) {
-        drawMm6SettingsPanel("Keyboard");
+        drawMm6SettingsPanel("Keyboard & Mouse");
 
         int pageOffset = (KeyboardPageNum - 1) * keyBindingPageSize();
         for (int column = 0; column < 2; column++) {
@@ -529,6 +546,15 @@ void GUIWindow_GameKeyBindings::Update() {
                          GetDisplayName(curr_key_map[action]), frameRect);
             }
         }
+
+        VolumeSliderSkin sensitivity = mouseSensitivitySliderSkin();
+        int sensitivityStop = mouseSensitivityStop();
+        DrawText(assets->pFontLucida.get(), {kMm6KeyActionX[0], sensitivity.bar.y + 3}, kMm6SettingsLabel,
+                 "Mouse Sensitivity", frameRect);
+        render->FillRect(sensitivity.bar, kMm6SettingsButtonFill);
+        drawMm6SettingsFrame(sensitivity.bar);
+        render->DrawQuad2D(game_ui_menu_options_video_gamma_positions[sensitivityStop],
+                           {sensitivity.thumb.x + sensitivity.step * sensitivityStop, sensitivity.thumb.y});
 
         drawMm6SettingsButton(kMm6KeyPage1Rect, "Page 1", KeyboardPageNum == 1);
         drawMm6SettingsButton(kMm6KeyPage2Rect, "Page 2", KeyboardPageNum != 1);
@@ -812,6 +838,32 @@ VolumeSliderSkin gammaSliderSkin() {
         return {{160, 62}, {344, 62}, {180, 62, 160, 16}, {180, 62}, 16};
 
     return {{21, 161}, {213, 161}, {42, 160, 170, 17}, {42, 162}, 17};
+}
+
+// MM6's slider indicator art has exactly ten frames (convol10..convol90, convol00), so the sensitivity
+// slider has ten stops. They are weighted toward the low end because that is where the useful range
+// turned out to be - 0.5 still play-tests as quick - and because a linear 0.1 step would double the
+// sensitivity in a single click down at 0.1.
+static const std::array<float, 10> kMouseSensitivityStops = {{0.10f, 0.15f, 0.20f, 0.25f, 0.30f,
+                                                              0.40f, 0.50f, 0.65f, 0.80f, 1.00f}};
+
+VolumeSliderSkin mouseSensitivitySliderSkin() {
+    // The gamma slider's geometry, on the strip MM6's key rows leave free above the page buttons.
+    return {{160, 252}, {344, 252}, {180, 252, 160, 16}, {180, 252}, 16};
+}
+
+float mouseSensitivityForStop(int stop) {
+    return kMouseSensitivityStops[std::clamp(stop, 0, static_cast<int>(kMouseSensitivityStops.size()) - 1)];
+}
+
+int mouseSensitivityStop() {
+    float value = engine->config->settings.MouseLookSensitivity.value();
+
+    size_t result = 0;
+    for (size_t i = 1; i < kMouseSensitivityStops.size(); i++)
+        if (std::abs(kMouseSensitivityStops[i] - value) < std::abs(kMouseSensitivityStops[result] - value))
+            result = i;
+    return static_cast<int>(result);
 }
 
 GUIWindow_GameOptions::GUIWindow_GameOptions()
