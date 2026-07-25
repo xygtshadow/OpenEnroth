@@ -2,9 +2,24 @@
 
 #include <string>
 
+#include "Engine/Objects/MonsterEnums.h"
+
 #include "Library/Geometry/Point.h"
 
 void DrawPopupWindow(int uX, int uY, int uWidth, int uHeight);  // idb
+
+/** Side of the square portrait box that the monster info popup draws the monster's sprite into. */
+constexpr int monsterPopupPortraitSize = 128;
+
+/**
+ * Monster sprites are far taller than the portrait box, so both games ship a per-monster-family table saying
+ * which part of the sprite the popup should frame.
+ *
+ * @param monsterId                 Monster whose portrait is being drawn.
+ * @return                          Y offset, relative to the top of the portrait box, at which the monster's
+ *                                  sprite is drawn. Negative offsets crop the top of the sprite.
+ */
+int monsterPopupPortraitYOffset(MonsterId monsterId);
 
 /**
  * If `mousePos` is over a character portrait, uses the picked item on that character and return true. Note that using

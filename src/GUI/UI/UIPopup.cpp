@@ -200,6 +200,32 @@ IndexedArray<int, MONSTER_TYPE_FIRST, MONSTER_TYPE_LAST> monster_popup_y_offsets
     {MONSTER_TYPE_UNUSED_RAT,               0},
 };
 
+// MM6's own portrait offsets, MM6.EXE 0x4BD10C. Indexed the same way as the MM7 table above - by 3-tier monster
+// family, `(monsterId - 1) / 3` - but the values are already relative to the top of the portrait: MM6's draw code
+// (MM6.EXE 0x41D06E) adds them straight to the portrait's origin where MM7 subtracts a further 40. MM6 monster ids
+// stop at 173 (zReactor), so the last two families are padding.
+static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
+    -40,  -30,  -20,    0,  -30,    0,  -30,    0,  -60,    0,    0,    0,  // Monsters 1-36.
+    -60, -100,  -30,  -30,    0,    0,    0,  -20,    0,    0, -120,    0,  // Monsters 37-72.
+      0,  -20,    0,  -50,    0,    0,    0,    0,    0,    0,    0,    0,  // Monsters 73-108.
+      0,    0,  -30,  -50,    0,    0,    0,  -30,    0,    0,    0,    0,  // Monsters 109-144.
+      0,  -20,    0,  -20,    0,   30,    0,    0,    0,    0,    0,    0,  // Monsters 145-180.
+};
+
+int monsterPopupPortraitYOffset(MonsterId monsterId) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 monster ids index MM6's monsters.txt, so the MM7 MonsterType families don't apply.
+        // Note that MM6 gives the portrait the popup's whole 230px interior, starting 38px above the point these
+        // offsets are measured from, where we frame it in a 128px box. Dropping that top margin - i.e. applying
+        // the offsets straight to the top edge of our box - is what keeps a townsfolk's head in frame.
+        int family = (std::to_underlying(monsterId) - 1) / 3;
+        if (family < 0 || family >= static_cast<int>(monsterPopupYOffsetsMm6.size()))
+            return 0;
+        return monsterPopupYOffsetsMm6[family];
+    }
+    return monster_popup_y_offsets[monsterTypeForMonsterId(monsterId)] - 40;
+}
+
 // OE addition - colors for monster special attack text.
 static constexpr IndexedArray<Color, SPECIAL_ATTACK_FIRST, SPECIAL_ATTACK_LAST> monsterSpecialAttackColors = {
     {SPECIAL_ATTACK_CURSE,          colorTable.Cioccolato},
@@ -644,7 +670,7 @@ std::pair<int, int> MonsterPopup_Draw(unsigned int uActorID, Recti* pWindow) {
         , X_RIGHT_DATA = X_RIGHT_COLUMN + 91                // Numbers
         , X_POS_DOLL = X_LEFT_COLUMN + 1                    // 1px frame
         , Y_POS_DOLL = 52
-        , SIZE_DOLL = 128
+        , SIZE_DOLL = monsterPopupPortraitSize
         , Y_EFFECT_LIST = Y_POS_DOLL + SIZE_DOLL            // Lower edge doll frame - add an empty line!
         , RIGHT_BOTTOM_MARGIN = 16;                         // Added to measured bottom and right edge of rendered text
 
@@ -704,8 +730,7 @@ std::pair<int, int> MonsterPopup_Draw(unsigned int uActorID, Recti* pWindow) {
             render->EndLines2D();
 
             // Draw portrait
-            int Popup_Y_Offset = monster_popup_y_offsets[monsterTypeForMonsterId(monsterInfo.id)] - 40;
-            render->DrawMonsterPortrait(doll_rect, Portrait_Sprite, Popup_Y_Offset);
+            render->DrawMonsterPortrait(doll_rect, Portrait_Sprite, monsterPopupPortraitYOffset(monsterInfo.id));
         }
         pMonsterInfoUI_Doll.currentActionTime += pMiscTimer->dt();
 
