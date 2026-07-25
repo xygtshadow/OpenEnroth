@@ -320,6 +320,7 @@ void Io::Mouse::SetMouseLook(MouseLookState look) {
         _position = pViewport.center();
         warpMouse(_position);
         window->setMouseRelative(look == MouseLookState::Enabled);
+        _lookResidue = {}; // Don't apply motion left over from before the state change.
     }
     _mouseLook = look;
 }
@@ -339,12 +340,22 @@ void Io::Mouse::DoMouseLook(Pointi relChange) {
         return;
     }
 
-    float modX = relChange.x * engine->config->settings.MouseLookSensitivity.value();
-    float modY = relChange.y * engine->config->settings.MouseLookSensitivity.value();
-    pParty->_viewPitch -= modY;
-    pParty->_viewPitch = std::clamp(pParty->_viewPitch, -320, 320);
-    pParty->_viewYaw -= modX;
-    pParty->_viewYaw &= TrigLUT.uDoublePiMask;
+    // The view angles are integers, and a motion event carries only a pixel or two, so below a
+    // sensitivity of 1.0 a single event asks for a fraction of a unit of rotation. Truncating that per
+    // event doesn't merely lose precision - conversion to int truncates toward zero, so it eats the
+    // movement outright in the direction away from zero and rounds it up to a whole unit in the other:
+    // a deadzone turning one way, a jump turning the other. Carry the remainder to the next event.
+    float sensitivity = engine->config->settings.MouseLookSensitivity.value();
+    _lookResidue.x += relChange.x * sensitivity;
+    _lookResidue.y += relChange.y * sensitivity;
+
+    int modX = static_cast<int>(_lookResidue.x); // Toward zero, so the remainder keeps the motion's sign.
+    int modY = static_cast<int>(_lookResidue.y);
+    _lookResidue.x -= modX;
+    _lookResidue.y -= modY;
+
+    pParty->_viewPitch = std::clamp(pParty->_viewPitch - modY, -320, 320);
+    pParty->_viewYaw = (pParty->_viewYaw - modX) & TrigLUT.uDoublePiMask;
 }
 
 void Io::Mouse::RestoreMouseLook() {
