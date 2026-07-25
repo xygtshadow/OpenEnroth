@@ -57,6 +57,24 @@ static float partyHiSphereRadius() {
 }
 
 /**
+ * Whether the collision that `collision_state` currently holds was registered by one of the spheres
+ * above the party's feet, and so must not be allowed to slide the party downwards.
+ *
+ * The sliding plane is built by dragging the contact point down by the colliding sphere's height
+ * offset, which lands it at foot level only for a contact at that sphere's own center height. An edge
+ * contact sits off center and tilts the plane into the ground instead. MM6's wall-mounted shop signs
+ * are the case that shows it up - their board hangs too low for the party to pass under, and catching
+ * its bottom edge buried the party ~16 units into the terrain and squeezed it through rather than
+ * stopping it.
+ *
+ * MM6-only for the same reason as `partyHiSphereOffset` - MM7's traces are recorded against the
+ * current sliding behavior, and 6 of them desync on this.
+ */
+static bool cantSlideDownFromAbove() {
+    return engine->gameVersion() == GAME_VERSION_MM6 && collision_state.heightOffset > 0.0f;
+}
+
+/**
  * @param pos                           Position of the sphere.
  * @param p1                            Starting point of line.
  * @param p2                            End point of line.
@@ -1028,6 +1046,10 @@ void ProcessPartyCollisionsBLV(int sectorId, int min_party_move_delta_sqr, int *
             if (bFaceSlopeTooSteep && newDirection.z > 0)
                 newDirection.z = 0;
 
+            // And nothing caught above the feet can push the party down, see `cantSlideDownFromAbove`.
+            if (cantSlideDownFromAbove() && newDirection.z < 0)
+                newDirection.z = 0;
+
             newDirection.normalize();
 
             // Push away from the surface and add a touch down for better slide
@@ -1207,6 +1229,10 @@ void ProcessPartyCollisionsODM(Vec3f *partyNewPos, Vec3f *partyInputSpeed, int *
 
             // Cant push uphill on steep faces
             if (bFaceSlopeTooSteep && newDirection.z > 0)
+                newDirection.z = 0;
+
+            // And nothing caught above the feet can push the party down, see `cantSlideDownFromAbove`.
+            if (cantSlideDownFromAbove() && newDirection.z < 0)
                 newDirection.z = 0;
 
             newDirection.normalize();
