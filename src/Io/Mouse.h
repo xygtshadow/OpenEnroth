@@ -7,6 +7,7 @@
 #include "Engine/Pid.h"
 
 #include "Library/Geometry/Point.h"
+#include "Library/Geometry/Vec.h"
 
 class GraphicsImage;
 
@@ -58,6 +59,7 @@ class Mouse {
     void DoMouseLook(Pointi relChange);
     void RestoreMouseLook();
     MouseLookState _mouseLook = MouseLookState::Disabled;
+    Vec2f _lookResidue; // Sub-unit mouse look rotation carried between motion events, see DoMouseLook.
 };
 }  // namespace Io
 

@@ -25,6 +25,8 @@
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 
+#include "Io/Mouse.h"
+
 #include "Library/FileSystem/Memory/MemoryFileSystem.h"
 #include "Library/Platform/Application/PlatformApplication.h"
 #include "Library/Platform/Interface/PlatformEnumFunctions.h"
@@ -131,6 +133,18 @@ void EngineController::moveMouse(int x, int y) {
     event->button = BUTTON_NONE;
     event->buttons = BUTTON_NONE;
     event->pos = render->MapToPresent({ x, y });
+    event->isDoubleClick = false;
+    postEvent(std::move(event));
+}
+
+void EngineController::moveMouseBy(int dx, int dy) {
+    std::unique_ptr<PlatformMouseEvent> event = std::make_unique<PlatformMouseEvent>();
+    event->type = EVENT_MOUSE_MOVE;
+    event->window = ::application->window();
+    event->button = BUTTON_NONE;
+    event->buttons = BUTTON_NONE;
+    event->pos = render->MapToPresent(mouse->position());
+    event->rel = {dx, dy};
     event->isDoubleClick = false;
     postEvent(std::move(event));
 }

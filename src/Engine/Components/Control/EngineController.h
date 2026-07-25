@@ -47,6 +47,16 @@ class EngineController {
     void releaseButton(PlatformMouseButton button, int x, int y);
     void moveMouse(int x, int y);
 
+    /**
+     * Posts a mouse move event carrying only a relative delta, like the ones a real mouse generates -
+     * the cursor position is left where it is. This is what drives mouse look, which reads the delta
+     * and ignores the position.
+     *
+     * @param dx                        Horizontal movement in pixels, positive is right.
+     * @param dy                        Vertical movement in pixels, positive is down.
+     */
+    void moveMouseBy(int dx, int dy);
+
     void pressAndReleaseKey(PlatformKey key);
     void pressAndReleaseButton(PlatformMouseButton button, int x, int y);
 

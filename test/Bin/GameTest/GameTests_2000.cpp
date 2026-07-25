@@ -31,6 +31,7 @@
 
 #include "Io/Mouse.h"
 
+#include "Utility/ScopeGuard.h"
 #include "Utility/Segment.h"
 
 #include "GameTestCommon.h"
@@ -1291,4 +1292,57 @@ GAME_TEST(Issues, Issue2507) {
     auto damageRange = hpTape.reverse().adjacentDeltas().minMax();
     EXPECT_GE(damageRange[0], 10);
     EXPECT_LE(damageRange[1], 80); // Per-hit damage is within the 10d8 range.
+}
+
+GAME_TEST(MouseLook, SmallMovementsAccumulate) {
+    // Mouse look rotation used to be truncated into the integer view angles once per motion event, and
+    // an event carries only a pixel or two. Below one unit of rotation per event - which is anything
+    // under a sensitivity of 1.0 - float-to-int conversion truncating toward zero ate the movement
+    // entirely in the direction away from zero and rounded it up to a whole unit in the other: a
+    // deadzone turning one way, an overshoot turning the other. The remainder has to carry over.
+    game.startNewGame();
+
+    float oldSensitivity = engine->config->settings.MouseLookSensitivity.value();
+    MM_AT_SCOPE_EXIT({
+        engine->config->settings.MouseLookSensitivity.setValue(oldSensitivity);
+        mouse->SetMouseLook(Io::Mouse::Disabled);
+    });
+
+    // 0.25 is exactly representable, so four one-pixel events are exactly one unit of rotation and the
+    // expected totals below are exact.
+    engine->config->settings.MouseLookSensitivity.setValue(0.25f);
+    mouse->SetMouseLook(Io::Mouse::Enabled);
+
+    auto moveMouseBy = [&](int dx, int dy, int times) {
+        for (int i = 0; i < times; i++)
+            game.moveMouseBy(dx, dy);
+        game.tick(1);
+    };
+
+    // Yaw is masked into [0, 2047], so it is always non-negative: turning right walks it toward zero
+    // and turning left walks it away. Both used to be broken, in opposite directions.
+    pParty->_viewYaw = 1024;
+    moveMouseBy(1, 0, 20);
+    EXPECT_EQ(pParty->_viewYaw, 1024 - 5);  // Was 1024 - 20: every event overshot to a full unit.
+
+    pParty->_viewYaw = 1024;
+    moveMouseBy(-1, 0, 20);
+    EXPECT_EQ(pParty->_viewYaw, 1024 + 5);  // Was 1024: nothing moved at all.
+
+    // Pitch is signed and centered on the horizon, so looking away from it was the dead direction.
+    pParty->_viewPitch = 0;
+    moveMouseBy(0, -1, 20);
+    EXPECT_EQ(pParty->_viewPitch, 5);  // Was 0.
+
+    pParty->_viewPitch = 0;
+    moveMouseBy(0, 1, 20);
+    EXPECT_EQ(pParty->_viewPitch, -5);  // Was 0.
+
+    // A single pixel is a quarter unit, so it takes four of them to move the view - and it must move
+    // on the fourth, not get thrown away.
+    pParty->_viewYaw = 1024;
+    moveMouseBy(-1, 0, 3);
+    EXPECT_EQ(pParty->_viewYaw, 1024);
+    moveMouseBy(-1, 0, 1);
+    EXPECT_EQ(pParty->_viewYaw, 1025);
 }
