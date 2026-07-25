@@ -512,6 +512,42 @@ GAME_TEST(Mm6, WalkUnderShopSign) {
     EXPECT_GT(minZ, 159.0f);
 }
 
+// MM6's other sign variant is built into the shop's own model and hangs its board 16 lower, at 168
+// above the ground - too low for the party to walk under even in the original engine, so bumping into
+// it and stopping is correct. What was not correct is how the party stopped: the sliding plane is
+// built by dragging the contact point down by the colliding sphere's height offset, which only lands
+// at foot level for a contact at that sphere's own center height, so catching the board's bottom edge
+// tilted the plane into the ground - the party got buried ~16 units in the terrain and squeezed
+// through underneath instead of being stopped.
+GAME_TEST(Mm6, BumpIntoWallMountedShopSign) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // New Sorpigal's armory, "The Common Defense" (oute3.odm model 51): west wall at x=-8528, sign arm
+    // running west to x=-8624 at y[-6584,-6576] z[400,408], board hanging at x[-8616,-8552] z[328,392].
+    // Peasants wander this street and block the party just as much as the sign does, so take them out
+    // of the picture - this is about the geometry.
+    engine->config->debug.NoPartyActorCollisions.setValue(true);
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-8580, -6700, 161), 90); // Facing north.
+    game.tick(2);
+
+    float minZ = pParty->pos.z;
+    game.pressKey(PlatformKey::KEY_UP);
+    for (int i = 0; i < 30; i++) {
+        game.tick(1);
+        minZ = std::min(minZ, pParty->pos.z);
+    }
+    game.releaseKey(PlatformKey::KEY_UP);
+    game.tick(2);
+
+    // The party walks up to the board and stops flush against it, still standing on the ground.
+    EXPECT_NEAR(pParty->pos.y, -6601.5f, 2.0f); // Board's south face at -6584, minus the head radius.
+    EXPECT_NEAR(pParty->pos.x, -8580.0f, 1.0f);
+    EXPECT_GT(minZ, 159.0f);
+}
+
 GAME_TEST(Mm6, KillAndLootPeasant) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
