@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -105,6 +106,8 @@
 #include "Media/Audio/AudioPlayer.h"
 
 extern std::unordered_set<InputAction> key_map_conflicted;  // 506E6C
+extern InputAction currently_selected_action_for_binding;  // 506E68
+extern std::unordered_map<InputAction, PlatformKey> curr_key_map;
 
 // MM6 bring-up tests. These require MM6 game data and only run when the test binary is
 // invoked with '--game-version mm6'; under the default MM7 test suite they are skipped.
@@ -421,9 +424,10 @@ GAME_TEST(Mm6, StrafeKeybindingConflictChecked) {
     // two 14-slot pages and used to sit outside the configurable segment too - so the menu's
     // conflict scan never saw them. Rebinding Attack onto A (the classic MM7 attack key, the
     // single most likely rebind a returning player performs) was accepted silently, and holding
-    // A then attacked AND strafed every frame. Strafe is conflict-checked and DEFAULT-reset now;
-    // the menu art has exactly 2x14 engraved slots and two page tabs, so the two strafe rows
-    // themselves are still not rendered (rebinding strafe means editing openenroth.ini).
+    // A then attacked AND strafed every frame. Strafe is conflict-checked and DEFAULT-reset now.
+    // Under MM7 the two strafe rows are still not rendered - optkb has exactly 2x14 engraved slots
+    // and two page tabs - but MM6 has no art for this screen at all, so OE draws its own panel there
+    // and does render them, see Mm6.ExtraSettingsScreens.
 
     // The harness pins classic bindings before every test - apply the shipped modern defaults
     // (Attack=Q, StepLeft=A) to reproduce the fresh-install scenario. The next test's
@@ -6855,12 +6859,12 @@ GAME_TEST(Mm6, ControlsScreenSkin) {
     EXPECT_EQ(options_menu_skin.uTextureID_Mm6GraphicsDetail[1]->name(), "con_med");
     EXPECT_EQ(options_menu_skin.uTextureID_Mm6GraphicsDetail[2]->name(), "con_low");
 
-    // 3 detail + 3 turn rate + 2 option rows + 3x3 slider + Resume, and nothing that leads to the
-    // key-mapping or video screens, whose art MM6 doesn't have either.
-    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 18u);
+    // 3 detail + 3 turn rate + 2 option rows + 3x3 slider + Resume is the vanilla plate; this branch
+    // adds the two Keyboard / Video entries on the bare strip below it, see Mm6.ExtraSettingsScreens.
+    // Always Run and Flip on Exit still have no row here - MM6's plate has no slot for them, they
+    // live on the video screen instead.
+    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 20u);
     for (const GUIButton *button : pGUIWindow_CurrentMenu->vButtons) {
-        EXPECT_NE(button->msg, UIMSG_OpenKeyMappingOptions);
-        EXPECT_NE(button->msg, UIMSG_OpenVideoOptions);
         EXPECT_NE(button->msg, UIMSG_ToggleAlwaysRun);
         EXPECT_NE(button->msg, UIMSG_ToggleFlipOnExit);
     }
@@ -6898,6 +6902,82 @@ GAME_TEST(Mm6, ControlsScreenSkin) {
     // Resume Game returns to the escape menu.
     game.pressAndReleaseButton(BUTTON_LEFT, 350, 310);
     game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_MENU);
+
+    game.goToGame();
+}
+
+GAME_TEST(Mm6, ExtraSettingsScreens) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // mm6-extra's addition: MM6 shipped with neither a key-rebinding nor a video screen, and its
+    // icons.lod has no art for either, so OE draws its own panel for them and reaches them from two
+    // buttons on the bare strip at the bottom of MM6's Controls panel. Because OE draws the panel it
+    // is not bound by optkb's 2x14 engraved slots, so all 30 configurable actions fit - strafe, which
+    // this branch binds to A/D by default, included.
+    keyboardActionMapping->applyKeybindings(keyboardActionMapping->defaultKeybindings(KEYBINDINGS_ALL));
+    MM_AT_SCOPE_EXIT({
+        keyboardActionMapping->applyKeybindings(keyboardActionMapping->defaultKeybindings(KEYBINDINGS_ALL));
+    });
+
+    game.startNewGame();
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Game_OpenOptionsDialog, 0, 0);
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_OPTIONS);
+
+    game.pressGuiButton("Mm6_KeyboardSettings");
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_KEYBOARD_OPTIONS);
+    // 16 key boxes over 8 rows x 2 columns, plus Page 1 / Page 2 / Default / Controls / Return.
+    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 21u);
+
+    // Page 2's right column reaches Strafe Right at index 29, the last configurable action. Rebind
+    // Strafe Left through the real flow: click its box, then press the new key.
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_SelectKeyPage2, 0, 0);
+    game.tick(2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 400, 165);
+    game.tick(2);
+    EXPECT_EQ(currently_selected_action_for_binding, INPUT_ACTION_STRAFE_LEFT);
+    game.pressAndReleaseKey(PlatformKey::KEY_N);
+    game.tick(2);
+    EXPECT_EQ(curr_key_map[INPUT_ACTION_STRAFE_LEFT], PlatformKey::KEY_N);
+
+    // DEFAULT puts it back, then Controls returns to the Controls screen.
+    game.pressGuiButton("KeyBinding_Default");
+    game.tick(2);
+    EXPECT_EQ(curr_key_map[INPUT_ACTION_STRAFE_LEFT], PlatformKey::KEY_A);
+    game.pressGuiButton("Mm6_KeyBindingBack");
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_OPTIONS);
+
+    game.pressGuiButton("Mm6_VideoSettings");
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_VIDEO_OPTIONS);
+
+    // Besides the three renderer toggles MM7 keeps here, the screen carries the two Controls-screen
+    // options MM6's own plate has no room for - they were ini-only in MM6 before this.
+    bool tinting = engine->config->graphics.Tinting.value();
+    bool flipOnExit = engine->config->settings.FlipOnExit.value();
+    game.pressAndReleaseButton(BUTTON_LEFT, 100, 162);  // Tinting, third row.
+    game.tick(2);
+    EXPECT_EQ(engine->config->graphics.Tinting.value(), !tinting);
+    game.pressAndReleaseButton(BUTTON_LEFT, 100, 218);  // Flip on Exit, fifth row.
+    game.tick(2);
+    EXPECT_EQ(engine->config->settings.FlipOnExit.value(), !flipOnExit);
+    engine->config->graphics.Tinting.setValue(tinting);
+    engine->config->settings.FlipOnExit.setValue(flipOnExit);
+
+    // Gamma bar: 160px from x=180, 16px per level.
+    engine->config->graphics.Gamma.setValue(0);
+    game.pressAndReleaseButton(BUTTON_LEFT, 180 + 16 * 3 + 8, 70);
+    game.tick(2);
+    EXPECT_EQ(engine->config->graphics.Gamma.value(), 3);
+
+    game.pressGuiButton("Mm6_VideoReturn");
+    game.tick(3);
     EXPECT_EQ(current_screen_type, SCREEN_MENU);
 
     game.goToGame();
@@ -10197,4 +10277,3 @@ GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
     active.uCurrentFace = face;
     active.uVoiceID = voice;
 }
-

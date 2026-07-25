@@ -346,8 +346,110 @@ static Color GameMenuUI_GetKeyBindingColor(InputAction action) {
     return ui_gamemenu_keys_key_default_color;
 }
 
+// The OE-drawn settings panel for MM6's key-binding and video screens - see UIGame.h. Everything here
+// is mm6-extra's own: vanilla MM6 has no such screens.
+static const Recti kMm6SettingsPanelRect = {8, 8, 460, 344};
+static const Color kMm6SettingsPanelFill = Color(26, 23, 18);  // Opaque: nothing redraws the frame under it.
+static const Color kMm6SettingsEdge = Color(150, 122, 58);
+static const Color kMm6SettingsTitle = Color(232, 200, 108);
+static const Color kMm6SettingsLabel = Color(206, 196, 172);
+static const Color kMm6SettingsButtonFill = Color(52, 46, 36, 236);
+static const Color kMm6SettingsButtonFillOn = Color(88, 74, 40, 236);
+
+// These screens are mm6-extra's own, so their labels are not in MM6's global.txt - the row that MM7
+// uses for "Return to Game" holds something else entirely in MM6, and the gamma blurb's row reads
+// "Threat" there. They stay English, like the rest of the panel.
+static const char *kMm6SettingsReturnLabel = "Return to Game";
+
+static void drawMm6SettingsFrame(const Recti &rect) {
+    render->FillRect({rect.x, rect.y, rect.w, 1}, kMm6SettingsEdge);
+    render->FillRect({rect.x, rect.y + rect.h - 1, rect.w, 1}, kMm6SettingsEdge);
+    render->FillRect({rect.x, rect.y, 1, rect.h}, kMm6SettingsEdge);
+    render->FillRect({rect.x + rect.w - 1, rect.y, 1, rect.h}, kMm6SettingsEdge);
+}
+
+void drawMm6SettingsPanel(std::string_view title) {
+    render->FillRect(kMm6SettingsPanelRect, kMm6SettingsPanelFill);
+    drawMm6SettingsFrame(kMm6SettingsPanelRect);
+
+    GUIFont *font = assets->pFontCreate.get();
+    GUIWindow::DrawText(font, {kMm6SettingsPanelRect.x + font->AlignText_Center(kMm6SettingsPanelRect.w, title),
+                               kMm6SettingsPanelRect.y + 12}, kMm6SettingsTitle, title, pGUIWindow_CurrentMenu->frameRect);
+}
+
+void drawMm6SettingsButton(const Recti &rect, std::string_view text, bool highlighted) {
+    render->FillRect(rect, highlighted ? kMm6SettingsButtonFillOn : kMm6SettingsButtonFill);
+    drawMm6SettingsFrame(rect);
+
+    GUIFont *font = assets->pFontLucida.get();
+    GUIWindow::DrawText(font, {rect.x + font->AlignText_Center(rect.w, text), rect.y + (rect.h - font->GetHeight()) / 2 + 1},
+                        highlighted ? kMm6SettingsTitle : kMm6SettingsLabel, text, pGUIWindow_CurrentMenu->frameRect);
+}
+
+void drawMm6SettingsCheckRow(const Recti &rect, std::string_view text, bool checked) {
+    render->FillRect(rect, kMm6SettingsButtonFill);
+    drawMm6SettingsFrame(rect);
+
+    // MM6's own tick, the same one its Controls screen puts on Walksound and Show Damage.
+    if (checked && options_menu_skin.uTextureID_Mm6Checkmark)
+        render->DrawQuad2D(options_menu_skin.uTextureID_Mm6Checkmark, {rect.x + 2, rect.y + (rect.h - 16) / 2});
+
+    GUIFont *font = assets->pFontLucida.get();
+    GUIWindow::DrawText(font, {rect.x + 22, rect.y + (rect.h - font->GetHeight()) / 2 + 1},
+                        checked ? kMm6SettingsTitle : kMm6SettingsLabel, text, pGUIWindow_CurrentMenu->frameRect);
+}
+
+int keyBindingPageSize() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? 16 : 14;
+}
+
+// mm6-extra's OE-drawn key-binding screen: 8 rows x 2 columns per page, which is enough for all 30
+// configurable actions over two pages - MM7's optkb art stops at 14 per page, which is why strafe is
+// not rebindable there.
+static const int kMm6KeyRows = 8;
+static const int kMm6KeyRowPitch = 24;
+static const int kMm6KeyFirstRowY = 60;
+static const std::array<int, 2> kMm6KeyActionX = {{26, 250}};
+static const std::array<int, 2> kMm6KeyBoxX = {{140, 364}};
+static const Sizei kMm6KeyBoxSize = {80, 20};
+static const Recti kMm6KeyPage1Rect = {26, 274, 100, 22};
+static const Recti kMm6KeyPage2Rect = {136, 274, 100, 22};
+static const Recti kMm6KeyDefaultRect = {248, 274, 100, 22};
+static const Recti kMm6KeyBackRect = {358, 274, 100, 22};
+static const Recti kMm6KeyReturnRect = {248, 308, 210, 24};
+
+static Recti mm6KeyBoxRect(int row, int column) {
+    return {kMm6KeyBoxX[column], kMm6KeyFirstRowY + row * kMm6KeyRowPitch, kMm6KeyBoxSize.w, kMm6KeyBoxSize.h};
+}
+
 GUIWindow_GameKeyBindings::GUIWindow_GameKeyBindings()
     : GUIWindow(WINDOW_KeyMappingOptions, {0, 0}, render->GetRenderDimensions()) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        for (int column = 0; column < 2; column++) {
+            for (int row = 0; row < kMm6KeyRows; row++) {
+                Recti rect = mm6KeyBoxRect(row, column);
+                CreateButton(rect.topLeft(), rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeKeyButton,
+                             column * kMm6KeyRows + row);
+            }
+        }
+
+        CreateButton(kMm6KeyPage1Rect.topLeft(), kMm6KeyPage1Rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_SelectKeyPage1, 0);
+        CreateButton(kMm6KeyPage2Rect.topLeft(), kMm6KeyPage2Rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_SelectKeyPage2, 0);
+        CreateButton("KeyBinding_Default", kMm6KeyDefaultRect.topLeft(), kMm6KeyDefaultRect.size(), BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_ResetKeyMapping, 0);
+        CreateButton("Mm6_KeyBindingBack", kMm6KeyBackRect.topLeft(), kMm6KeyBackRect.size(), BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_Game_OpenOptionsDialog, 0);
+        CreateButton("Mm6_KeyBindingReturn", kMm6KeyReturnRect.topLeft(), kMm6KeyReturnRect.size(), BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_Escape, 0);
+
+        currently_selected_action_for_binding = INPUT_ACTION_INVALID;
+        KeyboardPageNum = 1;
+
+        key_map_conflicted.clear();
+        curr_key_map = keyboardActionMapping->currentKeybindings(KEYBINDINGS_CONFIGURABLE);
+        return;
+    }
+
     game_ui_options_controls[0] = assets->getImage_ColorKey("optkb");
     game_ui_options_controls[1] = assets->getImage_ColorKey("optkb_h");
     game_ui_options_controls[2] = assets->getImage_ColorKey("resume1");
@@ -406,6 +508,36 @@ void GUIWindow_GameKeyBindings::Update() {
         keyboardInputHandler->EndTextInput();
         currently_selected_action_for_binding = INPUT_ACTION_INVALID;
     }
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        drawMm6SettingsPanel("Keyboard");
+
+        int pageOffset = (KeyboardPageNum - 1) * keyBindingPageSize();
+        for (int column = 0; column < 2; column++) {
+            for (int row = 0; row < kMm6KeyRows; row++) {
+                int index = pageOffset + column * kMm6KeyRows + row;
+                if (index > std::to_underlying(INPUT_ACTION_LAST_CONFIGURABLE))
+                    continue;  // The last page is not full - 30 actions over two 16-slot pages.
+
+                InputAction action = static_cast<InputAction>(index);
+                Recti box = mm6KeyBoxRect(row, column);
+                DrawText(assets->pFontLucida.get(), {kMm6KeyActionX[column], box.y + 3}, kMm6SettingsLabel,
+                         GetDisplayName(action), frameRect);
+                render->FillRect(box, kMm6SettingsButtonFill);
+                drawMm6SettingsFrame(box);
+                DrawText(assets->pFontLucida.get(), {box.x + 6, box.y + 3}, GameMenuUI_GetKeyBindingColor(action),
+                         GetDisplayName(curr_key_map[action]), frameRect);
+            }
+        }
+
+        drawMm6SettingsButton(kMm6KeyPage1Rect, "Page 1", KeyboardPageNum == 1);
+        drawMm6SettingsButton(kMm6KeyPage2Rect, "Page 2", KeyboardPageNum != 1);
+        drawMm6SettingsButton(kMm6KeyDefaultRect, "Default", false);
+        drawMm6SettingsButton(kMm6KeyBackRect, "Controls", false);
+        drawMm6SettingsButton(kMm6KeyReturnRect, kMm6SettingsReturnLabel, false);
+        return;
+    }
+
     render->DrawQuad2D(game_ui_options_controls[0], {8, 8});  // draw base texture
 
     int base_controls_offset = 0;
@@ -428,8 +560,73 @@ void GUIWindow_GameKeyBindings::Update() {
     }
 }
 
+// mm6-extra's OE-drawn video screen. Besides the three renderer toggles and the gamma slider that MM7
+// keeps here, it carries the two Controls-screen options MM6's own plate has no room for, so that
+// everything MM7 players can reach from a menu is reachable in MM6 too rather than being ini-only.
+static const Recti kMm6VideoPreviewRect = {252, 96, 155, 117};
+static const int kMm6VideoRowX = 26;
+static const Sizei kMm6VideoRowSize = {200, 22};
+static const int kMm6VideoFirstRowY = 96;
+static const int kMm6VideoRowPitch = 28;
+static const Recti kMm6VideoReturnRect = {248, 308, 210, 24};
+
+// Rows in draw and creation order, paired with the message that toggles each.
+static const std::array<std::pair<UIMessageType, const char *>, 5> kMm6VideoRows = {{
+    {UIMSG_ToggleBloodsplats, "Blood Splats"},
+    {UIMSG_ToggleColoredLights, "Colored Lights"},
+    {UIMSG_ToggleTint, "Tinting"},
+    {UIMSG_ToggleAlwaysRun, "Always Run"},
+    {UIMSG_ToggleFlipOnExit, "Flip on Exit"}}};
+
+static Recti mm6VideoRowRect(int row) {
+    return {kMm6VideoRowX, kMm6VideoFirstRowY + row * kMm6VideoRowPitch, kMm6VideoRowSize.w, kMm6VideoRowSize.h};
+}
+
+static bool mm6VideoRowChecked(int row) {
+    switch (kMm6VideoRows[row].first) {
+    case UIMSG_ToggleBloodsplats: return engine->config->graphics.BloodSplats.value();
+    case UIMSG_ToggleColoredLights: return engine->config->graphics.ColoredLights.value();
+    case UIMSG_ToggleTint: return engine->config->graphics.Tinting.value();
+    case UIMSG_ToggleAlwaysRun: return engine->config->settings.AlwaysRun.value();
+    default: return engine->config->settings.FlipOnExit.value();
+    }
+}
+
 GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
     : GUIWindow(WINDOW_VideoOptions, {0, 0}, render->GetRenderDimensions()) {
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 has no optvid art, but it does have the arrows and the slider indicators - they are the
+        // same ones its Controls screen uses for the volume bars.
+        options_menu_skin.uTextureID_ArrowLeft = assets->getImage_Alpha("con_ArrL");
+        options_menu_skin.uTextureID_ArrowRight = assets->getImage_Alpha("con_ArrR");
+        options_menu_skin.uTextureID_Mm6Checkmark = assets->getImage_ColorKey("con_X");
+        for (int i = 0; i < 9; i++)
+            game_ui_menu_options_video_gamma_positions[i] = assets->getImage_ColorKey(fmt::format("convol{}0", i + 1));
+        game_ui_menu_options_video_gamma_positions[9] = assets->getImage_ColorKey("convol00");
+
+        VolumeSliderSkin gamma = gammaSliderSkin();
+        pBtn_SliderLeft = CreateButton(gamma.leftArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeGammaLevel, 4,
+            INPUT_ACTION_INVALID, "", {options_menu_skin.uTextureID_ArrowLeft});
+        pBtn_SliderRight = CreateButton(gamma.rightArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeGammaLevel, 5,
+            INPUT_ACTION_INVALID, "", {options_menu_skin.uTextureID_ArrowRight});
+        CreateButton(gamma.bar.topLeft(), gamma.bar.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeGammaLevel, 0);
+
+        for (size_t i = 0; i < kMm6VideoRows.size(); i++) {
+            Recti rect = mm6VideoRowRect(i);
+            CreateButton(rect.topLeft(), rect.size(), BUTTON_TYPE_NORMAL, 0, kMm6VideoRows[i].first, 0);
+        }
+
+        CreateButton("Mm6_VideoReturn", kMm6VideoReturnRect.topLeft(), kMm6VideoReturnRect.size(), BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_Escape, 0);
+
+        if (gamma_preview_image) {
+            gamma_preview_image->release();
+            gamma_preview_image = nullptr;
+        }
+        gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
+        return;
+    }
+
     // -------------------------------------
     // GameMenuUI_OptionsVideo_Load --- part
     game_ui_menu_options_video_background = assets->getImage_ColorKey("optvid");
@@ -482,6 +679,26 @@ void GUIWindow_GameVideoOptions::Update() {
     // -----------------------------------
     // 004156F0 GUI_UpdateWindows --- part
     int gammalevel = engine->config->graphics.Gamma.value();
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        drawMm6SettingsPanel("Video");
+
+        VolumeSliderSkin gamma = gammaSliderSkin();
+        DrawText(assets->pFontLucida.get(), {kMm6VideoRowX, gamma.bar.y + 3}, kMm6SettingsLabel, "Gamma", frameRect);
+        render->FillRect(gamma.bar, kMm6SettingsButtonFill);
+        drawMm6SettingsFrame(gamma.bar);
+        render->DrawQuad2D(game_ui_menu_options_video_gamma_positions[gammalevel],
+                           {gamma.thumb.x + gamma.step * gammalevel, gamma.thumb.y});
+
+        for (size_t i = 0; i < kMm6VideoRows.size(); i++)
+            drawMm6SettingsCheckRow(mm6VideoRowRect(i), kMm6VideoRows[i].second, mm6VideoRowChecked(i));
+
+        if (gamma_preview_image)
+            render->DrawQuad2D(gamma_preview_image, kMm6VideoPreviewRect.topLeft());
+
+        drawMm6SettingsButton(kMm6VideoReturnRect, kMm6SettingsReturnLabel, false);
+        return;
+    }
 
     render->DrawQuad2D(game_ui_menu_options_video_background, {8, 8});  // draw base texture
     // if ( !render->bWindowMode && render->IsGammaSupported() )
@@ -568,6 +785,11 @@ static const int kMm6ShowDamageRowY = 312;
 static const Sizei kMm6CheckRowSize = {224, 16};
 static const Recti kMm6ResumeRect = {261, 292, 194, 37};
 
+// mm6-extra only. The original leaves the strip below the option rows as bare rock, which is where
+// this branch puts the two settings MM6 never had a screen for. Nothing vanilla draws is covered.
+static const Recti kMm6KeyboardEntryRect = {14, 329, 220, 21};
+static const Recti kMm6VideoEntryRect = {242, 329, 220, 21};
+
 // Graphics Detail is stored the way MM6 stored it: 0 high, 1 medium, 2 low, indexing both the highlight
 // art (@0x4d510c) and the column table above.
 static const int kMm6DetailLevels = 3;
@@ -583,6 +805,13 @@ VolumeSliderSkin volumeSliderSkin(int row) {
 
     static const std::array<int, 3> kY = {{162, 216, 270}};
     return {{243, kY[row]}, {435, kY[row]}, {263, kY[row], 172, 17}, {265, kY[row]}, 17};
+}
+
+VolumeSliderSkin gammaSliderSkin() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return {{160, 62}, {344, 62}, {180, 62, 160, 16}, {180, 62}, 16};
+
+    return {{21, 161}, {213, 161}, {42, 160, 170, 17}, {42, 162}, 17};
 }
 
 GUIWindow_GameOptions::GUIWindow_GameOptions()
@@ -632,6 +861,12 @@ GUIWindow_GameOptions::GUIWindow_GameOptions()
 
         CreateButton(kMm6ResumeRect.topLeft(), kMm6ResumeRect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0,
                      INPUT_ACTION_INVALID, localization->str(LSTR_RETURN_TO_GAME));
+
+        // mm6-extra's two additions, on the panel's bare bottom strip.
+        CreateButton("Mm6_KeyboardSettings", kMm6KeyboardEntryRect.topLeft(), kMm6KeyboardEntryRect.size(),
+                     BUTTON_TYPE_NORMAL, 0, UIMSG_OpenKeyMappingOptions, 0, INPUT_ACTION_PASS);
+        CreateButton("Mm6_VideoSettings", kMm6VideoEntryRect.topLeft(), kMm6VideoEntryRect.size(),
+                     BUTTON_TYPE_NORMAL, 0, UIMSG_OpenVideoOptions, 0, INPUT_ACTION_OPEN_OPTIONS);
         return;
     }
 
@@ -708,6 +943,9 @@ void GUIWindow_GameOptions::Update() {
         drawVolumeSliderThumb(0, engine->config->settings.SoundLevel.value());
         drawVolumeSliderThumb(1, engine->config->settings.MusicLevel.value());
         drawVolumeSliderThumb(2, engine->config->settings.VoiceLevel.value());
+
+        drawMm6SettingsButton(kMm6KeyboardEntryRect, "Keyboard", false);
+        drawMm6SettingsButton(kMm6VideoEntryRect, "Video", false);
         return;
     }
 

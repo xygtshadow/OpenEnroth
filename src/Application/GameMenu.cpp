@@ -223,7 +223,7 @@ void Menu::EventLoop() {
                 } else {
                     currently_selected_action_for_binding = (InputAction)param;
                     if (KeyboardPageNum != 1)
-                        currently_selected_action_for_binding = (InputAction)(param + 14);
+                        currently_selected_action_for_binding = (InputAction)(param + keyBindingPageSize());
                     keyboardInputHandler->StartTextInput(TextInputType::Text, 1, pGUIWindow_CurrentMenu.get());
                 }
                 continue;
@@ -254,16 +254,17 @@ void Menu::EventLoop() {
             }
 
             case UIMSG_ChangeGammaLevel: {
+                VolumeSliderSkin skin = gammaSliderSkin();
                 int gammalevel = engine->config->graphics.Gamma.value();
                 if (param == 4) {
                     gammalevel--;
-                    new OnButtonClick({21, 161}, {0, 0}, pBtn_SliderLeft, std::string(), false);
+                    new OnButtonClick(skin.leftArrow, {0, 0}, pBtn_SliderLeft, std::string(), false);
                 } else if (param == 5) {
                     gammalevel++;
-                    new OnButtonClick({213, 161}, {0, 0}, pBtn_SliderRight, std::string(), false);
+                    new OnButtonClick(skin.rightArrow, {0, 0}, pBtn_SliderRight, std::string(), false);
                 } else {
                     Pointi pt = mouse->position();
-                    gammalevel = (pt.x - 42) / 17;
+                    gammalevel = (pt.x - skin.bar.x) / skin.step;
                 }
 
                 engine->config->graphics.Gamma.setValue(gammalevel);

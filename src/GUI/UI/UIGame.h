@@ -181,3 +181,27 @@ struct VolumeSliderSkin {
  * @return                              Slider geometry for the current game version.
  */
 VolumeSliderSkin volumeSliderSkin(int row);
+
+/**
+ * @return                              Gamma slider geometry on the video options screen, same contract
+ *                                      as volumeSliderSkin(): both the buttons and the click handler
+ *                                      read it, so the two can't drift.
+ */
+VolumeSliderSkin gammaSliderSkin();
+
+/**
+ * @return                              Number of key-binding rows on one page of the controls menu.
+ *                                      MM7's optkb art has exactly 14 engraved slots. MM6 has no art
+ *                                      for the screen at all, so OE draws its own panel there and can
+ *                                      fit all 30 configurable actions - the two strafe rows that MM7's
+ *                                      art has no room for included - across its two pages.
+ */
+int keyBindingPageSize();
+
+// The OE-drawn settings panel used for MM6's key-binding and video screens. MM6 shipped with neither,
+// and its icons.lod has no art for either (optkb*, optvid, opvdH-*), so these draw a panel in MM6's
+// stone-and-gold palette and use MM6's own small art - con_X ticks, con_ArrL/con_ArrR arrows and the
+// convol* indicators - wherever it exists.
+void drawMm6SettingsPanel(std::string_view title);
+void drawMm6SettingsButton(const Recti &rect, std::string_view text, bool highlighted);
+void drawMm6SettingsCheckRow(const Recti &rect, std::string_view text, bool checked);
