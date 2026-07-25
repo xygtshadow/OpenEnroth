@@ -10038,3 +10038,36 @@ GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
             << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait box";
     }
 }
+
+// MM6's popup is a fixed 256x256 window that gives the monster its whole 230px interior, with the sprite
+// buffer's top at window y + 50 + offset (MM6.EXE 0x41161B for the window, 0x41CFDB-0x41D0C0 for the
+// portrait). OE used to frame a 128px box at (13, 52) and drop MM6's 38px top margin.
+GAME_TEST(Mm6, MonsterPopupMm6Geometry) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // Window: 256x256 at y=40, placed 30px from the cursor on whichever side fits.
+    EXPECT_EQ(monsterPopupMm6WindowRect(100), Recti(130, 40, 256, 256));
+    EXPECT_EQ(monsterPopupMm6WindowRect(320), Recti(350, 40, 256, 256));
+    EXPECT_EQ(monsterPopupMm6WindowRect(321), Recti(35, 40, 256, 256));
+
+    // Portrait area: window inset 12 top/left, 14 right/bottom.
+    Recti window = monsterPopupMm6WindowRect(100);
+    EXPECT_EQ(monsterPopupMm6PortraitArea(window), Recti(142, 52, 230, 230));
+
+    // Sprite buffer top sits at window y + 50 + offset - i.e. 38px below the portrait area's own top,
+    // which is exactly the margin OE used to drop. Expected values are literal, NOT re-derived from the
+    // helper, so the test fails if the baseline or the margin regresses.
+    //
+    //   window.y            = 40
+    //   portrait area top   = 52   (40 + 12)
+    //   portrait baseline   = 90   (40 + 50)  -> 38px inside the area
+    //
+    // MM6's offset table is indexed by 3-tier family, (monsterId - 1) / 3:
+    //   monster 1  -> family 0 -> -40  =>  50
+    //   monster 4  -> family 1 -> -30  =>  60
+    //   monster 10 -> family 3 ->   0  =>  90   (no offset: lands exactly on the margin)
+    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(1)), 50);
+    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(4)), 60);
+    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(10)), 90);
+}

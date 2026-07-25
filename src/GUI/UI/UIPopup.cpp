@@ -215,15 +215,29 @@ static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
 int monsterPopupPortraitYOffset(MonsterId monsterId) {
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6 monster ids index MM6's monsters.txt, so the MM7 MonsterType families don't apply.
-        // Note that MM6 gives the portrait the popup's whole 230px interior, starting 38px above the point these
-        // offsets are measured from, where we frame it in a 128px box. Dropping that top margin - i.e. applying
-        // the offsets straight to the top edge of our box - is what keeps a townsfolk's head in frame.
+        // The value is relative to MM6's own portrait baseline - see `monsterPopupMm6PortraitTop`, which
+        // adds the window-relative 50 that puts it 38px inside the 230px portrait area.
         int family = (std::to_underlying(monsterId) - 1) / 3;
         if (family < 0 || family >= static_cast<int>(monsterPopupYOffsetsMm6.size()))
             return 0;
         return monsterPopupYOffsetsMm6[family];
     }
     return monster_popup_y_offsets[monsterTypeForMonsterId(monsterId)] - 40;
+}
+
+Recti monsterPopupMm6WindowRect(int mouseX) {
+    // MM6.EXE 0x41161B. Note the placement rule matches MM7's, just with MM6's narrower window:
+    // 30px to the right of the cursor, or that far to the left of it once the cursor passes half-screen.
+    int x = mouseX <= 320 ? mouseX + 30 : mouseX - (monsterPopupMm6WindowSize + 30);
+    return Recti(x, 40, monsterPopupMm6WindowSize, monsterPopupMm6WindowSize);
+}
+
+Recti monsterPopupMm6PortraitArea(const Recti &window) {
+    return Recti(window.x + 12, window.y + 12, window.w - 26, window.h - 26);
+}
+
+int monsterPopupMm6PortraitTop(const Recti &window, MonsterId monsterId) {
+    return window.y + 50 + monsterPopupPortraitYOffset(monsterId);
 }
 
 // OE addition - colors for monster special attack text.
