@@ -518,10 +518,13 @@ OptionsMenuSkin::OptionsMenuSkin()
       uTextureID_AlwaysRun(0),
       uTextureID_WalkSound(0),
       uTextureID_ShowDamage(0),
+      uTextureID_Mm6Checkmark(0),
       uTextureID_TurnSpeed(),
-      uTextureID_SoundLevels() {
+      uTextureID_SoundLevels(),
+      uTextureID_Mm6GraphicsDetail() {
     for (unsigned i = 0; i < 3; ++i) uTextureID_TurnSpeed[i] = 0;
     for (unsigned i = 0; i < 10; ++i) uTextureID_SoundLevels[i] = 0;
+    for (unsigned i = 0; i < 3; ++i) uTextureID_Mm6GraphicsDetail[i] = 0;
 }
 
 void OptionsMenuSkin::Release() {
@@ -542,8 +545,44 @@ void OptionsMenuSkin::Release() {
     RELEASE(uTextureID_AlwaysRun);
     RELEASE(uTextureID_WalkSound);
     RELEASE(uTextureID_ShowDamage);
+    for (unsigned i = 0; i < 3; ++i) RELEASE(uTextureID_Mm6GraphicsDetail[i]);
+    RELEASE(uTextureID_Mm6Checkmark);
 
 #undef RELEASE
+}
+
+// MM6's Controls screen, reversed from MM6.EXE: texture loads + button setup @0x42d583..0x42daa5, draw
+// @0x40f550. MM6 has neither a key-mapping nor a video sub-screen, so where MM7 puts the Keyboard and
+// Video buttons MM6 puts its "Controls" title plate and a Graphics Detail row.
+//
+// The highlight images are 72x16 and sit one pixel inside their 74x18 buttons, which is why the draw
+// coordinates below are the button coordinates plus one.
+static const std::array<int, 3> kMm6OptionColumnX = {{171, 96, 21}};  // Highlight x per column, @0x4bcddc.
+static const std::array<int, 3> kMm6OptionButtonX = {{170, 95, 20}};
+static const Sizei kMm6OptionButtonSize = {74, 18};
+static const int kMm6DetailRowY = 211;    // Graphics Detail buttons; highlights one pixel lower.
+static const int kMm6TurnRowY = 261;      // Turn Rate buttons; highlights one pixel lower.
+static const int kMm6CheckRowX = 21;      // Walksound / Show Damage rows - both the row and its checkmark.
+static const int kMm6WalkSoundRowY = 293;
+static const int kMm6ShowDamageRowY = 312;
+static const Sizei kMm6CheckRowSize = {224, 16};
+static const Recti kMm6ResumeRect = {261, 292, 194, 37};
+
+// Graphics Detail is stored the way MM6 stored it: 0 high, 1 medium, 2 low, indexing both the highlight
+// art (@0x4d510c) and the column table above.
+static const int kMm6DetailLevels = 3;
+
+VolumeSliderSkin volumeSliderSkin(int row) {
+    assert(row >= 0 && row < 3);
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        // MM6 puts both arrows at the ends of the engraved plate and steps the indicator by 16px.
+        static const std::array<int, 3> kY = {{161, 212, 262}};
+        return {{262, kY[row]}, {438, kY[row]}, {278, kY[row], 160, 16}, {278, kY[row]}, 16};
+    }
+
+    static const std::array<int, 3> kY = {{162, 216, 270}};
+    return {{243, kY[row]}, {435, kY[row]}, {263, kY[row], 172, 17}, {265, kY[row]}, 17};
 }
 
 GUIWindow_GameOptions::GUIWindow_GameOptions()
@@ -564,6 +603,38 @@ GUIWindow_GameOptions::GUIWindow_GameOptions()
     options_menu_skin.uTextureID_SoundLevels[7] = assets->getImage_ColorKey("convol80");
     options_menu_skin.uTextureID_SoundLevels[8] = assets->getImage_ColorKey("convol90");
     options_menu_skin.uTextureID_SoundLevels[9] = assets->getImage_ColorKey("convol00");
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        options_menu_skin.uTextureID_Mm6GraphicsDetail[0] = assets->getImage_ColorKey("con_High");
+        options_menu_skin.uTextureID_Mm6GraphicsDetail[1] = assets->getImage_ColorKey("con_Med");
+        options_menu_skin.uTextureID_Mm6GraphicsDetail[2] = assets->getImage_ColorKey("con_Low");
+        options_menu_skin.uTextureID_Mm6Checkmark = assets->getImage_ColorKey("con_X");
+
+        // Buttons in MM6.EXE's creation order. The Graphics Detail columns run low-to-high left to right
+        // while the level is stored high-to-low, so the leftmost column is the highest index.
+        for (int i = kMm6DetailLevels - 1; i >= 0; i--)
+            CreateButton({kMm6OptionButtonX[i], kMm6DetailRowY}, kMm6OptionButtonSize, BUTTON_TYPE_NORMAL, 0,
+                         UIMSG_SetGraphicsMode, i);
+        CreateButton({kMm6OptionButtonX[2], kMm6TurnRowY}, kMm6OptionButtonSize, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_SetTurnSpeed, 128);
+        CreateButton({kMm6OptionButtonX[1], kMm6TurnRowY}, kMm6OptionButtonSize, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_SetTurnSpeed, 64);
+        CreateButton({kMm6OptionButtonX[0], kMm6TurnRowY}, kMm6OptionButtonSize, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_SetTurnSpeed, 0);
+        CreateButton({kMm6CheckRowX, kMm6WalkSoundRowY}, kMm6CheckRowSize, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_ToggleWalkSound, 0);
+        CreateButton({kMm6CheckRowX, kMm6ShowDamageRowY}, kMm6CheckRowSize, BUTTON_TYPE_NORMAL, 0,
+                     UIMSG_ToggleShowDamage, 0);
+
+        createVolumeSliderButtons(0, UIMSG_ChangeSoundVolume);
+        createVolumeSliderButtons(1, UIMSG_ChangeMusicVolume);
+        createVolumeSliderButtons(2, UIMSG_ChangeVoiceVolume);
+
+        CreateButton(kMm6ResumeRect.topLeft(), kMm6ResumeRect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0,
+                     INPUT_ACTION_INVALID, localization->str(LSTR_RETURN_TO_GAME));
+        return;
+    }
+
     options_menu_skin.uTextureID_FlipOnExit = assets->getImage_ColorKey("option04");
     options_menu_skin.uTextureID_AlwaysRun = assets->getImage_ColorKey("option03");
     options_menu_skin.uTextureID_ShowDamage = assets->getImage_ColorKey("option02");
@@ -585,32 +656,60 @@ GUIWindow_GameOptions::GUIWindow_GameOptions()
     CreateButton({128, 325}, options_menu_skin.uTextureID_FlipOnExit->size(), BUTTON_TYPE_NORMAL, 0,
                  UIMSG_ToggleFlipOnExit, 0);
 
-    pBtn_SliderLeft = CreateButton({243, 162}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeSoundVolume, 4, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowLeft});
-    pBtn_SliderRight = CreateButton({435, 162}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeSoundVolume, 5, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowRight});
-    CreateButton({263, 162}, {172, 17}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeSoundVolume, 0);
-
-    pBtn_SliderLeft = CreateButton({243, 216}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeMusicVolume, 4, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowLeft});
-    pBtn_SliderRight = CreateButton({435, 216}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeMusicVolume, 5, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowRight});
-    CreateButton({263, 216}, {172, 17}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeMusicVolume, 0);
-
-    pBtn_SliderLeft = CreateButton({243, 270}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVoiceVolume, 4, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowLeft});
-    pBtn_SliderRight = CreateButton({435, 270}, {16, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVoiceVolume, 5, INPUT_ACTION_INVALID, "",
-        {options_menu_skin.uTextureID_ArrowRight});
-    CreateButton({263, 270}, {172, 17}, BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVoiceVolume, 0);
+    createVolumeSliderButtons(0, UIMSG_ChangeSoundVolume);
+    createVolumeSliderButtons(1, UIMSG_ChangeMusicVolume);
+    createVolumeSliderButtons(2, UIMSG_ChangeVoiceVolume);
 
     CreateButton({241, 302}, {214, 40}, BUTTON_TYPE_NORMAL, 0, UIMSG_Escape, 0, INPUT_ACTION_INVALID, localization->str(LSTR_RETURN_TO_GAME));
     CreateButton({19, 140}, {214, 40}, BUTTON_TYPE_NORMAL, 0, UIMSG_OpenKeyMappingOptions, 0, INPUT_ACTION_PASS);
     CreateButton({19, 194}, {214, 40}, BUTTON_TYPE_NORMAL, 0, UIMSG_OpenVideoOptions, 0, INPUT_ACTION_OPEN_OPTIONS);
 }
 
+void GUIWindow_GameOptions::drawVolumeSliderThumb(int row, int level) {
+    VolumeSliderSkin skin = volumeSliderSkin(row);
+
+    render->DrawQuad2D(options_menu_skin.uTextureID_SoundLevels[level],
+                       {skin.thumb.x + skin.step * level, skin.thumb.y});
+}
+
+void GUIWindow_GameOptions::createVolumeSliderButtons(int row, UIMessageType message) {
+    VolumeSliderSkin skin = volumeSliderSkin(row);
+
+    pBtn_SliderLeft = CreateButton(skin.leftArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0, message, 4, INPUT_ACTION_INVALID, "",
+        {options_menu_skin.uTextureID_ArrowLeft});
+    pBtn_SliderRight = CreateButton(skin.rightArrow, {16, 16}, BUTTON_TYPE_NORMAL, 0, message, 5, INPUT_ACTION_INVALID, "",
+        {options_menu_skin.uTextureID_ArrowRight});
+    CreateButton(skin.bar.topLeft(), skin.bar.size(), BUTTON_TYPE_NORMAL, 0, message, 0);
+}
+
 void GUIWindow_GameOptions::Update() {
     render->DrawQuad2D(game_ui_menu_options, {8, 8});
     render->DrawQuad2D(options_menu_skin.uTextureID_Background, {8, 132});
+
+    if (engine->gameVersion() == GAME_VERSION_MM6) {
+        int detail = engine->config->settings.Mm6GraphicsDetail.value();
+        render->DrawQuad2D(options_menu_skin.uTextureID_Mm6GraphicsDetail[detail],
+                           {kMm6OptionColumnX[detail], kMm6DetailRowY + 1});
+
+        int turnColumn = 0;
+        if (engine->config->settings.TurnSpeed.value() == 128) {
+            turnColumn = 2;
+        } else if (engine->config->settings.TurnSpeed.value() == 64) {
+            turnColumn = 1;
+        }
+        render->DrawQuad2D(options_menu_skin.uTextureID_TurnSpeed[turnColumn],
+                           {kMm6OptionColumnX[turnColumn], kMm6TurnRowY + 1});
+
+        if (engine->config->settings.WalkSound.value())
+            render->DrawQuad2D(options_menu_skin.uTextureID_Mm6Checkmark, {kMm6CheckRowX, kMm6WalkSoundRowY});
+        if (engine->config->settings.ShowHits.value())
+            render->DrawQuad2D(options_menu_skin.uTextureID_Mm6Checkmark, {kMm6CheckRowX, kMm6ShowDamageRowY});
+
+        drawVolumeSliderThumb(0, engine->config->settings.SoundLevel.value());
+        drawVolumeSliderThumb(1, engine->config->settings.MusicLevel.value());
+        drawVolumeSliderThumb(2, engine->config->settings.VoiceLevel.value());
+        return;
+    }
 
     switch ((int) engine->config->settings.TurnSpeed.value()) {
         case 64:
@@ -637,12 +736,9 @@ void GUIWindow_GameOptions::Update() {
         render->DrawQuad2D(options_menu_skin.uTextureID_AlwaysRun, {20, 325});
     }
 
-    render->DrawQuad2D(options_menu_skin.uTextureID_SoundLevels[engine->config->settings.SoundLevel.value()],
-        {265 + 17 * engine->config->settings.SoundLevel.value(), 162});
-    render->DrawQuad2D(options_menu_skin.uTextureID_SoundLevels[engine->config->settings.MusicLevel.value()],
-        {265 + 17 * engine->config->settings.MusicLevel.value(), 216});
-    render->DrawQuad2D(options_menu_skin.uTextureID_SoundLevels[engine->config->settings.VoiceLevel.value()],
-        {265 + 17 * engine->config->settings.VoiceLevel.value(), 270});
+    drawVolumeSliderThumb(0, engine->config->settings.SoundLevel.value());
+    drawVolumeSliderThumb(1, engine->config->settings.MusicLevel.value());
+    drawVolumeSliderThumb(2, engine->config->settings.VoiceLevel.value());
 }
 
 void GameUI_OnPlayerPortraitLeftClick(int uPlayerID) {

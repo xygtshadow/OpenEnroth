@@ -25,6 +25,10 @@ class GUIWindow_GameOptions : public GUIWindow {
     virtual ~GUIWindow_GameOptions() {}
 
     virtual void Update() override;
+
+ private:
+    void createVolumeSliderButtons(int row, UIMessageType message);
+    void drawVolumeSliderThumb(int row, int level);
 };
 
 class GUIWindow_GameKeyBindings : public GUIWindow {
@@ -151,5 +155,29 @@ struct OptionsMenuSkin {
     GraphicsImage *uTextureID_AlwaysRun;        // 507CB0
     GraphicsImage *uTextureID_WalkSound;        // 507CB4
     GraphicsImage *uTextureID_ShowDamage;       // 507CB8
+
+    // MM6's Controls screen has no Always Run / Flip on Exit rows, so the four MM7 option0X ticks above
+    // stay null in an MM6 session (MM6's icons.lod has no such art). What it does have instead is a
+    // Graphics Detail row and a single shared checkmark. See MM6.EXE 0x42d583 (loader) / 0x40f550 (draw).
+    GraphicsImage *uTextureID_Mm6GraphicsDetail[3];  // con_High, con_Med, con_Low - indexed by detail level.
+    GraphicsImage *uTextureID_Mm6Checkmark;          // con_X, drawn on every checked option row.
 };
 extern OptionsMenuSkin options_menu_skin;  // 507C60
+
+/**
+ * Geometry of one volume slider on the Controls screen. MM6 and MM7 plates differ, and both the button
+ * rects and the click handlers are driven from here so that the two can't drift apart.
+ */
+struct VolumeSliderSkin {
+    Pointi leftArrow;   // Top-left of the 16x16 left arrow button.
+    Pointi rightArrow;  // Top-left of the 16x16 right arrow button.
+    Recti bar;          // The clickable bar between the arrows.
+    Pointi thumb;       // Top-left of the level indicator at level 0.
+    int step;           // Horizontal pixels per volume level.
+};
+
+/**
+ * @param row                           Slider row: 0 sound, 1 music, 2 voice.
+ * @return                              Slider geometry for the current game version.
+ */
+VolumeSliderSkin volumeSliderSkin(int row);
