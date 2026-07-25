@@ -10394,3 +10394,47 @@ GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
     active.uCurrentFace = face;
     active.uVoiceID = voice;
 }
+
+// MM6 ships its own monster-popup portrait offsets, so indexing MM7's table with MM6 monster ids frames the
+// wrong slice of every MM6 sprite. Right-clicking a New Sorpigal townsfolk drew a headless torso - the peasant
+// sprite landed 70 pixels above the portrait box, so the box framed its midriff.
+GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+    game.tick(2);
+
+    // Everything placed in New Sorpigal - three peasant families (the townsfolk the player right-clicks) plus
+    // a wandering monster family.
+    std::map<MonsterId, int> actorByMonster;
+    for (const Actor &actor : pActors)
+        if (actor.monsterInfo.id != MONSTER_INVALID)
+            actorByMonster.emplace(actor.monsterInfo.id, actor.id);
+    ASSERT_GE(actorByMonster.size(), 4u);
+
+    for (auto [monsterId, actorIndex] : actorByMonster) {
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(pActors[actorIndex].spriteIds[ANIM_Bored], 0_ticks);
+        ASSERT_NE(frame, nullptr);
+        ASSERT_NE(frame->sprites[0], nullptr);
+        ASSERT_NE(frame->sprites[0]->texture, nullptr);
+
+        // Monster sprites sit in a transparent buffer far taller than the portrait box, so the top of the head
+        // is the first row of the buffer that has any pixels at all.
+        RgbaImage &image = frame->sprites[0]->texture->rgba();
+        int spriteTop = -1;
+        for (int y = 0; y < image.height() && spriteTop < 0; y++)
+            for (int x = 0; x < image.width(); x++)
+                if (image[y][x].a != 0) {
+                    spriteTop = y;
+                    break;
+                }
+        ASSERT_GE(spriteTop, 0);
+
+        // The head has to land inside the box - above it the portrait is decapitated, below it the box is empty.
+        int headTop = monsterPopupPortraitYOffset(monsterId) + spriteTop;
+        EXPECT_GE(headTop, 0) << "monster " << std::to_underlying(monsterId) << " is cropped above the portrait box";
+        EXPECT_LT(headTop, monsterPopupPortraitSize)
+            << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait box";
+    }
+}
