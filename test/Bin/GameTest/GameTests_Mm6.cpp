@@ -345,38 +345,37 @@ GAME_TEST(Mm6, WalkUnderShopSign) {
 }
 
 // MM6's other sign variant is built into the shop's own model and hangs its board 16 lower, at 168
-// above the ground - too low for the party to walk under even in the original engine, so bumping into
-// it and stopping is correct. What was not correct is how the party stopped: the sliding plane is
-// built by dragging the contact point down by the colliding sphere's height offset, which only lands
-// at foot level for a contact at that sphere's own center height, so catching the board's bottom edge
-// tilted the plane into the ground - the party got buried ~16 units in the terrain and squeezed
-// through underneath instead of being stopped.
-GAME_TEST(Mm6, BumpIntoWallMountedShopSign) {
+// above the ground - New Sorpigal's armory ("The Common Defense") and general store ("Traveler's
+// Supply") both use it. That is above the head sphere's center but inside its radius, so whether the
+// party fits under comes down to what a sphere is allowed to collide with: the original engine only
+// registers a hit when the sphere's center projects inside the face polygon, while OpenEnroth also
+// tests face edges and corners, and the board's bottom edge caught the party on every one of them.
+GAME_TEST(Mm6, WalkUnderWallMountedShopSign) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
 
     game.startNewGame();
 
-    // New Sorpigal's armory, "The Common Defense" (oute3.odm model 51): west wall at x=-8528, sign arm
-    // running west to x=-8624 at y[-6584,-6576] z[400,408], board hanging at x[-8616,-8552] z[328,392].
-    // Peasants wander this street and block the party just as much as the sign does, so take them out
-    // of the picture - this is about the geometry.
+    // New Sorpigal's armory (oute3.odm model 51): west wall at x=-8528, sign arm running west to
+    // x=-8624 at y[-6584,-6576] z[400,408], board hanging at x[-8616,-8552] z[328,392]. Walk north up
+    // the street right under the board. Peasants wander here and block the party just as much as the
+    // sign does, so take them out of the picture - this is about the geometry.
     engine->config->debug.NoPartyActorCollisions.setValue(true);
-    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-8580, -6700, 161), 90); // Facing north.
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-8580, -6700, 161), 90);
     game.tick(2);
 
     float minZ = pParty->pos.z;
     game.pressKey(PlatformKey::KEY_UP);
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 8; i++) {
         game.tick(1);
         minZ = std::min(minZ, pParty->pos.z);
     }
     game.releaseKey(PlatformKey::KEY_UP);
     game.tick(2);
 
-    // The party walks up to the board and stops flush against it, still standing on the ground.
-    EXPECT_NEAR(pParty->pos.y, -6601.5f, 2.0f); // Board's south face at -6584, minus the head radius.
-    EXPECT_NEAR(pParty->pos.x, -8580.0f, 1.0f);
+    // The party passes under the board and keeps going, on its line and on the ground the whole way.
+    EXPECT_GT(pParty->pos.y, -6400.0f); // Board's north face is at -6576.
+    EXPECT_NEAR(pParty->pos.x, -8580.0f, 2.0f);
     EXPECT_GT(minZ, 159.0f);
 }
 
