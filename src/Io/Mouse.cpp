@@ -123,18 +123,18 @@ void Io::Mouse::DrawCursor() {
         // TODO(pskelton): consider this in future - hide cursor when holding item
         //platform->setCursorShown(false);
     } else {
-        // for other cursor img ie target mouse
-        if (this->cursor_img) {
+        // while mouselooking the pointer is pinned to the viewport center, so draw the aiming crosshair there
+        // instead of whichever cursor image is current
+        if (_mouseLook == MouseLookState::Enabled) {
+            platform->setCursorShown(false);
+            DrawCrosshair();
+        } else if (this->cursor_img) {  // for other cursor img ie target mouse
             platform->setCursorShown(false);
             // draw image - needs centering
             pos.x -= (this->cursor_img->width()) / 2;
             pos.y -= (this->cursor_img->height()) / 2;
 
             render->DrawQuad2D(this->cursor_img, pos);
-        } else if (_mouseLook == MouseLookState::Enabled) {
-            platform->setCursorShown(false);
-            auto pointer = assets->getImage_ColorKey("MICON2", colorTable.Black /*colorTable.TealMask*/);
-            render->DrawQuad2D(pointer, pViewport.center() - pointer->size() / 2);
         } else {
             platform->setCursorShown(true);
         }
@@ -206,6 +206,21 @@ void Io::Mouse::DrawPickedItem() {
     } else {
         render->DrawQuad2D(pTexture, drawPos);
     }
+}
+
+void Io::Mouse::DrawCrosshair() {
+    // A plain plus, drawn at the point that mouselook picking aims at (see `setPosition`). The white cross sits on a
+    // black one that's a pixel thicker, so that the crosshair stays readable against both dark and bright scenery.
+    constexpr int armLength = 5; // Length of a single arm, in pixels, center pixel excluded.
+
+    Pointi center = pViewport.center();
+    Recti horizontal(center.x - armLength, center.y, 2 * armLength + 1, 1);
+    Recti vertical(center.x, center.y - armLength, 1, 2 * armLength + 1);
+
+    render->FillRect(Recti(horizontal.x, horizontal.y - 1, horizontal.w, horizontal.h + 2), colorTable.Black);
+    render->FillRect(Recti(vertical.x - 1, vertical.y, vertical.w + 2, vertical.h), colorTable.Black);
+    render->FillRect(horizontal, colorTable.White);
+    render->FillRect(vertical, colorTable.White);
 }
 
 void Io::Mouse::UI_OnMouseLeftClick() {

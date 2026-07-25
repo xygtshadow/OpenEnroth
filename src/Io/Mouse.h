@@ -36,6 +36,11 @@ class Mouse {
     void DrawCursor();
     void DrawPickedItem();
 
+    /**
+     * Draws the mouselook aiming crosshair - a simple plus at the center of the viewport.
+     */
+    void DrawCrosshair();
+
     void UI_OnMouseLeftClick();
 
 
