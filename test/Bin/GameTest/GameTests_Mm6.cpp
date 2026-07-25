@@ -86,6 +86,7 @@
 #include "GUI/UI/UIMessageScroll.h"
 #include "GUI/UI/UIMm6Segue.h"
 #include "GUI/UI/UIPartyCreation.h"
+#include "GUI/UI/UIPopup.h"
 #include "GUI/UI/UISpell.h"
 #include "GUI/UI/UISpellbook.h"
 #include "GUI/UI/UIStatusBar.h"
