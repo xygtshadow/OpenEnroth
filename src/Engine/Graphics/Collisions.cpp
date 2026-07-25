@@ -57,21 +57,19 @@ static float partyHiSphereRadius() {
 }
 
 /**
- * Whether the collision that `collision_state` currently holds was registered by one of the spheres
- * above the party's feet, and so must not be allowed to slide the party downwards.
+ * Whether the spheres above the party's feet collide with face edges and corners, and not just with
+ * face interiors.
  *
- * The sliding plane is built by dragging the contact point down by the colliding sphere's height
- * offset, which lands it at foot level only for a contact at that sphere's own center height. An edge
- * contact sits off center and tilts the plane into the ground instead. MM6's wall-mounted shop signs
- * are the case that shows it up - their board hangs too low for the party to pass under, and catching
- * its bottom edge buried the party ~16 units into the terrain and squeezed it through rather than
- * stopping it.
- *
- * MM6-only for the same reason as `partyHiSphereOffset` - MM7's traces are recorded against the
- * current sliding behavior, and 6 of them desync on this.
+ * The original engine's sphere-vs-face test (`sub_47531C` / `sub_4754BF`) registers a hit only when the
+ * sphere's center projects inside the face polygon; OpenEnroth added edge and vertex tests on top so
+ * that geometry corners cannot be clipped through. For the feet sphere that is a straight improvement,
+ * but for the head sphere it changes what the party fits under: an overhang whose underside sits above
+ * the head sphere's center but within its radius is passable in the original and blocking here. MM6's
+ * wall-mounted shop signs sit exactly in that band - their boards hang 168 above the ground, 7 above
+ * the head sphere's center - so the party caught on the board's bottom edge on every one of them.
  */
-static bool cantSlideDownFromAbove() {
-    return engine->gameVersion() == GAME_VERSION_MM6 && collision_state.heightOffset > 0.0f;
+static bool partyEdgeCollisionsFromAbove() {
+    return engine->gameVersion() != GAME_VERSION_MM6;
 }
 
 /**
@@ -141,7 +139,8 @@ static bool CollideSphereWithLine(const Vec3f &pos, const Vec3f &p1, const Vec3f
  *                                      polygon if moving along the `dir` axis.
  */
 static bool CollideSphereWithFace(BLVFace* face, const Vec3f& pos, float radius, const Vec3f& dir,
-    float* out_move_distance, Vec3f* out_collision_point, bool ignore_ethereal, int model_idx) {
+    float* out_move_distance, Vec3f* out_collision_point, bool ignore_ethereal, int model_idx,
+    bool interiorOnly = false) {
     if (ignore_ethereal && face->Ethereal())
         return false;
 
@@ -192,6 +191,9 @@ static bool CollideSphereWithFace(BLVFace* face, const Vec3f& pos, float radius,
             return true;
         }
     }
+
+    if (interiorOnly)
+        return false; // See `partyEdgeCollisionsFromAbove`.
 
     // We may not be colliding with the surface of the face but could still be hitting its vertices or edges
     float a, b, c;
@@ -318,7 +320,8 @@ static void CollideBodyWithFace(BLVFace *face, Pid face_pid, bool ignore_etherea
             bool have_collision = false;
             float move_distance = collision_state.move_distance;
             Vec3f col_pos;
-            if (CollideSphereWithFace(face, old_pos, radius, dir, &move_distance, &col_pos, ignore_ethereal, model_idx)) {
+            if (CollideSphereWithFace(face, old_pos, radius, dir, &move_distance, &col_pos, ignore_ethereal, model_idx,
+                                      height > 0.0f && !partyEdgeCollisionsFromAbove())) {
                 have_collision = true;
             }
 
@@ -1046,10 +1049,6 @@ void ProcessPartyCollisionsBLV(int sectorId, int min_party_move_delta_sqr, int *
             if (bFaceSlopeTooSteep && newDirection.z > 0)
                 newDirection.z = 0;
 
-            // And nothing caught above the feet can push the party down, see `cantSlideDownFromAbove`.
-            if (cantSlideDownFromAbove() && newDirection.z < 0)
-                newDirection.z = 0;
-
             newDirection.normalize();
 
             // Push away from the surface and add a touch down for better slide
@@ -1229,10 +1228,6 @@ void ProcessPartyCollisionsODM(Vec3f *partyNewPos, Vec3f *partyInputSpeed, int *
 
             // Cant push uphill on steep faces
             if (bFaceSlopeTooSteep && newDirection.z > 0)
-                newDirection.z = 0;
-
-            // And nothing caught above the feet can push the party down, see `cantSlideDownFromAbove`.
-            if (cantSlideDownFromAbove() && newDirection.z < 0)
                 newDirection.z = 0;
 
             newDirection.normalize();
