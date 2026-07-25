@@ -31,6 +31,32 @@ constexpr float COLLISIONS_MIN_MOVE_DISTANCE = 0.5f; // Minimal movement distanc
 //
 
 /**
+ * Center height and radius of the party's "head" collision sphere.
+ *
+ * The original engine used `stru_721530.height = uPartyHeight - 32` and
+ * `field_8_radius = field_14_radius / 2` in both `ODM_ProcessPartyActions` and `BLV_ProcessPartyActions`,
+ * which with the default 192 height and 37 radius tops the party's collision volume out at `pos.z + 179`
+ * - noticeably below the party's nominal height. Map geometry is authored against that envelope, and
+ * MM6's shop signs are the tight case: the prefab hangs its board 184 above the ground, clearing the
+ * party by 4 units. OpenEnroth grew the head sphere to reach the party's full height, which makes it
+ * catch on the board of every shop sign in the game, so MM6 gets the original numbers back.
+ *
+ * MM7 stays on OpenEnroth's own sizing - it has no geometry in the affected band, and the whole trace
+ * corpus is recorded against it.
+ */
+static float partyHiSphereOffset() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return pParty->height - 32 + 1;
+    return pParty->height - pParty->radius;
+}
+
+static float partyHiSphereRadius() {
+    if (engine->gameVersion() == GAME_VERSION_MM6)
+        return pParty->radius / 2;
+    return pParty->radius;
+}
+
+/**
  * @param pos                           Position of the sphere.
  * @param p1                            Starting point of line.
  * @param p2                            End point of line.
@@ -876,12 +902,12 @@ void ProcessActorCollisionsODM(Actor &actor, bool isFlying) {
 void ProcessPartyCollisionsBLV(int sectorId, int min_party_move_delta_sqr, int *faceId, int *faceEvent) {
     collision_state.total_move_distance = 0;
     collision_state.radius_lo = pParty->radius;
-    collision_state.radius_hi = pParty->radius;
+    collision_state.radius_hi = partyHiSphereRadius();
     collision_state.check_hi = true;
     collision_state.uSectorID = sectorId;
     for (unsigned i = 0; i < 5; i++) {
         collision_state.position_lo = pParty->pos + Vec3f(0, 0, collision_state.radius_lo);
-        collision_state.position_hi = pParty->pos + Vec3f(0, 0, pParty->height - collision_state.radius_lo);  // TODO(pskelton): check this
+        collision_state.position_hi = pParty->pos + Vec3f(0, 0, partyHiSphereOffset());
         collision_state.velocity = pParty->velocity;
 
         Duration dt; // zero means use actual dt
@@ -1035,13 +1061,13 @@ void ProcessPartyCollisionsODM(Vec3f *partyNewPos, Vec3f *partyInputSpeed, int *
     // --(Collisions)-------------------------------------------------------------------
     collision_state.total_move_distance = 0;
     collision_state.radius_lo = pParty->radius;
-    collision_state.radius_hi = pParty->radius;
+    collision_state.radius_hi = partyHiSphereRadius();
     collision_state.check_hi = true;
 
     // make 5 attempts to satisfy collisions
     for (unsigned i = 0; i < 5; i++) {
         collision_state.position_lo = *partyNewPos + Vec3f(0, 0, collision_state.radius_lo);
-        collision_state.position_hi = *partyNewPos + Vec3f(0, 0, pParty->height - collision_state.radius_lo); // TODO(pskelton): check this
+        collision_state.position_hi = *partyNewPos + Vec3f(0, 0, partyHiSphereOffset());
         collision_state.velocity = *partyInputSpeed;
         collision_state.uSectorID = 0;
 

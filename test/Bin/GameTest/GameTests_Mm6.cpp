@@ -310,6 +310,40 @@ GAME_TEST(Mm6, WalkAndInteract) {
     game.tick(200);
 }
 
+// MM6's shop signs all use the same prefab - a post carrying an arm with a board hanging off it, the
+// board's underside 184 above the ground - and the original engine's party collision volume tops out
+// at pos.z + (height - 32 + 1) + radius / 2 = pos.z + 179, so the party clears every one of them by 4
+// units. Sizing the head sphere to reach the party's full height instead put the top at pos.z + 192,
+// so the party's head caught on the board of every shop sign in the game: the collision response then
+// slid the party's feet ~22 units under the terrain and shoved it off its line.
+GAME_TEST(Mm6, WalkUnderShopSign) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // New Sorpigal's tavern sign (oute3.odm model 63): post at x[-9184,-9152] y[-9224,-9192], arm
+    // running west to x=-9280 at z[416,448], board hanging at x[-9272,-9208] y[-9212,-9204] z[344,416].
+    // Ground here is flat at z=160. Walk east along the board, i.e. under its full length.
+    game.teleportTo(pMapStats->GetMapInfo("oute3.odm"), Vec3f(-9400, -9208, 161), 0);
+    game.tick(2);
+
+    float minZ = pParty->pos.z;
+    game.pressKey(PlatformKey::KEY_UP);
+    for (int i = 0; i < 40; i++) {
+        game.tick(1);
+        minZ = std::min(minZ, pParty->pos.z);
+    }
+    game.releaseKey(PlatformKey::KEY_UP);
+    game.tick(2);
+
+    // The party walks the whole length of the board and ends up under it, flush against the post,
+    // never leaving the ground and never getting pushed off its line.
+    EXPECT_NEAR(pParty->pos.x, -9221.5f, 2.0f); // Post's west face at -9184, minus the party radius.
+    EXPECT_NEAR(pParty->pos.y, -9208.0f, 1.0f);
+    EXPECT_GT(minZ, 159.0f);
+}
+
 GAME_TEST(Mm6, KillAndLootPeasant) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
