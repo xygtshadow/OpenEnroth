@@ -634,9 +634,17 @@ class GameConfig : public Config {
 
         Bool MouseLookEnabled = {this, "mouse_look_enabled", false, "Whether mouse look is enabled. Persisted between sessions."};
 
+        Int Mm6GraphicsDetail = {this, "mm6_graphics_detail", 0, &ValidateMm6GraphicsDetail,
+                                 "Graphics detail level shown on MM6's Controls screen: 0 high, 1 medium, 2 low. "
+                                 "Cosmetic - it drove the original's software-rasterizer LOD thresholds "
+                                 "(MM6.EXE 0x458100), which have no equivalent in OE's renderer."};
+
      private:
         static int ValidateLevel(int level) {
             return std::clamp(level, 0, 9);
+        }
+        static int ValidateMm6GraphicsDetail(int detail) {
+            return std::clamp(detail, 0, 2);
         }
         static int ValidateVerticalTurnSpeed(int speed) {
             return std::clamp(speed, 1, 128);

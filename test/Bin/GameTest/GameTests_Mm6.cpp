@@ -6661,6 +6661,84 @@ GAME_TEST(Mm6, GameMenuSkin) {
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
 }
 
+GAME_TEST(Mm6, ControlsScreenSkin) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // MM6's Controls screen is not MM7's: it has no Keyboard and no Video sub-screen, and where MM7
+    // puts the buttons for those MM6 puts its title plate and a Graphics Detail row. Its option rows
+    // are ticked with a single con_X, not MM7's four option0X images - none of which are in MM6's
+    // icons.lod, so they came back as the pending placeholder and drew as error icons on the screen.
+    // Reversed from MM6.EXE: texture loads + button setup @0x42d583..0x42daa5, draw @0x40f550.
+    game.startNewGame();
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_MENU);
+    engine->_messageQueue->addMessageCurrentFrame(UIMSG_Game_OpenOptionsDialog, 0, 0);
+    game.tick(3);
+    ASSERT_EQ(current_screen_type, SCREEN_OPTIONS);
+
+    // MM7-only art must not be loaded at all, and MM6's must be the real thing.
+    EXPECT_EQ(options_menu_skin.uTextureID_WalkSound, nullptr);
+    EXPECT_EQ(options_menu_skin.uTextureID_ShowDamage, nullptr);
+    EXPECT_EQ(options_menu_skin.uTextureID_AlwaysRun, nullptr);
+    EXPECT_EQ(options_menu_skin.uTextureID_FlipOnExit, nullptr);
+    ASSERT_NE(options_menu_skin.uTextureID_Mm6Checkmark, nullptr);
+    EXPECT_EQ(options_menu_skin.uTextureID_Mm6Checkmark->name(), "con_x");
+    EXPECT_EQ(options_menu_skin.uTextureID_Mm6Checkmark->size(), Sizei(16, 16));
+    ASSERT_NE(options_menu_skin.uTextureID_Mm6GraphicsDetail[0], nullptr);
+    EXPECT_EQ(options_menu_skin.uTextureID_Mm6GraphicsDetail[0]->name(), "con_high");
+    EXPECT_EQ(options_menu_skin.uTextureID_Mm6GraphicsDetail[1]->name(), "con_med");
+    EXPECT_EQ(options_menu_skin.uTextureID_Mm6GraphicsDetail[2]->name(), "con_low");
+
+    // 3 detail + 3 turn rate + 2 option rows + 3x3 slider + Resume, and nothing that leads to the
+    // key-mapping or video screens, whose art MM6 doesn't have either.
+    EXPECT_EQ(pGUIWindow_CurrentMenu->vButtons.size(), 18u);
+    for (const GUIButton *button : pGUIWindow_CurrentMenu->vButtons) {
+        EXPECT_NE(button->msg, UIMSG_OpenKeyMappingOptions);
+        EXPECT_NE(button->msg, UIMSG_OpenVideoOptions);
+        EXPECT_NE(button->msg, UIMSG_ToggleAlwaysRun);
+        EXPECT_NE(button->msg, UIMSG_ToggleFlipOnExit);
+    }
+
+    // Graphics Detail: leftmost column is Low, rightmost High, stored high-to-low as MM6 stored it.
+    // Before the fix this click landed on MM7's invisible Video button and left the screen entirely.
+    engine->config->settings.Mm6GraphicsDetail.setValue(0);
+    game.pressAndReleaseButton(BUTTON_LEFT, 40, 218);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_OPTIONS);
+    EXPECT_EQ(engine->config->settings.Mm6GraphicsDetail.value(), 2);
+    game.pressAndReleaseButton(BUTTON_LEFT, 190, 218);
+    game.tick(2);
+    EXPECT_EQ(engine->config->settings.Mm6GraphicsDetail.value(), 0);
+
+    // Turn Rate sits nine pixels above MM7's row.
+    engine->config->settings.TurnSpeed.setValue(0);
+    game.pressAndReleaseButton(BUTTON_LEFT, 40, 268);
+    game.tick(2);
+    EXPECT_EQ(engine->config->settings.TurnSpeed.value(), 128);
+
+    // The Walksound row spans the full 224px plate; MM7's button covered only its left third, ten
+    // pixels lower.
+    bool walkSound = engine->config->settings.WalkSound.value();
+    game.pressAndReleaseButton(BUTTON_LEFT, 200, 298);
+    game.tick(2);
+    EXPECT_EQ(engine->config->settings.WalkSound.value(), !walkSound);
+
+    // Volume bars start at x=278 and step 16px per level, against MM7's x=263 stepping 17.
+    engine->config->settings.SoundLevel.setValue(0);
+    game.pressAndReleaseButton(BUTTON_LEFT, 278 + 16 * 6 + 8, 168);
+    game.tick(2);
+    EXPECT_EQ(engine->config->settings.SoundLevel.value(), 6);
+
+    // Resume Game returns to the escape menu.
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 310);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_MENU);
+
+    game.goToGame();
+}
+
 GAME_TEST(Mm6, PartyCreationSkin) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -9846,3 +9924,4 @@ GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
     active.uCurrentFace = face;
     active.uVoiceID = voice;
 }
+

@@ -288,16 +288,17 @@ void Menu::EventLoop() {
                 continue;
 
             case UIMSG_ChangeMusicVolume: {
+                VolumeSliderSkin skin = volumeSliderSkin(1);
                 int new_level = engine->config->settings.MusicLevel.value();
                 if (param == 4) {
                     new_level -= 1;
-                    new OnButtonClick({243, 216}, {0, 0}, pBtn_SliderLeft, std::string(), false);
+                    new OnButtonClick(skin.leftArrow, {0, 0}, pBtn_SliderLeft, std::string(), false);
                 } else if (param == 5) {
                     new_level += 1;
-                    new OnButtonClick({435, 216}, {0, 0}, pBtn_SliderRight, std::string(), false);
+                    new OnButtonClick(skin.rightArrow, {0, 0}, pBtn_SliderRight, std::string(), false);
                 } else {
                     Pointi pt = mouse->position();
-                    new_level = (pt.x - 263) / 17;  // for mouse
+                    new_level = (pt.x - skin.bar.x) / skin.step;  // for mouse
                 }
 
                 engine->config->settings.MusicLevel.setValue(new_level);
@@ -307,16 +308,17 @@ void Menu::EventLoop() {
             }
 
             case UIMSG_ChangeSoundVolume: {
+                VolumeSliderSkin skin = volumeSliderSkin(0);
                 int new_level = engine->config->settings.SoundLevel.value();
                 if (param == 4) {
                     new_level -= 1;
-                    new OnButtonClick({243, 162}, {0, 0}, pBtn_SliderLeft, std::string(), false);
+                    new OnButtonClick(skin.leftArrow, {0, 0}, pBtn_SliderLeft, std::string(), false);
                 } else if (param == 5) {
                     new_level += 1;
-                    new OnButtonClick({435, 162}, {0, 0}, pBtn_SliderRight, std::string(), false);
+                    new OnButtonClick(skin.rightArrow, {0, 0}, pBtn_SliderRight, std::string(), false);
                 } else {
                     Pointi pt = mouse->position();
-                    new_level = (pt.x - 263) / 17;
+                    new_level = (pt.x - skin.bar.x) / skin.step;
                 }
 
                 engine->config->settings.SoundLevel.setValue(new_level);
@@ -338,16 +340,17 @@ void Menu::EventLoop() {
                 engine->config->settings.ShowHits.toggle();
                 continue;
             case UIMSG_ChangeVoiceVolume: {
+                VolumeSliderSkin skin = volumeSliderSkin(2);
                 int new_level = engine->config->settings.VoiceLevel.value();
                 if (param == 4) {
                     new_level -= 1;
-                    new OnButtonClick({243, 270}, {0, 0}, pBtn_SliderLeft, std::string(), false);
+                    new OnButtonClick(skin.leftArrow, {0, 0}, pBtn_SliderLeft, std::string(), false);
                 } else if (param == 5) {
                     new_level += 1;
-                    new OnButtonClick({435, 270}, {0, 0}, pBtn_SliderRight, std::string(), false);
+                    new OnButtonClick(skin.rightArrow, {0, 0}, pBtn_SliderRight, std::string(), false);
                 } else {
                     Pointi pt = mouse->position();
-                    new_level = (pt.x - 263) / 17;
+                    new_level = (pt.x - skin.bar.x) / skin.step;
                 }
 
                 engine->config->settings.VoiceLevel.setValue(new_level);
@@ -364,6 +367,13 @@ void Menu::EventLoop() {
                 continue;
 
             case UIMSG_SetGraphicsMode:
+                // MM6's Controls screen has a Graphics Detail row (MM6.EXE handler @0x42dfa6). It drove the
+                // software rasterizer's LOD thresholds, which OE has no equivalent for, so all we do is
+                // remember the choice and move the highlight.
+                if (engine->gameVersion() == GAME_VERSION_MM6) {
+                    engine->config->settings.Mm6GraphicsDetail.setValue(param);
+                    continue;
+                }
                 assert(false);  // Nomad: graphicsmode as it was now removed
                 continue;
 
