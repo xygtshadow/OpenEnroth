@@ -10126,38 +10126,52 @@ GAME_TEST(Mm6, MonsterPopupMm6Layout) {
     test.startTaping();
 
     // Popups draw only while the right button is HELD, and holding it pauses the event timer - so keep it
-    // down for the whole test and the monster can't wander out from under the crosshair between the
-    // assertion groups. The popup is redrawn every frame, so mid-hold state changes show up in the tape.
+    // down for the whole test. No actor AI runs from here on, which is what keeps the target under the
+    // crosshair while the assertion groups mutate state. The popup is redrawn every frame, so those
+    // mid-hold changes show up in the tape.
     game.pressButton(BUTTON_RIGHT, pickX, pickY);
     game.tick(2);
 
-    // (A) The MM6 layout drew, and it is not MM7's. MM7's popup draws the Hit Points / Armor Class / Damage
-    //     labels unconditionally (only their values are gated to "?"), so their absence discriminates the
-    //     two layouts. MM6's popup has none of them - hit points only with the Horn, and then as a single
-    //     "Hit Points: N" line. (MM7's "Effects" heading is useless here: global.txt row 631 doesn't exist
-    //     in MM6's 595-row file, so it would be an empty string in an MM6 session.)
-    auto texts = textTape.flatten();
-    EXPECT_CONTAINS(texts, pActors[actorId].GetDisplayName());
-    EXPECT_MISSES(texts, localization->str(LSTR_ARMOR_CLASS));
-    EXPECT_MISSES(texts, localization->str(LSTR_DAMAGE));
-    EXPECT_MISSES(texts, localization->str(LSTR_HIT_POINTS)); // No Horn yet - and MM6 never draws a bare label.
+    // (D) The effects list: the active buff is named. NB: the monster's name is NOT usable as proof the
+    //     popup drew - the hover status bar emits the same string into this tape every frame
+    //     (Game.cpp -> GameUI_WritePointedObjectStatusString -> UIStatusBar). The health-bar texture in
+    //     (C) is the discriminating proof-of-draw.
+    EXPECT_CONTAINS(textTape.flatten(), localization->actorBuffName(ACTOR_BUFF_PARALYZED));
 
     // (C) The health bar really drew. MM6 loads its pieces through GUIWindow.cpp's `getImage_Solid` branch,
     //     a different path from MM7's `getImage_ColorKey`, and `NullRenderer::DrawQuad2D` notifies only
     //     `if (texture)` - so a null MM6 texture shows up here as a missing tape entry.
     EXPECT_CONTAINS(textureTape.flatten(), "mhp_bg");
 
-    // (D) The effects list: the active buff is named, with no heading and no "None" placeholder. This is
-    //     what discriminates the MM6 block from a copy-paste of MM7's.
-    EXPECT_CONTAINS(texts, localization->actorBuffName(ACTOR_BUFF_PARALYZED));
+    // Now clear the target's effects and damage it, still mid-hold. The unbuffed frames are what exercise
+    // the "no None placeholder" rule below, and current hp must differ from the monster's max hp so that
+    // an implementation drawing max hp - which is what MM7's popup shows - can't pass (E).
+    for (ActorBuff buff : pActors[actorId].buffs.indices())
+        pActors[actorId].buffs[buff].Reset();
+    pActors[actorId].hp = 4;
+    ASSERT_NE(static_cast<int>(pActors[actorId].hp), static_cast<int>(pActors[actorId].monsterInfo.hp));
+    game.tick(2);
+    std::string hitPointsLine = fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[actorId].hp);
+
+    // (A) The MM6 layout drew, and it is not MM7's. MM7's popup draws the Hit Points / Armor Class / Damage
+    //     labels unconditionally (only their values are gated to "?"), so their absence discriminates the
+    //     two layouts. MM6's popup has none of them. (MM7's "Effects" heading is useless here: global.txt
+    //     row 631 doesn't exist in MM6's 595-row file, so it would be an empty string in an MM6 session.)
+    auto texts = textTape.flatten();
+    EXPECT_MISSES(texts, localization->str(LSTR_ARMOR_CLASS));
+    EXPECT_MISSES(texts, localization->str(LSTR_DAMAGE));
+    EXPECT_MISSES(texts, localization->str(LSTR_HIT_POINTS)); // MM6 never draws the bare label.
+    EXPECT_MISSES(texts, hitPointsLine);                      // And the line itself is gated on the Horn.
+
+    // (D, continued) No "None" placeholder for a monster with no effects - the effects list is MM6's own
+    //     block, not a copy of MM7's, which fills an empty list with "None".
     EXPECT_MISSES(texts, localization->str(LSTR_NONE));
 
-    // (E) The Horn of Ros reveals the monster's current hit points. Hand it over mid-hold - the popup
+    // (E) The Horn of Ros reveals the monster's *current* hit points. Hand it over mid-hold - the popup
     //     redraws every frame the button is down.
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ITEM_MM6_HORN_OF_ROS)));
     game.tick(2);
-    EXPECT_CONTAINS(textTape.flatten(),
-                    fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[actorId].hp));
+    EXPECT_CONTAINS(textTape.flatten(), hitPointsLine);
 
     // (B) The developer escape hatch. `debug.FullMonsterID` falls back to OE's MM7 popup so monster stats
     //     stay inspectable in an MM6 session - without asserting on it, dropping the FullMonsterID term
