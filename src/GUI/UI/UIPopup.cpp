@@ -732,14 +732,18 @@ static SpriteFrame *monsterPopupAdvanceDoll(unsigned int uActorID) {
     return result;
 }
 
+bool partyHasHornOfRos() {
+    // MM6 scans all four characters' whole 138-item arrays, equipped slots included. `Party::hasItem` runs
+    // `Inventory::find` over the same combined storage, so an equipped horn counts here too.
+    return pParty->hasItem(ITEM_MM6_HORN_OF_ROS);
+}
+
 /**
  * Renders the monster info popup the way MM6 does - a fixed 256x256 window whose whole interior is the
  * portrait, drawn straight onto the popup's stone background. MM6 has no monster-identification skill and no
  * stats block; carrying the Horn of Ros is its entire monster-identification mechanic.
  *
  * MM6.EXE 0x41CE20.
- *
- * TODO: effects list and Horn of Ros hit-points line - tasks 4 and 5 of this work item.
  *
  * @param uActorID                  ID of the actor to show info for.
  * @param window                    The window to render into.
@@ -754,6 +758,28 @@ static void MonsterPopup_DrawMm6(unsigned int uActorID, const Recti &window) {
     GUIWindow::DrawTitleText(assets->pFontComic.get(), 0, 12, colorTable.PaleCanary,
                              pActors[uActorID].GetDisplayName(), 3, window);
     Actor::DrawHealthBar(&pActors[uActorID], window);
+
+    // MM6 stacks the monster's active effects upward from just above the Horn of Ros line, with no heading
+    // and no "None" placeholder. MM6.EXE 0x41D1B7. Its font is smallnum.fnt, same as ours. A crowded list
+    // is allowed to overflow into the portrait - MM6 doesn't clamp it either.
+    GUIFont *font = assets->pFontSmallnum.get();
+    int fontHeight = font->GetHeight();
+    int effectY = window.h - 2 * fontHeight - 12;
+    for (ActorBuff buff : pActors[uActorID].buffs.indices()) {
+        if (!pActors[uActorID].buffs[buff].Active())
+            continue;
+        std::string text = localization->actorBuffName(buff);
+        if (text.empty())
+            continue;
+        effectY -= fontHeight;
+        GUIWindow::DrawText(font, {12, effectY}, GetSpellColor(spellForActorBuff(buff)), text, window);
+    }
+
+    // MM6's only stat readout, and only while the party carries the Horn of Ros. MM6.EXE 0x41D271.
+    if (partyHasHornOfRos()) {
+        std::string str = fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[uActorID].hp);
+        GUIWindow::DrawTitleText(font, 0, window.h - fontHeight - 12, colorTable.White, str, 3, window);
+    }
 }
 
 /** MM6 draws a fixed-layout popup with no stats block; `debug.FullMonsterID` falls back to OE's MM7 popup

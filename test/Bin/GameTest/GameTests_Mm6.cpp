@@ -39,6 +39,7 @@
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
 #include "Engine/Graphics/Viewport.h"
+#include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/TurnEngine/TurnEngineEnums.h"
 #include "Engine/Objects/Actor.h"
@@ -10066,4 +10067,106 @@ GAME_TEST(Mm6, MonsterPopupMm6Geometry) {
     EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(4)), 8);
     EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(6)), 8);
     EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(10)), 38);
+}
+
+// The whole MM6 monster popup, end to end through the real right-click path. MM6 has no monster-id skill
+// and no stats block (MM6.EXE 0x41CE20): below the portrait it stacks the monster's active effects upward
+// with no "Effects" heading and no "None" placeholder (0x41D1B7), and its one stat readout - the monster's
+// current hit points - appears only while the party carries the Horn of Ros (0x41D271), which is MM6's
+// entire monster-identification mechanic. `debug.FullMonsterID` falls back to OE's MM7 popup.
+GAME_TEST(Mm6, MonsterPopupMm6Layout) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The known placed peasant of New Sorpigal (first actor record of oute3.ddm), the same fixed target
+    // `Mm6.KillAndLootPeasant` walks up to.
+    auto target = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return std::to_underlying(actor.monsterId) == 123 && actor.initialPosition == Vec3f(-10296, -7528, 160);
+    });
+    ASSERT_NE(target, pActors.end());
+    int actorId = target->id;
+
+    // Freeze the street before parking the party: the target then holds still for the crosshair sweep
+    // instead of wandering out from under it, and bystanders can't shuffle into the line of sight. The
+    // target's paralysis is also the active effect that assertion group (D) looks for.
+    for (Actor &actor : pActors)
+        actor.buffs[ACTOR_BUFF_PARALYZED].Apply(
+            pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 0, 0, 0);
+
+    // Park the party in front of it and sweep the crosshair column until the pick lands on it. This must
+    // sweep on `PickMouseInfoPopup` - the popup's own pick - and not on `mouse->uPointingObjectID`, which
+    // comes from `PickMouseNormal` at a different depth and with a different sprite filter, and so finds
+    // positions where the hover hint works but no popup is drawn. Scenery can block a given approach, so
+    // try several sides and distances until one of them can see the target.
+    int pickX = 238, pickY = -1;
+    for (Vec3f offset : {Vec3f(-250, 0, 0), Vec3f(250, 0, 0), Vec3f(0, -250, 0), Vec3f(0, 250, 0),
+                         Vec3f(-400, 0, 0), Vec3f(400, 0, 0), Vec3f(0, -400, 0), Vec3f(0, 400, 0)}) {
+        Vec3f targetPos = pActors[actorId].pos;
+        Vec3f pos = targetPos + offset;
+        int yawDegrees = TrigLUT.atan2(targetPos.x - pos.x, targetPos.y - pos.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+        game.tick(2);
+        for (int y = 80; y <= 330 && pickY < 0; y += 6) {
+            game.moveMouse(pickX, y); // Only posts the event - the mouse doesn't move without a tick.
+            game.tick(1);
+            Pid pointed = engine->PickMouseInfoPopup().pid;
+            if (pointed.type() == OBJECT_Actor && static_cast<int>(pointed.id()) == actorId)
+                pickY = y;
+        }
+        if (pickY >= 0)
+            break;
+    }
+    ASSERT_NE(pickY, -1) << "the monster could not be hovered";
+
+    // Tape from here so the sweep's own HUD text stays out of the popup's tape.
+    auto textTape = tapes.allGUIWindowsText();
+    auto textureTape = tapes.hudTextures();
+    test.startTaping();
+
+    // Popups draw only while the right button is HELD, and holding it pauses the event timer - so keep it
+    // down for the whole test and the monster can't wander out from under the crosshair between the
+    // assertion groups. The popup is redrawn every frame, so mid-hold state changes show up in the tape.
+    game.pressButton(BUTTON_RIGHT, pickX, pickY);
+    game.tick(2);
+
+    // (A) The MM6 layout drew, and it is not MM7's. MM7's popup draws the Hit Points / Armor Class / Damage
+    //     labels unconditionally (only their values are gated to "?"), so their absence discriminates the
+    //     two layouts. MM6's popup has none of them - hit points only with the Horn, and then as a single
+    //     "Hit Points: N" line. (MM7's "Effects" heading is useless here: global.txt row 631 doesn't exist
+    //     in MM6's 595-row file, so it would be an empty string in an MM6 session.)
+    auto texts = textTape.flatten();
+    EXPECT_CONTAINS(texts, pActors[actorId].GetDisplayName());
+    EXPECT_MISSES(texts, localization->str(LSTR_ARMOR_CLASS));
+    EXPECT_MISSES(texts, localization->str(LSTR_DAMAGE));
+    EXPECT_MISSES(texts, localization->str(LSTR_HIT_POINTS)); // No Horn yet - and MM6 never draws a bare label.
+
+    // (C) The health bar really drew. MM6 loads its pieces through GUIWindow.cpp's `getImage_Solid` branch,
+    //     a different path from MM7's `getImage_ColorKey`, and `NullRenderer::DrawQuad2D` notifies only
+    //     `if (texture)` - so a null MM6 texture shows up here as a missing tape entry.
+    EXPECT_CONTAINS(textureTape.flatten(), "mhp_bg");
+
+    // (D) The effects list: the active buff is named, with no heading and no "None" placeholder. This is
+    //     what discriminates the MM6 block from a copy-paste of MM7's.
+    EXPECT_CONTAINS(texts, localization->actorBuffName(ACTOR_BUFF_PARALYZED));
+    EXPECT_MISSES(texts, localization->str(LSTR_NONE));
+
+    // (E) The Horn of Ros reveals the monster's current hit points. Hand it over mid-hold - the popup
+    //     redraws every frame the button is down.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ITEM_MM6_HORN_OF_ROS)));
+    game.tick(2);
+    EXPECT_CONTAINS(textTape.flatten(),
+                    fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[actorId].hp));
+
+    // (B) The developer escape hatch. `debug.FullMonsterID` falls back to OE's MM7 popup so monster stats
+    //     stay inspectable in an MM6 session - without asserting on it, dropping the FullMonsterID term
+    //     from `useMm6MonsterPopup` would leave every test in the repo green.
+    engine->config->debug.FullMonsterID.setValue(true);
+    game.tick(2);
+    EXPECT_CONTAINS(textTape.flatten(), localization->str(LSTR_ARMOR_CLASS));
+    engine->config->debug.FullMonsterID.reset();
+
+    game.releaseButton(BUTTON_RIGHT, pickX, pickY);
+    game.tick(2);
 }

@@ -56,6 +56,13 @@ constexpr int monsterPopupMm6PortraitMargin = 38;
 int monsterPopupMm6PortraitOffset(MonsterId monsterId);
 
 /**
+ * @return                          Whether any character carries `ITEM_MM6_HORN_OF_ROS`. MM6 scans all four
+ *                                  characters' whole item arrays, so an equipped horn counts too.
+ *                                  MM6.EXE 0x41D271.
+ */
+bool partyHasHornOfRos();
+
+/**
  * If `mousePos` is over a character portrait, uses the picked item on that character and return true. Note that using
  * an item can either consume that item, or display an error string (E.g. "Crossbow can not be used that way").
  *
