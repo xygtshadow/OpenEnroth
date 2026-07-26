@@ -703,17 +703,19 @@ static Pointi houseNpcPortraitPos(int index, int count) {
 void prepareHouse(HouseId house) {
     houseNpcs.clear();
 
-    // Default proprietor of non-simple houses. MM6 town halls have a named proprietor in 2dEvents
-    // (Janice/Earnest/Jake) but no portrait in the animated-rooms table - the house dialogue is
-    // still anchored on them, so push a portrait-less entry (draw sites skip null icons).
+    // Default proprietor of non-simple houses - present only when the animated-rooms record names a
+    // portrait, in both games (MM6.EXE 0x43c1c3-0x43c1d9 reads HouseMovies[animId].house_npc_id into
+    // its "has proprietor" global and seeds the occupant count from that alone; there is no fallback
+    // on the 2dEvents proprietor name). MM6's town halls (room animations 13-15) and the Hermit's Hut
+    // (66) carry 0 there: the clerk their 2dEvents row names is one of the house's OWN npcdata
+    // occupants - Janice/Earnest/Jake, all profession "Clerk", each carrying the bounty hunt as
+    // scripted topic 399 - so synthesizing a proprietor from the name listed her twice.
     int proprietorId = houseAnimDescr(houseTable[house].uAnimationID).house_npc_id;
-    bool mm6NamedProprietor = engine->gameVersion() == GAME_VERSION_MM6 && !houseTable[house].pProprieterName.empty();
-    if (proprietorId || mm6NamedProprietor) {
+    if (proprietorId) {
         HouseNpcDesc desc;
         desc.type = HOUSE_PROPRIETOR;
         desc.label = localization->format(LSTR_CONVERSE_WITH_S, houseTable[house].pProprieterName);
-        if (proprietorId)
-            desc.icon = assets->getImage_ColorKey(fmt::format("npc{:03}", proprietorId));
+        desc.icon = assets->getImage_ColorKey(fmt::format("npc{:03}", proprietorId));
 
         houseNpcs.push_back(desc);
     }
@@ -729,6 +731,13 @@ void prepareHouse(HouseId house) {
                 desc.npc = &pNPCStats->pNPCData[i];
 
                 houseNpcs.push_back(desc);
+                if (engine->gameVersion() == GAME_VERSION_MM6 && pNPCStats->pNPCData[i].mm6HasNews &&
+                    pNPCStats->pNPCData[i].mm6News.text.empty()) {
+                    // MM6.EXE 0x43c1fa calls the news picker on every occupant as the strip is built;
+                    // it assigns from the current map's own news once and then leaves the NPC alone,
+                    // so a news-teller repeats the same line forever.
+                    pNPCStats->pNPCData[i].mm6News = pNPCStats->pickRandomNewsEntry(engine->_currentLoadedMapId);
+                }
                 if (!(pNPCStats->pNPCData[i].flags & NPC_GREETED_SECOND)) {
                     if (pNPCStats->pNPCData[i].flags & NPC_GREETED_FIRST) {
                         pNPCStats->pNPCData[i].flags &= ~NPC_GREETED_FIRST;
@@ -827,6 +836,20 @@ void selectHouseNPCDialogueOption(DialogueId topic) {
                                                pParty->activeCharacterIndex() - 1, pCurrentNPCInfo);
         NPCHireableDialogPrepare();
         dialogue_show_profession_details = false;
+        BackToHouseMenu();
+        return;
+    }
+
+    // MM6's house occupants answer the profession small talk and the regional news right on the
+    // house menu, from the same tables street dialogue reads (MM6.EXE 0x4966e5 / 0x496761).
+    if (topic == DIALOGUE_STREET_MM6_PROF_TOPIC) {
+        current_npc_text = pNPCStats->mm6ProfText[pCurrentNPCInfo->profession][pParty->uCurrentDayOfMonth % 7].text;
+        BackToHouseMenu();
+        return;
+    }
+
+    if (topic == DIALOGUE_STREET_MM6_NEWS) {
+        current_npc_text = pCurrentNPCInfo->mm6News.text;
         BackToHouseMenu();
         return;
     }
@@ -1328,7 +1351,7 @@ void GUIWindow_House::initializeNPCDialogue(int npc) {
         return;
     }
 
-    initializeNPCDialogueButtons(prepareScriptedNPCDialogueTopics(houseNpcs[npc].npc));
+    initializeNPCDialogueButtons(prepareHouseNPCDialogueTopics(houseNpcs[npc].npc));
 }
 
 void GUIWindow_House::initializeNPCDialogueButtons(std::vector<DialogueId> optionList) {

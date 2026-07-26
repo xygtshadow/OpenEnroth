@@ -73,6 +73,10 @@ struct NPCData {  // 4Ch
     Sex sex = SEX_MALE;
     int hasUsedAbility = 0;
     int newsTopic = 0;
+    // MM6 npcdata.txt "News Y/N" column: this NPC offers the regional-news dialogue option. Gates
+    // both the option itself (MM6.EXE house option factory 0x499bbf) and the news pick (0x43bc23).
+    // Always set for generated street citizens, who are the only news-tellers in MM7's data model.
+    bool mm6HasNews = false;
     // MM6: the regional news line behind this NPC's "News" dialogue option, picked once at first
     // dialogue (MM6.EXE 0x43BC20 stores an npcnews.txt index in the NPC's NewsTopic field, so the
     // NPC repeats the same line forever). Transient - street citizens live per map session.
