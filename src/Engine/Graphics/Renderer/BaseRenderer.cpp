@@ -528,7 +528,9 @@ void BaseRenderer::BillboardSphereSpellFX(SpellFX_Billboard *a1, Color diffuse) 
 
 void BaseRenderer::DrawMonsterPortrait(const Recti &rc, SpriteFrame *Portrait, int Y_Offset) {
     Recti rct;
-    rct.x = rc.x + 64 - Portrait->sprites[0]->uWidth / 2;
+    // The centre has to come from the rect - the old hardcoded 64 was half of MM7's fixed 128px portrait box,
+    // while MM6 gives the portrait the popup's whole 230px-wide interior.
+    rct.x = rc.x + rc.w / 2 - Portrait->sprites[0]->uWidth / 2;
     rct.y = rc.y + Y_Offset;
     rct.w = Portrait->sprites[0]->uWidth;
     rct.h = Portrait->sprites[0]->uHeight;

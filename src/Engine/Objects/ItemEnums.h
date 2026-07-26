@@ -1034,6 +1034,11 @@ constexpr ItemId ITEM_MM6_RELIC_AEGIS = ItemId(423);        // Shielding and Imm
 // (MM6.EXE actor-death handler @0x4031f1), and the reactor face event 60 trades it for the win.
 constexpr ItemId ITEM_MM6_RITUAL_OF_THE_VOID = ItemId(544);
 
+// MM6's entire monster-identification mechanic: while any character carries the Horn of Ros, the
+// monster popup shows the monster's current hit points (MM6.EXE 0x41D271). MM6 has no Monster ID
+// skill at all.
+constexpr ItemId ITEM_MM6_HORN_OF_ROS = ItemId(435);
+
 // MM6 shop sell/identify/repair eligibility (MM6.EXE 0x4A4C30) refuses quest property by raw id:
 // everything above the artifact/relic block (which ends at 429, Hera) - the Leather Pouches,
 // Hourglass of Time, Sacred Chalice and Horn of Ros at 430-435, then Third Eye through the

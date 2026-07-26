@@ -201,9 +201,9 @@ IndexedArray<int, MONSTER_TYPE_FIRST, MONSTER_TYPE_LAST> monster_popup_y_offsets
 };
 
 // MM6's own portrait offsets, MM6.EXE 0x4BD10C. Indexed the same way as the MM7 table above - by 3-tier monster
-// family, `(monsterId - 1) / 3` - but the values are already relative to the top of the portrait: MM6's draw code
-// (MM6.EXE 0x41D06E) adds them straight to the portrait's origin where MM7 subtracts a further 40. MM6 monster ids
-// stop at 173 (zReactor), so the last two families are padding.
+// family, `(monsterId - 1) / 3` - but measured from MM6's own portrait baseline at `window.y + 50` rather than
+// from the top of a portrait box (MM6.EXE 0x41D06E); see `monsterPopupMm6PortraitOffset`. MM7 instead measures
+// from the box top less a further 40. MM6 monster ids stop at 173 (zReactor), so the last two families are padding.
 static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
     -40,  -30,  -20,    0,  -30,    0,  -30,    0,  -60,    0,    0,    0,  // Monsters 1-36.
     -60, -100,  -30,  -30,    0,    0,    0,  -20,    0,    0, -120,    0,  // Monsters 37-72.
@@ -215,15 +215,39 @@ static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
 int monsterPopupPortraitYOffset(MonsterId monsterId) {
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6 monster ids index MM6's monsters.txt, so the MM7 MonsterType families don't apply.
-        // Note that MM6 gives the portrait the popup's whole 230px interior, starting 38px above the point these
-        // offsets are measured from, where we frame it in a 128px box. Dropping that top margin - i.e. applying
-        // the offsets straight to the top edge of our box - is what keeps a townsfolk's head in frame.
+        // The value moves the sprite up or down from MM6's own portrait baseline, which sits 38px inside the
+        // 230px portrait area - see `monsterPopupMm6PortraitOffset`.
         int family = (std::to_underlying(monsterId) - 1) / 3;
         if (family < 0 || family >= static_cast<int>(monsterPopupYOffsetsMm6.size()))
             return 0;
         return monsterPopupYOffsetsMm6[family];
     }
     return monster_popup_y_offsets[monsterTypeForMonsterId(monsterId)] - 40;
+}
+
+Recti monsterPopupMm6WindowRect(int mouseX) {
+    // MM6.EXE 0x41161B. Note the placement rule matches MM7's, just with MM6's narrower window:
+    // 30px to the right of the cursor, or that far to the left of it once the cursor passes half-screen.
+    // This always lands inside a 640x480 UI - x in [30, 350] on the left branch and [35, 353] on the right,
+    // so the right edge stays within [286, 609] and the bottom edge is always 296.
+    //
+    // No clamp can therefore fire at this size, neither MM6's own screen clamp (MM6.EXE 0x40FAE0) nor OE's
+    // in `GUIWindow::DrawMessageBox`, which takes its rect by non-const reference and may move it. The
+    // caller passes this rect through `DrawMessageBox` before deriving the portrait geometry from it, so
+    // that matters: outside the game viewport `DrawMessageBox` clamps against (0, 0, 640, 480), and none of
+    // its branches trigger for a rect that is already fully inside those bounds.
+    int x = mouseX <= 320 ? mouseX + 30 : mouseX - (monsterPopupMm6WindowSize + 30);
+    return Recti(x, 40, monsterPopupMm6WindowSize, monsterPopupMm6WindowSize);
+}
+
+Recti monsterPopupMm6PortraitArea(const Recti &window) {
+    // MM6.EXE 0x41CFF6-0x41D038 clips the portrait to [x+12, y+12] - [x+w-14, y+h-14].
+    return Recti(Pointi(window.x + 12, window.y + 12),
+                 Pointi(window.x + window.w - 14, window.y + window.h - 14));
+}
+
+int monsterPopupMm6PortraitOffset(MonsterId monsterId) {
+    return monsterPopupMm6PortraitMargin + monsterPopupPortraitYOffset(monsterId);
 }
 
 // OE addition - colors for monster special attack text.
@@ -655,6 +679,120 @@ void GameUI_DrawItemInfo(Item *inspect_item) {
 }
 
 /**
+ * Advances the popup's idle-animation doll and resolves the sprite frame to draw. Shared by both games'
+ * monster popups.
+ *
+ * Advances the doll by `pMiscTimer->dt()`, so call it at most once per rendered frame - MM7's popup does so
+ * only on its draw pass, never on its measure pass.
+ *
+ * @param uActorID                  ID of the actor to show info for.
+ * @return                          Sprite frame to draw the monster's portrait from.
+ */
+static SpriteFrame *monsterPopupAdvanceDoll(unsigned int uActorID) {
+    static Actor pMonsterInfoUI_Doll;
+
+    Duration actionLen;
+    if (pActors[uActorID].monsterInfo.id == pMonsterInfoUI_Doll.monsterInfo.id) {
+        actionLen = pMonsterInfoUI_Doll.currentActionLength;
+    } else {
+        // copy actor info if different
+        // The doll is a process-lifetime static that survives map changes and new games, so only its animation
+        // bookkeeping is trusted - sprite ids are per-map and must always come from the live actor.
+        pMonsterInfoUI_Doll = pActors[uActorID];
+        pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
+        pMonsterInfoUI_Doll.currentActionTime = 0_ticks;
+        actionLen = Duration::randomRealtimeSeconds(vrng, 1, 3);
+        pMonsterInfoUI_Doll.currentActionLength = actionLen;
+    }
+
+    if (pMonsterInfoUI_Doll.currentActionTime > actionLen) {
+        pMonsterInfoUI_Doll.currentActionTime = 0_ticks;
+        if (pMonsterInfoUI_Doll.currentActionAnimation == ANIM_Bored ||
+            pMonsterInfoUI_Doll.currentActionAnimation == ANIM_AtkMelee) {
+            pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Standing;
+            pMonsterInfoUI_Doll.currentActionLength = Duration::randomRealtimeSeconds(vrng, 1, 2);
+        } else {
+            // rand();
+            pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
+            if (!isPeasant(pMonsterInfoUI_Doll.monsterInfo.id, engine->gameVersion()) && vrng->random(30) < 100)
+                pMonsterInfoUI_Doll.currentActionAnimation = ANIM_AtkMelee;
+            pMonsterInfoUI_Doll.currentActionLength =
+                    pSpriteFrameTable
+                            ->pSpriteSFrames[pActors[uActorID].spriteIds[pMonsterInfoUI_Doll.currentActionAnimation]]
+                            .animationLength;
+        }
+    }
+
+    SpriteFrame *result = pSpriteFrameTable->GetFrame(
+            pActors[uActorID].spriteIds[pMonsterInfoUI_Doll.currentActionAnimation],
+            pMonsterInfoUI_Doll.currentActionTime);
+
+    pMonsterInfoUI_Doll.currentActionTime += pMiscTimer->dt();
+
+    return result;
+}
+
+bool partyHasHornOfRos() {
+    // MM6 scans all four characters' whole 138-item arrays, equipped slots included. `Party::hasItem` runs
+    // `Inventory::find` over the same combined storage, so an equipped horn counts here too.
+    return pParty->hasItem(ITEM_MM6_HORN_OF_ROS);
+}
+
+/**
+ * Renders the monster info popup the way MM6 does - a fixed 256x256 window whose whole interior is the
+ * portrait, drawn straight onto the popup's stone background. MM6 has no monster-identification skill and no
+ * stats block; carrying the Horn of Ros is its entire monster-identification mechanic.
+ *
+ * MM6.EXE 0x41CE20.
+ *
+ * @param uActorID                  ID of the actor to show info for.
+ * @param window                    The window to render into.
+ */
+static void MonsterPopup_DrawMm6(unsigned int uActorID, const Recti &window) {
+    SpriteFrame *portrait = monsterPopupAdvanceDoll(uActorID);
+
+    // MM6 draws the monster straight onto the popup's stone background - no backing fill, no border.
+    // MM6 has framesets with no loadable sprites at all, and `SpriteFrameTable::GetFrame` passes an empty
+    // frame through rather than escaping its frameset - so the renderer only ever sees a drawable frame.
+    if (portrait && portrait->sprites[0]) {
+        Recti area = monsterPopupMm6PortraitArea(window);
+        render->DrawMonsterPortrait(area, portrait, monsterPopupMm6PortraitOffset(pActors[uActorID].monsterInfo.id));
+    }
+
+    GUIWindow::DrawTitleText(assets->pFontComic.get(), 0, 12, colorTable.PaleCanary,
+                             pActors[uActorID].GetDisplayName(), 3, window);
+    Actor::DrawHealthBar(&pActors[uActorID], window);
+
+    // MM6 stacks the monster's active effects upward from just above the Horn of Ros line, with no heading
+    // and no "None" placeholder. MM6.EXE 0x41D1B7. Its font is smallnum.fnt, same as ours. A crowded list
+    // is allowed to overflow into the portrait - MM6 doesn't clamp it either.
+    GUIFont *font = assets->pFontSmallnum.get();
+    int fontHeight = font->GetHeight();
+    int effectY = window.h - 2 * fontHeight - 12;
+    for (ActorBuff buff : pActors[uActorID].buffs.indices()) {
+        if (!pActors[uActorID].buffs[buff].Active())
+            continue;
+        std::string text = localization->actorBuffName(buff);
+        if (text.empty())
+            continue;
+        effectY -= fontHeight;
+        GUIWindow::DrawText(font, {12, effectY}, GetSpellColor(spellForActorBuff(buff)), text, window);
+    }
+
+    // MM6's only stat readout, and only while the party carries the Horn of Ros. MM6.EXE 0x41D271.
+    if (partyHasHornOfRos()) {
+        std::string str = fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[uActorID].hp);
+        GUIWindow::DrawTitleText(font, 0, window.h - fontHeight - 12, colorTable.White, str, 3, window);
+    }
+}
+
+/** MM6 draws a fixed-layout popup with no stats block; `debug.FullMonsterID` falls back to OE's MM7 popup
+ *  as a developer escape hatch so monster stats stay inspectable in an MM6 session. */
+static bool useMm6MonsterPopup() {
+    return engine->gameVersion() == GAME_VERSION_MM6 && !engine->config->debug.FullMonsterID.value();
+}
+
+/**
  * Render the monster info popup
  * @param uActorID ID of the actor to show info for
  * @param pWindow The window to render into, or `null` to measure content only
@@ -674,65 +812,31 @@ std::pair<int, int> MonsterPopup_Draw(unsigned int uActorID, Recti* pWindow) {
         , Y_EFFECT_LIST = Y_POS_DOLL + SIZE_DOLL            // Lower edge doll frame - add an empty line!
         , RIGHT_BOTTOM_MARGIN = 16;                         // Added to measured bottom and right edge of rendered text
 
-    static Actor pMonsterInfoUI_Doll;
     MonsterInfo &monsterInfo = pActors[uActorID].monsterInfo;
 
     /*------------------------------- Top and Doll -------------------------------*/
     if (pWindow) {
-        Duration actionLen;
-        if (monsterInfo.id == pMonsterInfoUI_Doll.monsterInfo.id) {
-            actionLen = pMonsterInfoUI_Doll.currentActionLength;
-        } else {
-            // copy actor info if different
-            pMonsterInfoUI_Doll = pActors[uActorID];
-            pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
-            pMonsterInfoUI_Doll.currentActionTime = 0_ticks;
-            actionLen = Duration::randomRealtimeSeconds(vrng, 1, 3);
-            pMonsterInfoUI_Doll.currentActionLength = actionLen;
-        }
+        SpriteFrame *Portrait_Sprite = monsterPopupAdvanceDoll(uActorID);
 
-        if (pMonsterInfoUI_Doll.currentActionTime > actionLen) {
-            pMonsterInfoUI_Doll.currentActionTime = 0_ticks;
-            if (pMonsterInfoUI_Doll.currentActionAnimation == ANIM_Bored ||
-                pMonsterInfoUI_Doll.currentActionAnimation == ANIM_AtkMelee) {
-                pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Standing;
-                pMonsterInfoUI_Doll.currentActionLength = Duration::randomRealtimeSeconds(vrng, 1, 2);
-            } else {
-                // rand();
-                pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
-                if (!isPeasant(pMonsterInfoUI_Doll.monsterInfo.id, engine->gameVersion()) && vrng->random(30) < 100)
-                    pMonsterInfoUI_Doll.currentActionAnimation = ANIM_AtkMelee;
-                pMonsterInfoUI_Doll.currentActionLength =
-                        pSpriteFrameTable
-                                ->pSpriteSFrames[pActors[uActorID].spriteIds[pMonsterInfoUI_Doll.currentActionAnimation]]
-                                .animationLength;
-            }
-        }
+        Recti doll_rect(pWindow->x + X_POS_DOLL, pWindow->y + Y_POS_DOLL, SIZE_DOLL, SIZE_DOLL);
 
-            Recti doll_rect(pWindow->x + X_POS_DOLL, pWindow->y + Y_POS_DOLL, SIZE_DOLL, SIZE_DOLL);
+        // Draw portrait border
+        render->ResetUIClipRect();
+        render->FillRect(doll_rect, colorTable.Black);
 
-        {
-            SpriteFrame *Portrait_Sprite = pSpriteFrameTable->GetFrame(
-                    pActors[uActorID]
-                            .spriteIds[pMonsterInfoUI_Doll.currentActionAnimation],
-                    pMonsterInfoUI_Doll.currentActionTime);
+        Recti frameRect(doll_rect.topLeft() - Pointi(1, 1), doll_rect.bottomRight() + Pointi(1, 1));
+        render->BeginLines2D();
+        render->RasterLine2D(frameRect.topLeft(), frameRect.topRight(), colorTable.Jonquil);
+        render->RasterLine2D(frameRect.topRight(), frameRect.bottomRight(), colorTable.Jonquil);
+        render->RasterLine2D(frameRect.bottomRight(), frameRect.bottomLeft(), colorTable.Jonquil);
+        render->RasterLine2D(frameRect.bottomLeft(), frameRect.topLeft(), colorTable.Jonquil);
+        render->EndLines2D();
 
-            // Draw portrait border
-            render->ResetUIClipRect();
-            render->FillRect(doll_rect, colorTable.Black);
-
-            Recti frameRect(doll_rect.topLeft() - Pointi(1, 1), doll_rect.bottomRight() + Pointi(1, 1));
-            render->BeginLines2D();
-            render->RasterLine2D(frameRect.topLeft(), frameRect.topRight(), colorTable.Jonquil);
-            render->RasterLine2D(frameRect.topRight(), frameRect.bottomRight(), colorTable.Jonquil);
-            render->RasterLine2D(frameRect.bottomRight(), frameRect.bottomLeft(), colorTable.Jonquil);
-            render->RasterLine2D(frameRect.bottomLeft(), frameRect.topLeft(), colorTable.Jonquil);
-            render->EndLines2D();
-
-            // Draw portrait
+        // Draw portrait. The frame can be empty on MM6 data - `debug.FullMonsterID` routes an MM6 session
+        // here too - and the renderer takes a drawable frame only. The frame above is MM7's own, so it
+        // still draws, just with nothing inside it.
+        if (Portrait_Sprite && Portrait_Sprite->sprites[0])
             render->DrawMonsterPortrait(doll_rect, Portrait_Sprite, monsterPopupPortraitYOffset(monsterInfo.id));
-        }
-        pMonsterInfoUI_Doll.currentActionTime += pMiscTimer->dt();
 
         // Draw name and profession
         std::string str = pActors[uActorID].GetDisplayName();
@@ -1849,8 +1953,6 @@ void UI_OnMouseRightClick(Pointi mousePos) {
                     GUIWindow::DrawMessageBox(0, popupRect, GameUI_GetMinimapHintText());
                 }
             } else {  // game zone
-                Recti popup_window(pX - 350, 40, 320, 320);
-                if ((signed int)pX <= 320) popup_window.x = pX + 30;
                 // if ( render->pRenderD3D )
 
                 Pid pointedObject = engine->PickMouseInfoPopup().pid;
@@ -1858,11 +1960,19 @@ void UI_OnMouseRightClick(Pointi mousePos) {
                 pointedObject = render->pActiveZBuffer[pX + pSRZBufferLineOffsets[pY]];*/
                 if (pointedObject.type() == OBJECT_Actor) {
                     render->BeginScene2D();
-                    auto [w, h] = MonsterPopup_Draw(pointedObject.id(), nullptr);
-                    popup_window.w = w;
-                    popup_window.h = h;
-                    GUIWindow::DrawMessageBox(0, popup_window, "");
-                    MonsterPopup_Draw(pointedObject.id(), &popup_window);
+                    if (useMm6MonsterPopup()) {
+                        Recti popup_window = monsterPopupMm6WindowRect(static_cast<int>(pX));
+                        GUIWindow::DrawMessageBox(0, popup_window, "");
+                        MonsterPopup_DrawMm6(pointedObject.id(), popup_window);
+                    } else {
+                        Recti popup_window(pX - 350, 40, 320, 320);
+                        if ((signed int)pX <= 320) popup_window.x = pX + 30;
+                        auto [w, h] = MonsterPopup_Draw(pointedObject.id(), nullptr);
+                        popup_window.w = w;
+                        popup_window.h = h;
+                        GUIWindow::DrawMessageBox(0, popup_window, "");
+                        MonsterPopup_Draw(pointedObject.id(), &popup_window);
+                    }
                 }
                 if (pointedObject.type() == OBJECT_Sprite) {
                     if (!(pObjectList->pObjects[pSpriteObjects[pointedObject.id()].uObjectDescID].uFlags & OBJECT_DESC_UNPICKABLE)) {

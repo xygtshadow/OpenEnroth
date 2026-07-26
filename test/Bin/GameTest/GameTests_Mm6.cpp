@@ -41,6 +41,7 @@
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
 #include "Engine/Graphics/Viewport.h"
+#include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/TurnEngine/TurnEngineEnums.h"
 #include "Engine/Objects/Actor.h"
@@ -10397,7 +10398,8 @@ GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
 
 // MM6 ships its own monster-popup portrait offsets, so indexing MM7's table with MM6 monster ids frames the
 // wrong slice of every MM6 sprite. Right-clicking a New Sorpigal townsfolk drew a headless torso - the peasant
-// sprite landed 70 pixels above the portrait box, so the box framed its midriff.
+// sprite landed 70 pixels above the portrait area, so the area framed its midriff. Also pins the precondition
+// the portrait draw relies on: every frame the popup's doll can select really has a sprite to draw.
 GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -10413,13 +10415,30 @@ GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
             actorByMonster.emplace(actor.monsterInfo.id, actor.id);
     ASSERT_GE(actorByMonster.size(), 4u);
 
-    for (auto [monsterId, actorIndex] : actorByMonster) {
-        SpriteFrame *frame = pSpriteFrameTable->GetFrame(pActors[actorIndex].spriteIds[ANIM_Bored], 0_ticks);
-        ASSERT_NE(frame, nullptr);
-        ASSERT_NE(frame->sprites[0], nullptr);
-        ASSERT_NE(frame->sprites[0]->texture, nullptr);
+    int areaHeight = monsterPopupMm6PortraitArea(monsterPopupMm6WindowRect(100)).h;
 
-        // Monster sprites sit in a transparent buffer far taller than the portrait box, so the top of the head
+    for (auto [monsterId, actorIndex] : actorByMonster) {
+        // The popup's doll doesn't stand still - `monsterPopupAdvanceDoll` cycles between ANIM_Bored,
+        // ANIM_Standing and ANIM_AtkMelee and walks each frameset to its end, so every frame of all three has
+        // to be drawable. MM6 ships framesets whose sprites are missing from sprites.lod entirely, and the
+        // portrait draw dereferences `sprites[0]` unconditionally.
+        for (ActorAnimation anim : {ANIM_Bored, ANIM_Standing, ANIM_AtkMelee}) {
+            int spriteId = pActors[actorIndex].spriteIds[anim];
+            Duration animationLength = pSpriteFrameTable->pSpriteSFrames[spriteId].animationLength;
+            for (Duration t = 0_ticks; t <= animationLength; t += animationLength / 8 + 1_ticks) {
+                SpriteFrame *frame = pSpriteFrameTable->GetFrame(spriteId, t);
+                std::string what = fmt::format("monster {} anim {} t {}", std::to_underlying(monsterId),
+                                               std::to_underlying(anim), t.ticks());
+                ASSERT_NE(frame, nullptr) << what;
+                ASSERT_NE(frame->sprites[0], nullptr) << what;
+                ASSERT_NE(frame->sprites[0]->texture, nullptr) << what;
+            }
+        }
+
+        // Framing is checked on a representative frame - the doll's initial one.
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(pActors[actorIndex].spriteIds[ANIM_Bored], 0_ticks);
+
+        // Monster sprites sit in a transparent buffer far taller than the portrait area, so the top of the head
         // is the first row of the buffer that has any pixels at all.
         RgbaImage &image = frame->sprites[0]->texture->rgba();
         int spriteTop = -1;
@@ -10431,10 +10450,156 @@ GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
                 }
         ASSERT_GE(spriteTop, 0);
 
-        // The head has to land inside the box - above it the portrait is decapitated, below it the box is empty.
-        int headTop = monsterPopupPortraitYOffset(monsterId) + spriteTop;
-        EXPECT_GE(headTop, 0) << "monster " << std::to_underlying(monsterId) << " is cropped above the portrait box";
-        EXPECT_LT(headTop, monsterPopupPortraitSize)
-            << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait box";
+        // The head has to land inside the portrait area - above it the portrait is decapitated, below it the
+        // area is empty. MM6 measures from the window, so the sprite starts 38px into the area.
+        int headTop = monsterPopupMm6PortraitOffset(monsterId) + spriteTop;
+        EXPECT_GE(headTop, 0) << "monster " << std::to_underlying(monsterId) << " is cropped above the portrait area";
+        EXPECT_LT(headTop, areaHeight)
+            << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait area";
     }
+}
+
+// MM6's popup is a fixed 256x256 window that gives the monster its whole 230px interior, with the sprite
+// buffer's top at window y + 50 + offset (MM6.EXE 0x41161B for the window, 0x41CFDB-0x41D0C0 for the
+// portrait). OE used to frame a 128px box at (13, 52) and drop MM6's 38px top margin.
+GAME_TEST(Mm6, MonsterPopupMm6Geometry) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    // Window: 256x256 at y=40, placed 30px from the cursor on whichever side fits.
+    EXPECT_EQ(monsterPopupMm6WindowRect(100), Recti(130, 40, 256, 256));
+    EXPECT_EQ(monsterPopupMm6WindowRect(320), Recti(350, 40, 256, 256));
+    EXPECT_EQ(monsterPopupMm6WindowRect(321), Recti(35, 40, 256, 256));
+
+    // Portrait area: window inset 12 top/left, 14 right/bottom.
+    Recti window = monsterPopupMm6WindowRect(100);
+    EXPECT_EQ(monsterPopupMm6PortraitArea(window), Recti(142, 52, 230, 230));
+
+    // Offsets are relative to the portrait area's top. MM6's table is indexed by 3-tier monster family,
+    // (monsterId - 1) / 3, and the baseline margin is 38:
+    //   monster 1  -> family 0 -> -40  =>  -2   (clipped 2px above the area, exactly as MM6 does)
+    //   monster 4  -> family 1 -> -30  =>   8
+    //   monster 6  -> family 1 -> -30  =>   8   (id % 3 == 0: pins the -1 in (monsterId - 1) / 3,
+    //                                            a naive id / 3 gives family 2 -> -20 => 18)
+    //   monster 10 -> family 3 ->   0  =>  38   (no offset: lands exactly on the margin)
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(1)), -2);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(4)), 8);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(6)), 8);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(10)), 38);
+}
+
+// The whole MM6 monster popup, end to end through the real right-click path. MM6 has no monster-id skill
+// and no stats block (MM6.EXE 0x41CE20): below the portrait it stacks the monster's active effects upward
+// with no "Effects" heading and no "None" placeholder (0x41D1B7), and its one stat readout - the monster's
+// current hit points - appears only while the party carries the Horn of Ros (0x41D271), which is MM6's
+// entire monster-identification mechanic. `debug.FullMonsterID` falls back to OE's MM7 popup.
+GAME_TEST(Mm6, MonsterPopupMm6Layout) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    // The known placed peasant of New Sorpigal (first actor record of oute3.ddm), the same fixed target
+    // `Mm6.KillAndLootPeasant` walks up to.
+    auto target = std::ranges::find_if(pActors, [](const Actor &actor) {
+        return std::to_underlying(actor.monsterId) == 123 && actor.initialPosition == Vec3f(-10296, -7528, 160);
+    });
+    ASSERT_NE(target, pActors.end());
+    int actorId = target->id;
+
+    // Freeze the street before parking the party: the target then holds still for the crosshair sweep
+    // instead of wandering out from under it, and bystanders can't shuffle into the line of sight. The
+    // target's paralysis is also the active effect that assertion group (D) looks for.
+    for (Actor &actor : pActors)
+        actor.buffs[ACTOR_BUFF_PARALYZED].Apply(
+            pParty->GetPlayingTime() + Duration::fromHours(1), MASTERY_NOVICE, 0, 0, 0);
+
+    // Park the party in front of it and sweep the crosshair column until the pick lands on it. This must
+    // sweep on `PickMouseInfoPopup` - the popup's own pick - and not on `mouse->uPointingObjectID`, which
+    // comes from `PickMouseNormal` at a different depth and with a different sprite filter, and so finds
+    // positions where the hover hint works but no popup is drawn. Scenery can block a given approach, so
+    // try several sides and distances until one of them can see the target.
+    int pickX = 238, pickY = -1;
+    for (Vec3f offset : {Vec3f(-250, 0, 0), Vec3f(250, 0, 0), Vec3f(0, -250, 0), Vec3f(0, 250, 0),
+                         Vec3f(-400, 0, 0), Vec3f(400, 0, 0), Vec3f(0, -400, 0), Vec3f(0, 400, 0)}) {
+        Vec3f targetPos = pActors[actorId].pos;
+        Vec3f pos = targetPos + offset;
+        int yawDegrees = TrigLUT.atan2(targetPos.x - pos.x, targetPos.y - pos.y) * 90 / 512;
+        game.teleportTo(engine->_currentLoadedMapId, pos, yawDegrees);
+        game.tick(2);
+        for (int y = 80; y <= 330 && pickY < 0; y += 6) {
+            game.moveMouse(pickX, y); // Only posts the event - the mouse doesn't move without a tick.
+            game.tick(1);
+            Pid pointed = engine->PickMouseInfoPopup().pid;
+            if (pointed.type() == OBJECT_Actor && static_cast<int>(pointed.id()) == actorId)
+                pickY = y;
+        }
+        if (pickY >= 0)
+            break;
+    }
+    ASSERT_NE(pickY, -1) << "the monster could not be hovered";
+
+    // Tape from here so the sweep's own HUD text stays out of the popup's tape.
+    auto textTape = tapes.allGUIWindowsText();
+    auto textureTape = tapes.hudTextures();
+    test.startTaping();
+
+    // Popups draw only while the right button is HELD, and holding it pauses the event timer - so keep it
+    // down for the whole test. No actor AI runs from here on, which is what keeps the target under the
+    // crosshair while the assertion groups mutate state. The popup is redrawn every frame, so those
+    // mid-hold changes show up in the tape.
+    game.pressButton(BUTTON_RIGHT, pickX, pickY);
+    game.tick(2);
+
+    // (D) The effects list: the active buff is named. NB: the monster's name is NOT usable as proof the
+    //     popup drew - the hover status bar emits the same string into this tape every frame
+    //     (Game.cpp -> GameUI_WritePointedObjectStatusString -> UIStatusBar). The health-bar texture in
+    //     (C) is the discriminating proof-of-draw.
+    EXPECT_CONTAINS(textTape.flatten(), localization->actorBuffName(ACTOR_BUFF_PARALYZED));
+
+    // (C) The health bar really drew. MM6 loads its pieces through GUIWindow.cpp's `getImage_Solid` branch,
+    //     a different path from MM7's `getImage_ColorKey`, and `NullRenderer::DrawQuad2D` notifies only
+    //     `if (texture)` - so a null MM6 texture shows up here as a missing tape entry.
+    EXPECT_CONTAINS(textureTape.flatten(), "mhp_bg");
+
+    // Now clear the target's effects and damage it, still mid-hold. The unbuffed frames are what exercise
+    // the "no None placeholder" rule below, and current hp must differ from the monster's max hp so that
+    // an implementation drawing max hp - which is what MM7's popup shows - can't pass (E).
+    for (ActorBuff buff : pActors[actorId].buffs.indices())
+        pActors[actorId].buffs[buff].Reset();
+    pActors[actorId].hp = 4;
+    ASSERT_NE(static_cast<int>(pActors[actorId].hp), static_cast<int>(pActors[actorId].monsterInfo.hp));
+    game.tick(2);
+    std::string hitPointsLine = fmt::format("{}: {}", localization->str(LSTR_HIT_POINTS), pActors[actorId].hp);
+
+    // (A) The MM6 layout drew, and it is not MM7's. MM7's popup draws the Hit Points / Armor Class / Damage
+    //     labels unconditionally (only their values are gated to "?"), so their absence discriminates the
+    //     two layouts. MM6's popup has none of them. (MM7's "Effects" heading is useless here: global.txt
+    //     row 631 doesn't exist in MM6's 595-row file, so it would be an empty string in an MM6 session.)
+    auto texts = textTape.flatten();
+    EXPECT_MISSES(texts, localization->str(LSTR_ARMOR_CLASS));
+    EXPECT_MISSES(texts, localization->str(LSTR_DAMAGE));
+    EXPECT_MISSES(texts, localization->str(LSTR_HIT_POINTS)); // MM6 never draws the bare label.
+    EXPECT_MISSES(texts, hitPointsLine);                      // And the line itself is gated on the Horn.
+
+    // (D, continued) No "None" placeholder for a monster with no effects - the effects list is MM6's own
+    //     block, not a copy of MM7's, which fills an empty list with "None".
+    EXPECT_MISSES(texts, localization->str(LSTR_NONE));
+
+    // (E) The Horn of Ros reveals the monster's *current* hit points. Hand it over mid-hold - the popup
+    //     redraws every frame the button is down.
+    ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ITEM_MM6_HORN_OF_ROS)));
+    game.tick(2);
+    EXPECT_CONTAINS(textTape.flatten(), hitPointsLine);
+
+    // (B) The developer escape hatch. `debug.FullMonsterID` falls back to OE's MM7 popup so monster stats
+    //     stay inspectable in an MM6 session - without asserting on it, dropping the FullMonsterID term
+    //     from `useMm6MonsterPopup` would leave every test in the repo green.
+    engine->config->debug.FullMonsterID.setValue(true);
+    game.tick(2);
+    EXPECT_CONTAINS(textTape.flatten(), localization->str(LSTR_ARMOR_CLASS));
+    engine->config->debug.FullMonsterID.reset();
+
+    game.releaseButton(BUTTON_RIGHT, pickX, pickY);
+    game.tick(2);
 }
