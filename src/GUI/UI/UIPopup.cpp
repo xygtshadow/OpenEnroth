@@ -752,8 +752,12 @@ static void MonsterPopup_DrawMm6(unsigned int uActorID, const Recti &window) {
     SpriteFrame *portrait = monsterPopupAdvanceDoll(uActorID);
 
     // MM6 draws the monster straight onto the popup's stone background - no backing fill, no border.
-    Recti area = monsterPopupMm6PortraitArea(window);
-    render->DrawMonsterPortrait(area, portrait, monsterPopupMm6PortraitOffset(pActors[uActorID].monsterInfo.id));
+    // MM6 has framesets with no loadable sprites at all, and `SpriteFrameTable::GetFrame` passes an empty
+    // frame through rather than escaping its frameset - so the renderer only ever sees a drawable frame.
+    if (portrait && portrait->sprites[0]) {
+        Recti area = monsterPopupMm6PortraitArea(window);
+        render->DrawMonsterPortrait(area, portrait, monsterPopupMm6PortraitOffset(pActors[uActorID].monsterInfo.id));
+    }
 
     GUIWindow::DrawTitleText(assets->pFontComic.get(), 0, 12, colorTable.PaleCanary,
                              pActors[uActorID].GetDisplayName(), 3, window);
@@ -828,8 +832,11 @@ std::pair<int, int> MonsterPopup_Draw(unsigned int uActorID, Recti* pWindow) {
         render->RasterLine2D(frameRect.bottomLeft(), frameRect.topLeft(), colorTable.Jonquil);
         render->EndLines2D();
 
-        // Draw portrait
-        render->DrawMonsterPortrait(doll_rect, Portrait_Sprite, monsterPopupPortraitYOffset(monsterInfo.id));
+        // Draw portrait. The frame can be empty on MM6 data - `debug.FullMonsterID` routes an MM6 session
+        // here too - and the renderer takes a drawable frame only. The frame above is MM7's own, so it
+        // still draws, just with nothing inside it.
+        if (Portrait_Sprite && Portrait_Sprite->sprites[0])
+            render->DrawMonsterPortrait(doll_rect, Portrait_Sprite, monsterPopupPortraitYOffset(monsterInfo.id));
 
         // Draw name and profession
         std::string str = pActors[uActorID].GetDisplayName();

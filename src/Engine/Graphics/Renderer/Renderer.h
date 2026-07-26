@@ -95,6 +95,13 @@ class Renderer {
     virtual void DrawImage(GraphicsImage *, const Recti &rect, int paletteid = 0, Color colourmask32 = colorTable.White) = 0;
 
     virtual void BlendTextures(int a2, int a3, GraphicsImage *a4, GraphicsImage *a5, int t, int start_opacity, int end_opacity) = 0;
+
+    /**
+     * @param rc                        Area to frame the portrait in.
+     * @param Portrait_Sprite           Frame to draw. Must be drawable - its `sprites[0]` is dereferenced, and
+     *                                  MM6 has framesets with no loadable sprites at all, so callers check.
+     * @param Y_Offset                  Y offset of the sprite buffer's top row, relative to `rc`'s top.
+     */
     virtual void DrawMonsterPortrait(const Recti &rc, SpriteFrame *Portrait_Sprite, int Y_Offset) = 0;
 
     virtual void BeginTextNew(GraphicsImage *main, GraphicsImage *shadow) = 0;

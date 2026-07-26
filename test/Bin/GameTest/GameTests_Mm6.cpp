@@ -9998,7 +9998,8 @@ GAME_TEST(Mm6, OutOfRangeFaceVoiceClamped) {
 
 // MM6 ships its own monster-popup portrait offsets, so indexing MM7's table with MM6 monster ids frames the
 // wrong slice of every MM6 sprite. Right-clicking a New Sorpigal townsfolk drew a headless torso - the peasant
-// sprite landed 70 pixels above the portrait box, so the box framed its midriff.
+// sprite landed 70 pixels above the portrait area, so the area framed its midriff. Also pins the precondition
+// the portrait draw relies on: every frame the popup's doll can select really has a sprite to draw.
 GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
     if (engine->gameVersion() != GAME_VERSION_MM6)
         GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
@@ -10014,13 +10015,30 @@ GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
             actorByMonster.emplace(actor.monsterInfo.id, actor.id);
     ASSERT_GE(actorByMonster.size(), 4u);
 
-    for (auto [monsterId, actorIndex] : actorByMonster) {
-        SpriteFrame *frame = pSpriteFrameTable->GetFrame(pActors[actorIndex].spriteIds[ANIM_Bored], 0_ticks);
-        ASSERT_NE(frame, nullptr);
-        ASSERT_NE(frame->sprites[0], nullptr);
-        ASSERT_NE(frame->sprites[0]->texture, nullptr);
+    int areaHeight = monsterPopupMm6PortraitArea(monsterPopupMm6WindowRect(100)).h;
 
-        // Monster sprites sit in a transparent buffer far taller than the portrait box, so the top of the head
+    for (auto [monsterId, actorIndex] : actorByMonster) {
+        // The popup's doll doesn't stand still - `monsterPopupAdvanceDoll` cycles between ANIM_Bored,
+        // ANIM_Standing and ANIM_AtkMelee and walks each frameset to its end, so every frame of all three has
+        // to be drawable. MM6 ships framesets whose sprites are missing from sprites.lod entirely, and the
+        // portrait draw dereferences `sprites[0]` unconditionally.
+        for (ActorAnimation anim : {ANIM_Bored, ANIM_Standing, ANIM_AtkMelee}) {
+            int spriteId = pActors[actorIndex].spriteIds[anim];
+            Duration animationLength = pSpriteFrameTable->pSpriteSFrames[spriteId].animationLength;
+            for (Duration t = 0_ticks; t <= animationLength; t += animationLength / 8 + 1_ticks) {
+                SpriteFrame *frame = pSpriteFrameTable->GetFrame(spriteId, t);
+                std::string what = fmt::format("monster {} anim {} t {}", std::to_underlying(monsterId),
+                                               std::to_underlying(anim), t.ticks());
+                ASSERT_NE(frame, nullptr) << what;
+                ASSERT_NE(frame->sprites[0], nullptr) << what;
+                ASSERT_NE(frame->sprites[0]->texture, nullptr) << what;
+            }
+        }
+
+        // Framing is checked on a representative frame - the doll's initial one.
+        SpriteFrame *frame = pSpriteFrameTable->GetFrame(pActors[actorIndex].spriteIds[ANIM_Bored], 0_ticks);
+
+        // Monster sprites sit in a transparent buffer far taller than the portrait area, so the top of the head
         // is the first row of the buffer that has any pixels at all.
         RgbaImage &image = frame->sprites[0]->texture->rgba();
         int spriteTop = -1;
@@ -10032,11 +10050,12 @@ GAME_TEST(Mm6, MonsterPopupPortraitFramesHead) {
                 }
         ASSERT_GE(spriteTop, 0);
 
-        // The head has to land inside the box - above it the portrait is decapitated, below it the box is empty.
-        int headTop = monsterPopupPortraitYOffset(monsterId) + spriteTop;
-        EXPECT_GE(headTop, 0) << "monster " << std::to_underlying(monsterId) << " is cropped above the portrait box";
-        EXPECT_LT(headTop, monsterPopupPortraitSize)
-            << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait box";
+        // The head has to land inside the portrait area - above it the portrait is decapitated, below it the
+        // area is empty. MM6 measures from the window, so the sprite starts 38px into the area.
+        int headTop = monsterPopupMm6PortraitOffset(monsterId) + spriteTop;
+        EXPECT_GE(headTop, 0) << "monster " << std::to_underlying(monsterId) << " is cropped above the portrait area";
+        EXPECT_LT(headTop, areaHeight)
+            << "monster " << std::to_underlying(monsterId) << " is pushed below the portrait area";
     }
 }
 
