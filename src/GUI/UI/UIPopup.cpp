@@ -229,8 +229,13 @@ Recti monsterPopupMm6WindowRect(int mouseX) {
     // MM6.EXE 0x41161B. Note the placement rule matches MM7's, just with MM6's narrower window:
     // 30px to the right of the cursor, or that far to the left of it once the cursor passes half-screen.
     // This always lands inside a 640x480 UI - x in [30, 350] on the left branch and [35, 353] on the right,
-    // so the right edge stays within [286, 609] and the bottom edge is always 296 - and so MM6's own
-    // screen clamp (MM6.EXE 0x40FAE0) can never fire at this size.
+    // so the right edge stays within [286, 609] and the bottom edge is always 296.
+    //
+    // No clamp can therefore fire at this size, neither MM6's own screen clamp (MM6.EXE 0x40FAE0) nor OE's
+    // in `GUIWindow::DrawMessageBox`, which takes its rect by non-const reference and may move it. The
+    // caller passes this rect through `DrawMessageBox` before deriving the portrait geometry from it, so
+    // that matters: outside the game viewport `DrawMessageBox` clamps against (0, 0, 640, 480), and none of
+    // its branches trigger for a rect that is already fully inside those bounds.
     int x = mouseX <= 320 ? mouseX + 30 : mouseX - (monsterPopupMm6WindowSize + 30);
     return Recti(x, 40, monsterPopupMm6WindowSize, monsterPopupMm6WindowSize);
 }
@@ -677,6 +682,9 @@ void GameUI_DrawItemInfo(Item *inspect_item) {
  * Advances the popup's idle-animation doll and resolves the sprite frame to draw. Shared by both games'
  * monster popups.
  *
+ * Advances the doll by `pMiscTimer->dt()`, so call it at most once per rendered frame - MM7's popup does so
+ * only on its draw pass, never on its measure pass.
+ *
  * @param uActorID                  ID of the actor to show info for.
  * @return                          Sprite frame to draw the monster's portrait from.
  */
@@ -688,6 +696,8 @@ static SpriteFrame *monsterPopupAdvanceDoll(unsigned int uActorID) {
         actionLen = pMonsterInfoUI_Doll.currentActionLength;
     } else {
         // copy actor info if different
+        // The doll is a process-lifetime static that survives map changes and new games, so only its animation
+        // bookkeeping is trusted - sprite ids are per-map and must always come from the live actor.
         pMonsterInfoUI_Doll = pActors[uActorID];
         pMonsterInfoUI_Doll.currentActionAnimation = ANIM_Bored;
         pMonsterInfoUI_Doll.currentActionTime = 0_ticks;
@@ -729,6 +739,8 @@ static SpriteFrame *monsterPopupAdvanceDoll(unsigned int uActorID) {
  *
  * MM6.EXE 0x41CE20.
  *
+ * TODO: effects list and Horn of Ros hit-points line - tasks 4 and 5 of this work item.
+ *
  * @param uActorID                  ID of the actor to show info for.
  * @param window                    The window to render into.
  */
@@ -737,12 +749,17 @@ static void MonsterPopup_DrawMm6(unsigned int uActorID, const Recti &window) {
 
     // MM6 draws the monster straight onto the popup's stone background - no backing fill, no border.
     Recti area = monsterPopupMm6PortraitArea(window);
-    render->ResetUIClipRect();
     render->DrawMonsterPortrait(area, portrait, monsterPopupMm6PortraitOffset(pActors[uActorID].monsterInfo.id));
 
     GUIWindow::DrawTitleText(assets->pFontComic.get(), 0, 12, colorTable.PaleCanary,
                              pActors[uActorID].GetDisplayName(), 3, window);
     Actor::DrawHealthBar(&pActors[uActorID], window);
+}
+
+/** MM6 draws a fixed-layout popup with no stats block; `debug.FullMonsterID` falls back to OE's MM7 popup
+ *  as a developer escape hatch so monster stats stay inspectable in an MM6 session. */
+static bool useMm6MonsterPopup() {
+    return engine->gameVersion() == GAME_VERSION_MM6 && !engine->config->debug.FullMonsterID.value();
 }
 
 /**
@@ -1909,13 +1926,9 @@ void UI_OnMouseRightClick(Pointi mousePos) {
                 /*else
                 pointedObject = render->pActiveZBuffer[pX + pSRZBufferLineOffsets[pY]];*/
                 if (pointedObject.type() == OBJECT_Actor) {
-                    // MM6's popup is a fixed square with its own layout. `debug.FullMonsterID` is a developer
-                    // escape hatch - it falls back to our MM7 popup so monster stats stay inspectable in MM6.
-                    bool mm6Layout = engine->gameVersion() == GAME_VERSION_MM6 &&
-                                     !engine->config->debug.FullMonsterID.value();
                     render->BeginScene2D();
-                    if (mm6Layout) {
-                        Recti popup_window = monsterPopupMm6WindowRect(pX);
+                    if (useMm6MonsterPopup()) {
+                        Recti popup_window = monsterPopupMm6WindowRect(static_cast<int>(pX));
                         GUIWindow::DrawMessageBox(0, popup_window, "");
                         MonsterPopup_DrawMm6(pointedObject.id(), popup_window);
                     } else {
