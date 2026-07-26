@@ -201,9 +201,9 @@ IndexedArray<int, MONSTER_TYPE_FIRST, MONSTER_TYPE_LAST> monster_popup_y_offsets
 };
 
 // MM6's own portrait offsets, MM6.EXE 0x4BD10C. Indexed the same way as the MM7 table above - by 3-tier monster
-// family, `(monsterId - 1) / 3` - but the values are already relative to the top of the portrait: MM6's draw code
-// (MM6.EXE 0x41D06E) adds them straight to the portrait's origin where MM7 subtracts a further 40. MM6 monster ids
-// stop at 173 (zReactor), so the last two families are padding.
+// family, `(monsterId - 1) / 3` - but measured from MM6's own portrait baseline at `window.y + 50` rather than
+// from the top of a portrait box (MM6.EXE 0x41D06E); see `monsterPopupMm6PortraitOffset`. MM7 instead measures
+// from the box top less a further 40. MM6 monster ids stop at 173 (zReactor), so the last two families are padding.
 static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
     -40,  -30,  -20,    0,  -30,    0,  -30,    0,  -60,    0,    0,    0,  // Monsters 1-36.
     -60, -100,  -30,  -30,    0,    0,    0,  -20,    0,    0, -120,    0,  // Monsters 37-72.
@@ -215,8 +215,8 @@ static constexpr std::array<int, 60> monsterPopupYOffsetsMm6 = {
 int monsterPopupPortraitYOffset(MonsterId monsterId) {
     if (engine->gameVersion() == GAME_VERSION_MM6) {
         // MM6 monster ids index MM6's monsters.txt, so the MM7 MonsterType families don't apply.
-        // The value is relative to MM6's own portrait baseline - see `monsterPopupMm6PortraitTop`, which
-        // adds the window-relative 50 that puts it 38px inside the 230px portrait area.
+        // The value moves the sprite up or down from MM6's own portrait baseline, which sits 38px inside the
+        // 230px portrait area - see `monsterPopupMm6PortraitOffset`.
         int family = (std::to_underlying(monsterId) - 1) / 3;
         if (family < 0 || family >= static_cast<int>(monsterPopupYOffsetsMm6.size()))
             return 0;
@@ -228,16 +228,21 @@ int monsterPopupPortraitYOffset(MonsterId monsterId) {
 Recti monsterPopupMm6WindowRect(int mouseX) {
     // MM6.EXE 0x41161B. Note the placement rule matches MM7's, just with MM6's narrower window:
     // 30px to the right of the cursor, or that far to the left of it once the cursor passes half-screen.
+    // This always lands inside a 640x480 UI - x in [30, 350] on the left branch and [35, 353] on the right,
+    // so the right edge stays within [286, 609] and the bottom edge is always 296 - and so MM6's own
+    // screen clamp (MM6.EXE 0x40FAE0) can never fire at this size.
     int x = mouseX <= 320 ? mouseX + 30 : mouseX - (monsterPopupMm6WindowSize + 30);
     return Recti(x, 40, monsterPopupMm6WindowSize, monsterPopupMm6WindowSize);
 }
 
 Recti monsterPopupMm6PortraitArea(const Recti &window) {
-    return Recti(window.x + 12, window.y + 12, window.w - 26, window.h - 26);
+    // MM6.EXE 0x41CFF6-0x41D038 clips the portrait to [x+12, y+12] - [x+w-14, y+h-14].
+    return Recti(Pointi(window.x + 12, window.y + 12),
+                 Pointi(window.x + window.w - 14, window.y + window.h - 14));
 }
 
-int monsterPopupMm6PortraitTop(const Recti &window, MonsterId monsterId) {
-    return window.y + 50 + monsterPopupPortraitYOffset(monsterId);
+int monsterPopupMm6PortraitOffset(MonsterId monsterId) {
+    return monsterPopupMm6PortraitMargin + monsterPopupPortraitYOffset(monsterId);
 }
 
 // OE addition - colors for monster special attack text.

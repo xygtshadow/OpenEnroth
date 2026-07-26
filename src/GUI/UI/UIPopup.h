@@ -20,9 +20,10 @@ constexpr int monsterPopupMm6WindowSize = 256;
  * which part of the sprite the popup should frame.
  *
  * @param monsterId                 Monster whose portrait is being drawn.
- * @return                          Y offset at which the monster's sprite is drawn, negative offsets crop the top
- *                                  of the sprite. In MM7 it is relative to the top of the portrait box, in MM6 to
- *                                  the game's own portrait baseline - see `monsterPopupMm6PortraitTop`.
+ * @return                          Y offset by which the monster's sprite is moved down, negative offsets move it
+ *                                  up to crop the top of the sprite. In MM7 it is measured from the top of the
+ *                                  portrait box, in MM6 from the game's own portrait baseline - see
+ *                                  `monsterPopupMm6PortraitOffset`.
  */
 int monsterPopupPortraitYOffset(MonsterId monsterId);
 
@@ -40,14 +41,19 @@ Recti monsterPopupMm6WindowRect(int mouseX);
 Recti monsterPopupMm6PortraitArea(const Recti &window);
 
 /**
- * MM6 measures the portrait from the window, not from the portrait area: the sprite buffer's top lands at
- * `window.y + 50 + offset`, 38px below the area's own top. MM6.EXE 0x41D06E.
- *
- * @param window                    Popup rect from `monsterPopupMm6WindowRect`.
- * @param monsterId                 Monster whose portrait is being drawn.
- * @return                          Screen y at which the sprite buffer's top row is drawn.
+ * MM6 measures the portrait from the window rather than from the portrait area, putting its baseline at
+ * `window.y + 50` - this far inside the area, which starts at `window.y + 12`. This is the top margin OE
+ * used to drop. MM6.EXE 0x41D06E.
  */
-int monsterPopupMm6PortraitTop(const Recti &window, MonsterId monsterId);
+constexpr int monsterPopupMm6PortraitMargin = 38;
+
+/**
+ * @param monsterId                 Monster whose portrait is being drawn.
+ * @return                          Y offset, relative to the top of the portrait area, at which the sprite
+ *                                  buffer's top row is drawn - the baseline margin plus the monster's own
+ *                                  family offset, which can push the sprite back above the area to crop it.
+ */
+int monsterPopupMm6PortraitOffset(MonsterId monsterId);
 
 /**
  * If `mousePos` is over a character portrait, uses the picked item on that character and return true. Note that using

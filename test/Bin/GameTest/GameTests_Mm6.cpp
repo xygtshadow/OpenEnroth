@@ -10055,19 +10055,15 @@ GAME_TEST(Mm6, MonsterPopupMm6Geometry) {
     Recti window = monsterPopupMm6WindowRect(100);
     EXPECT_EQ(monsterPopupMm6PortraitArea(window), Recti(142, 52, 230, 230));
 
-    // Sprite buffer top sits at window y + 50 + offset - i.e. 38px below the portrait area's own top,
-    // which is exactly the margin OE used to drop. Expected values are literal, NOT re-derived from the
-    // helper, so the test fails if the baseline or the margin regresses.
-    //
-    //   window.y            = 40
-    //   portrait area top   = 52   (40 + 12)
-    //   portrait baseline   = 90   (40 + 50)  -> 38px inside the area
-    //
-    // MM6's offset table is indexed by 3-tier family, (monsterId - 1) / 3:
-    //   monster 1  -> family 0 -> -40  =>  50
-    //   monster 4  -> family 1 -> -30  =>  60
-    //   monster 10 -> family 3 ->   0  =>  90   (no offset: lands exactly on the margin)
-    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(1)), 50);
-    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(4)), 60);
-    EXPECT_EQ(monsterPopupMm6PortraitTop(window, static_cast<MonsterId>(10)), 90);
+    // Offsets are relative to the portrait area's top. MM6's table is indexed by 3-tier monster family,
+    // (monsterId - 1) / 3, and the baseline margin is 38:
+    //   monster 1  -> family 0 -> -40  =>  -2   (clipped 2px above the area, exactly as MM6 does)
+    //   monster 4  -> family 1 -> -30  =>   8
+    //   monster 6  -> family 1 -> -30  =>   8   (id % 3 == 0: pins the -1 in (monsterId - 1) / 3,
+    //                                            a naive id / 3 gives family 2 -> -20 => 18)
+    //   monster 10 -> family 3 ->   0  =>  38   (no offset: lands exactly on the margin)
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(1)), -2);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(4)), 8);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(6)), 8);
+    EXPECT_EQ(monsterPopupMm6PortraitOffset(static_cast<MonsterId>(10)), 38);
 }
