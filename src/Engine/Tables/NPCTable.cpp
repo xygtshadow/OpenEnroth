@@ -127,6 +127,8 @@ void NPCStats::InitializeNPCData(const Blob &npcData, GameVersion version) {
             pOriginalNPCData[i].profession = npcProfessionFromMm6Id(fromString<int>(tokens[7]));
             // No greeting-index column; join is the numeric col 8 (0/1); no event D/E/F columns.
             pOriginalNPCData[i].canJoin = fromString<int>(tokens[8]) != 0;
+            // Col 9 is MM6's "News Y/N" - whether this NPC tells regional news (a dialogue option).
+            pOriginalNPCData[i].mm6HasNews = fromString<int>(tokens[9]) != 0;
             // Cols 3-5 gate street dialogue: State (initial greet state, all zeros in shipped data,
             // skipped) | Fame requirement | Rep requirement (signed, sign = the NPC's alignment).
             pOriginalNPCData[i].fame = fromString<int>(tokens[4]);
@@ -434,6 +436,7 @@ void NPCStats::initializeMm6StreetCitizen(NPCData *npc, Sex sex, MapId mapId) {
     npc->house = HOUSE_INVALID;
     npc->field_24 = 1;
     npc->canJoin = 1;
+    npc->mm6HasNews = true; // Street citizens always carry the news option (MM6.EXE street page 0x419600).
 }
 
 //----- (0047732C) --------------------------------------------------------

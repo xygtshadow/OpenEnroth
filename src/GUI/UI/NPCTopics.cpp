@@ -997,13 +997,7 @@ static bool isMm6ReservedNPCTopic(unsigned int eventId) {
             eventId == 41 || eventId == 45 || eventId == 399 || eventId == 400);
 }
 
-std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
-    std::vector<DialogueId> optionList;
-
-    if (npcData->canJoin) {
-        optionList.push_back(DIALOGUE_13_hiring_related);
-    }
-
+static void addScriptedNPCDialogueTopics(NPCData *npcData, std::vector<DialogueId> &optionList) {
     // TODO(Nik-RE-dev): place NPC events in array
 #define ADD_NPC_SCRIPTED_DIALOGUE(EVENT_ID, MSG_PARAM) \
     if (EVENT_ID) { \
@@ -1027,6 +1021,42 @@ std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
     ADD_NPC_SCRIPTED_DIALOGUE(npcData->dialogue_6_evt_id, DIALOGUE_SCRIPTED_LINE_6);
 
 #undef ADD_NPC_SCRIPTED_DIALOGUE
+}
+
+std::vector<DialogueId> prepareScriptedNPCDialogueTopics(NPCData *npcData) {
+    std::vector<DialogueId> optionList;
+
+    if (npcData->canJoin) {
+        optionList.push_back(DIALOGUE_13_hiring_related);
+    }
+
+    addScriptedNPCDialogueTopics(npcData, optionList);
+
+    return optionList;
+}
+
+std::vector<DialogueId> prepareHouseNPCDialogueTopics(NPCData *npcData) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        return prepareScriptedNPCDialogueTopics(npcData);
+
+    // MM6's house occupants lead with the same profession small talk / Join / News trio that street
+    // dialogue offers, ahead of their scripted topics. The option factory (MM6.EXE 0x499b3a) creates
+    // each one only when the matching npcdata column is non-zero, in this order: profession (@+0x18)
+    // -> kind 0xc, join (@+0x1c) -> 0xd, news (@+0x20) -> 0xe, then events A/B/C -> 0x13/0x14/0x15.
+    // No MM6 house occupant has more than three of these, so the scripted helper's option cap - an
+    // MM7 rule with no counterpart in the MM6 factory - can never bite here.
+    std::vector<DialogueId> optionList;
+
+    if (npcData->profession != NoProfession)
+        optionList.push_back(DIALOGUE_STREET_MM6_PROF_TOPIC);
+
+    if (npcData->canJoin)
+        optionList.push_back(DIALOGUE_13_hiring_related);
+
+    if (npcData->mm6HasNews)
+        optionList.push_back(DIALOGUE_STREET_MM6_NEWS);
+
+    addScriptedNPCDialogueTopics(npcData, optionList);
 
     return optionList;
 }

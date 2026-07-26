@@ -53,6 +53,7 @@
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Objects/Monsters.h"
 #include "Engine/Objects/NPC.h"
+#include "Engine/Objects/NPCEnumFunctions.h"
 #include "Engine/Objects/ObjectList.h"
 #include "Engine/Objects/SpriteEnumFunctions.h"
 #include "Engine/Objects/SpriteObject.h"
@@ -1817,14 +1818,17 @@ GAME_TEST(Mm6, QuestNpcDialogueInTavern) {
     game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
     game.tick(2);
 
-    // Both scripted topics became dialogue options. Their buttons are re-laid-out to the rendered
-    // text metrics on draw, so locate the "Quest" option (DIALOGUE_SCRIPTED_LINE_2) by its message
-    // param instead of assuming creation-time coordinates.
+    // Both scripted topics became dialogue options, behind the small talk for Andover's profession
+    // (npcdata 1 is a "Follower of Baa"), which MM6 lists first. Their buttons are re-laid-out to
+    // the rendered text metrics on draw, so locate the "Quest" option (DIALOGUE_SCRIPTED_LINE_2) by
+    // its message param instead of assuming creation-time coordinates.
     ASSERT_NE(pDialogueWindow, nullptr);
+    ASSERT_NE(andover->profession, NoProfession);
     const GUIButton *questOption = nullptr;
     for (const GUIButton *button : pDialogueWindow->vButtons) {
         if (button->msg == UIMSG_SelectHouseNPCDialogueOption) {
-            EXPECT_TRUE(button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_1) ||
+            EXPECT_TRUE(button->msg_param == std::to_underlying(DIALOGUE_STREET_MM6_PROF_TOPIC) ||
+                        button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_1) ||
                         button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_2));
             if (button->msg_param == std::to_underlying(DIALOGUE_SCRIPTED_LINE_2))
                 questOption = button;
@@ -1931,14 +1935,19 @@ static void enterLonelyKnightTavern(EngineController &game) {
     ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
 }
 
-// Opens the dialogue with a house NPC by clicking their portrait.
+// Opens the dialogue with a house NPC by clicking their portrait. Opening any occupant's dialogue
+// releases the portrait buttons, and a house with a single occupant opens its dialogue straight
+// from createHouseUI - so when this NPC's dialogue is already up there is nothing left to click.
 static void clickHouseNpcPortrait(EngineController &game, const NPCData *npc) {
     int npcIndex = -1;
     for (int i = 0; i < houseNpcs.size(); i++)
         if (houseNpcs[i].type == HOUSE_NPC && houseNpcs[i].npc == npc)
             npcIndex = i;
     ASSERT_NE(npcIndex, -1);
-    ASSERT_NE(houseNpcs[npcIndex].button, nullptr);
+    if (!houseNpcs[npcIndex].button) {
+        ASSERT_EQ(currentHouseNpc, npcIndex);
+        return;
+    }
     Recti portrait = houseNpcs[npcIndex].button->rect;
     game.pressAndReleaseButton(BUTTON_LEFT, portrait.x + portrait.w / 2, portrait.y + portrait.h / 2);
     game.tick(2);
@@ -1954,6 +1963,16 @@ static const GUIButton *findScriptedTopicButton(DialogueId topicLine) {
         if (button->msg == UIMSG_SelectHouseNPCDialogueOption && button->msg_param == std::to_underlying(topicLine))
             return button;
     return nullptr;
+}
+
+// Unwinds a sub-dialogue reply back to the NPC's own topic list, if one is open. A reply that
+// leaves the topic list up needs no escape at all, and escaping the topic list itself walks out of
+// the house when the NPC is its only occupant - so never escape blindly between topics.
+static void escapeSubDialogue(EngineController &game) {
+    if (window_SpeakInHouse && window_SpeakInHouse->getCurrentDialogue() == DIALOGUE_OTHER) {
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(2);
+    }
 }
 
 // Clicks a scripted topic in an open NPC dialogue, running its global.evt script.
@@ -2004,6 +2023,104 @@ GAME_TEST(Mm6, HouseOccupantSelectionStrip) {
         EXPECT_EQ(houseNpcs[i].button->rect.topLeft(), expectedSlots[count - 1][i]) << "occupant " << i;
     }
 
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    game.tick(5);
+}
+
+// MM6 town halls have NO proprietor. `prepareHouse` creates the proprietor slot only when the
+// house's HouseMovies record carries a portrait id (MM6.EXE 0x43c1c3-0x43c1d9 - it reads
+// HouseMovies[animId].house_npc_id into the "has proprietor" global and never falls back on the
+// 2dEvents name), and the three town-hall room animations 13/14/15 all carry 0. The clerk named in
+// the 2dEvents row IS one of the house's own npcdata occupants - Janice(291)/Earnest(292)/Jake(293),
+// all profession 72 "Clerk" - carrying the bounty hunt as scripted topic 399. A fabricated
+// proprietor slot therefore listed Janice twice, labelled the phantom with the 2dEvents Title
+// column ("Clerk"), and pushed both real occupants down a slot.
+//
+// House occupants also lead with the profession small talk / Join / News trio ahead of their
+// scripted topics, each created only when the matching npcdata column is non-zero (MM6.EXE house
+// option factory 0x499b3a: profession @+0x18 -> kind 0xc, join @+0x1c -> 0xd, news @+0x20 -> 0xe,
+// then events A/B/C -> 0x13/0x14/0x15). Frank Fairchild has News=1, Janice has profession 72, so
+// building their menus from the scripted topics alone dropped exactly one option each.
+GAME_TEST(Mm6, TownHallOccupants) {
+    if (engine->gameVersion() != GAME_VERSION_MM6)
+        GTEST_SKIP() << "MM6 game data required, run with --game-version mm6.";
+
+    game.startNewGame();
+
+    NPCData *frank = &pNPCStats->pNPCData[3];
+    NPCData *janice = &pNPCStats->pNPCData[291];
+    ASSERT_EQ(frank->name, "Frank Fairchild");
+    ASSERT_EQ(janice->name, "Janice");
+    ASSERT_EQ(frank->house, HouseId(89));
+    ASSERT_EQ(janice->house, HouseId(89));
+    ASSERT_EQ(frank->profession, NoProfession);
+    ASSERT_EQ(janice->profession, npcProfessionFromMm6Id(72)); // "Clerk".
+    ASSERT_EQ(janice->dialogue_3_evt_id, 399u);                // The bounty hunt, npctopic row 399.
+
+    // The town hall keeps office hours (2dEvents row 89: open 10, closed 14).
+    pParty->GetPlayingTime() += Duration::fromHours((11 - pParty->GetPlayingTime().toCivilTime().hour + 24) % 24);
+    game.tick(1);
+    ASSERT_EQ(pParty->uCurrentHour, 11);
+
+    // Tape only the occupant-selection screen: once Janice's own dialogue is open it legitimately
+    // draws "Janice the Clerk" from her profession, so "Clerk" is only wrong on the strip.
+    auto textTape = tapes.allGUIWindowsText();
+    test.startTaping();
+
+    ASSERT_TRUE(enterHouse(HouseId(89))); // New Sorpigal Town Hall.
+    createHouseUI(HouseId(89));
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+
+    // Two occupants and no proprietor: Frank in the strip's top slot, Janice in the middle one.
+    ASSERT_EQ(houseNpcs.size(), 2u);
+    EXPECT_EQ(houseNpcs[0].type, HOUSE_NPC);
+    EXPECT_EQ(houseNpcs[0].npc, frank);
+    EXPECT_EQ(houseNpcs[1].type, HOUSE_NPC);
+    EXPECT_EQ(houseNpcs[1].npc, janice);
+    ASSERT_NE(houseNpcs[0].button, nullptr);
+    ASSERT_NE(houseNpcs[1].button, nullptr);
+    EXPECT_EQ(houseNpcs[0].button->rect.topLeft(), Pointi(525, 34));
+    EXPECT_EQ(houseNpcs[1].button->rect.topLeft(), Pointi(525, 129));
+
+    // The strip labels the occupants by name; the 2dEvents Title never reaches it.
+    auto stripText = textTape.flatten();
+    EXPECT_CONTAINS(stripText, frank->name);
+    EXPECT_CONTAINS(stripText, janice->name);
+    EXPECT_MISSES(stripText, houseTable[HouseId(89)].pProprieterTitle); // "Clerk".
+
+    // Frank: News (npcdata News=1, no profession) ahead of both scripted topics.
+    clickHouseNpcPortrait(game, frank);
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_STREET_MM6_NEWS), nullptr);
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1), nullptr); // 324 "Quest".
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_2), nullptr); // 326 "Shadow Guild".
+    EXPECT_EQ(findScriptedTopicButton(DIALOGUE_STREET_MM6_PROF_TOPIC), nullptr);
+
+    // The regional news line is assigned to the occupant and replied with when the topic is picked.
+    ASSERT_FALSE(frank->mm6News.text.empty());
+    selectScriptedTopic(game, DIALOGUE_STREET_MM6_NEWS);
+    EXPECT_EQ(current_npc_text, frank->mm6News.text);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
+
+    // Janice: her Clerk small talk (npcdata profession=72, no news) ahead of her scripted topics.
+    clickHouseNpcPortrait(game, janice);
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_STREET_MM6_PROF_TOPIC), nullptr);
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1), nullptr); // 3 "Goblinwatch".
+    EXPECT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_3), nullptr); // 399 "Bounty Hunt".
+    EXPECT_EQ(findScriptedTopicButton(DIALOGUE_STREET_MM6_NEWS), nullptr);
+
+    // The small talk is the profession's line for the current weekday, replied with on pick.
+    const Mm6ProfDayText &smallTalk = pNPCStats->mm6ProfText[janice->profession][pParty->uCurrentDayOfMonth % 7];
+    ASSERT_FALSE(smallTalk.text.empty());
+    selectScriptedTopic(game, DIALOGUE_STREET_MM6_PROF_TOPIC);
+    EXPECT_EQ(current_npc_text, smallTalk.text);
+
+    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+    game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_GAME);
@@ -5571,9 +5688,11 @@ GAME_TEST(Mm6, NewGameClearsMm6PartyState) {
     EXPECT_EQ(pParty->_mm6NpcBribeCount, 0);
 }
 
-// Opens the proprietor dialogue in a freshly entered house. Houses with a single occupant open it
-// automatically; houses that also lodge npcdata NPCs (like MM6's town halls) show a portrait row
-// instead, and the proprietor - always first in houseNpcs - must be clicked.
+// Opens the proprietor dialogue in a freshly entered house. Houses whose proprietor is the only
+// occupant open it automatically; one that also lodges npcdata NPCs shows a portrait row instead,
+// and the proprietor - always first in houseNpcs - must be clicked. Only for houses that really
+// have a proprietor: MM6 creates one solely from the room animation's portrait id, so its town
+// halls, residences and special houses have none at all.
 static void openProprietorDialogue(EngineController &game) {
     if (pDialogueWindow != nullptr)
         return;
@@ -5814,11 +5933,30 @@ GAME_TEST(Mm6, TownHallBountyHunt) {
     ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
     ASSERT_NE(window_SpeakInHouse, nullptr);
     ASSERT_EQ(window_SpeakInHouse->houseId(), HouseId(89));
-    openProprietorDialogue(game);
+
+    // MM6 town halls have no proprietor (their room animations carry no portrait id) - the bounty is
+    // asked of the clerk named in the 2dEvents row, who is a house occupant in her own right and
+    // carries the reserved bounty topic 399 in her third npcdata slot.
+    NPCData *janice = &pNPCStats->pNPCData[291];
+    ASSERT_EQ(janice->house, HouseId(89));
+    ASSERT_EQ(janice->dialogue_3_evt_id, 399u);
+
+    // Picks the bounty topic, first backing out of whatever the last ask left open: a reply escapes
+    // to her topic list, and one step further lands on the portrait strip (house 89 lodges Frank
+    // too), from which her portrait has to be clicked again.
+    auto askForBounty = [&] {
+        for (int i = 0; i < 3 && currentHouseNpc != -1 && !findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_3); i++) {
+            game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+            game.tick(2);
+        }
+        if (currentHouseNpc == -1)
+            clickHouseNpcPortrait(game, janice);
+        selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_3);
+    };
 
     // Asking for the bounty posts this month's hunt: a valid target, not yet killed, regenerating at the
     // start of next month, announced with MM6's npctext row 368 naming the monster.
-    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    askForBounty();
     HouseId slot = HOUSE_TOWN_HALL_HARMONDALE; // MM6 slot 0 = house 89.
     MonsterId target = pParty->monster_id_for_hunting[slot];
     ASSERT_NE(target, MONSTER_INVALID);
@@ -5852,8 +5990,7 @@ GAME_TEST(Mm6, TownHallBountyHunt) {
     ASSERT_TRUE(enterHouse(HouseId(89)));
     createHouseUI(HouseId(89));
     game.tick(2);
-    openProprietorDialogue(game);
-    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    askForBounty();
     EXPECT_EQ(pParty->GetGold(), 1000 + 100 * level);
     EXPECT_EQ(pParty->uNumBountiesCollected, bountiesBefore + 1);
     EXPECT_EQ(currentLocationInfo().reputation, repBefore + level);
@@ -5864,17 +6001,13 @@ GAME_TEST(Mm6, TownHallBountyHunt) {
     EXPECT_TRUE(current_npc_text.contains("Congratulations"));
 
     // Asking again the same month: someone has already claimed the bounty (npctext row 370).
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE); // Back to the main dialogue.
-    game.tick(2);
-    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    askForBounty();
     EXPECT_TRUE(current_npc_text.contains("already claimed"));
 
     // Next month a fresh bounty is posted (MM months are exactly 28 days).
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
     pParty->GetPlayingTime() += Duration::fromDays(28);
     game.tick(1);
-    clickProprietorOption(game, DIALOGUE_TOWNHALL_BOUNTY_HUNT);
+    askForBounty();
     EXPECT_NE(pParty->monster_id_for_hunting[slot], MONSTER_INVALID);
     EXPECT_FALSE(pParty->monster_for_hunting_killed[slot]);
     for (int i = 0; i < 5 && current_screen_type != SCREEN_GAME; i++) {
@@ -7644,23 +7777,26 @@ GAME_TEST(Mm6, NpcSkillTeachers) {
 
     Character &roderick = pParty->pCharacters[0];
 
-    // Escapes any open dialogue, back to the house screen with clickable portraits.
-    auto escapeToHouseScreen = [&] {
-        for (int i = 0; i < 5 && pDialogueWindow; i++) {
+    // Backs out of an open sub-dialogue to the teacher's own topic list. Each of these teachers is
+    // their house's only occupant, so there is no portrait strip behind the topic list - one escape
+    // too many walks straight out of the house. A successful Learn escapes itself (the handler
+    // queues UIMSG_Escape) while a refusal leaves its reply up, so escape until the topic is back.
+    auto escapeToTopicList = [&](DialogueId slot) {
+        for (int i = 0; i < 3 && !findScriptedTopicButton(slot); i++) {
             game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
             game.tick(2);
         }
-        ASSERT_EQ(pDialogueWindow, nullptr);
         ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+        ASSERT_NE(findScriptedTopicButton(slot), nullptr);
     };
-    // Opens the teacher's topic from the house screen, checks the offer prose, clicks Learn
-    // (a no-op when a gate refuses) and returns to the house screen.
+    // Opens the teacher's topic, checks the offer prose, clicks Learn (a no-op when a gate refuses)
+    // and returns to the topic list.
     auto attemptLearn = [&](NPCData *npc, DialogueId slot, int topicId) {
         clickHouseNpcPortrait(game, npc);
         selectScriptedTopic(game, slot);
         EXPECT_EQ(current_npc_text, pNPCTopics[topicId - 1].pText); // The offer prose = npctext row [topic].
         selectScriptedTopic(game, DIALOGUE_MASTERY_TEACHER_LEARN);
-        escapeToHouseScreen();
+        escapeToTopicList(slot);
     };
 
     // Expert Staff: Calvin Black, npcdata 31, house 460, first topic 200 ("...an intermediate
@@ -7979,13 +8115,15 @@ GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
     game.tick(2);
     ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
 
-    auto escapeToHouseScreen = [&] {
-        for (int i = 0; i < 5 && pDialogueWindow; i++) {
+    // Backs out of a reply to the Seer's own topic list. She is her house's only occupant, so there
+    // is no portrait strip behind it - one escape too many walks straight out of the house.
+    auto escapeToTopicList = [&] {
+        for (int i = 0; i < 3 && !findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1); i++) {
             game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
             game.tick(2);
         }
-        ASSERT_EQ(pDialogueWindow, nullptr);
         ASSERT_EQ(current_screen_type, SCREEN_HOUSE);
+        ASSERT_NE(findScriptedTopicButton(DIALOGUE_SCRIPTED_LINE_1), nullptr);
     };
 
     // "I lost it" with nothing missing: the party still carries its starting Letter (item 505,
@@ -7995,7 +8133,7 @@ GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
     clickHouseNpcPortrait(game, seer);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
     EXPECT_EQ(current_npc_text, pNPCTopics[174].pText); // "You never found it."
-    escapeToHouseScreen();
+    escapeToTopicList();
 
     // Lose the Letter: the Seer replaces it (quest bit 181 + item 505 is the first table pair).
     InventoryEntry letter = pParty->pCharacters[0].inventory.find(ItemId(505));
@@ -8009,7 +8147,7 @@ GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
     EXPECT_TRUE(current_npc_text.contains(pItemTable->items[ItemId(505)].unidentifiedName));
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(pParty->pPickedItem));
     pParty->takeHoldingItem();
-    escapeToHouseScreen();
+    escapeToTopicList();
 
     // "Pilgrimage" names the current month's shrine ("This is %s, the month of %s. Journey to the
     // Shrine of %s...", npctext row 54 - months 0-6 are the stat shrines in display order).
@@ -8021,14 +8159,14 @@ GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
     clickHouseNpcPortrait(game, seer);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_EQ(current_npc_text, expected);
-    escapeToHouseScreen();
+    escapeToTopicList();
 
     // With this month's blessing already taken (quest bit 206), the Seer tells the party to wait.
     pParty->_questBits[static_cast<QuestBit>(206)] = true;
     clickHouseNpcPortrait(game, seer);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_EQ(current_npc_text, pNPCTopics[54].pText); // "You must wait until the new month..."
-    escapeToHouseScreen();
+    escapeToTopicList();
     leaveHouse(game);
 
     // A Seer visit in a NEW month resets the pilgrimage bits (MM6.EXE @0x4A2F20 recomputes the
@@ -8043,7 +8181,7 @@ GAME_TEST(Mm6, SeerPilgrimageAndLostItems) {
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(206)]);
     EXPECT_TRUE(current_npc_text.contains(localization->monthName(pParty->uCurrentMonth)));
-    escapeToHouseScreen();
+    escapeToTopicList();
     leaveHouse(game);
 
     // The shrine end of the loop: New Sorpigal's shrine (oute3 event 261) is the month-6 Luck
@@ -8271,13 +8409,14 @@ GAME_TEST(Mm6, CircusGamesAndPrizes) {
     ASSERT_EQ(blaze->name, "Blaze the Circus Master");
     ASSERT_EQ(blaze->dialogue_2_evt_id, 105u);
 
-    // No prizes: the redemption topic refuses.
+    // No prizes: the redemption topic refuses. Blaze is the booth's only occupant, so his topic
+    // list is opened by entering and stays up behind each reply - there is no portrait strip to
+    // escape back to, and escaping the list at all walks out of the booth.
     clickHouseNpcPortrait(game, blaze);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_2);
     EXPECT_TRUE(current_npc_text.contains("you don't have 10 points"));
     EXPECT_EQ(pParty->pPickedItem.itemId, ITEM_NULL);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    escapeSubDialogue(game);
 
     // Two Four Leaf Clovers = 10 points: a Keg of Wine, and the clovers are gone.
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(477))));
@@ -8288,8 +8427,7 @@ GAME_TEST(Mm6, CircusGamesAndPrizes) {
     EXPECT_EQ(stashPickedItem(), ItemId(473));
     EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(477)));
     EXPECT_FALSE(pParty->pCharacters[1].inventory.find(ItemId(477)));
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    escapeSubDialogue(game);
 
     // A 30-point haul (4 clovers + 3 feathers + a lodestone = 32) earns the Golden Pyramid.
     for (int i = 0; i < 4; i++)
@@ -8306,11 +8444,7 @@ GAME_TEST(Mm6, CircusGamesAndPrizes) {
         EXPECT_FALSE(pParty->pCharacters[i].inventory.find(ItemId(471)));
         EXPECT_FALSE(pParty->pCharacters[i].inventory.find(ItemId(477)));
     }
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    ASSERT_EQ(current_screen_type, SCREEN_GAME);
+    leaveHouse(game);
 
     // The strongman tent (event 15, house 532): 50 gold a game; at Might >= 200 every
     // RandomGoTo branch pays out a prize item. Tent entries can hang off either a model face or
@@ -8354,11 +8488,7 @@ GAME_TEST(Mm6, CircusGamesAndPrizes) {
     EXPECT_EQ(pParty->GetGold(), 950);
     ItemId prize = stashPickedItem();
     EXPECT_TRUE(prize == ItemId(470) || prize == ItemId(471) || prize == ItemId(477));
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    leaveHouse(game); // Tarquin is the tent's only occupant - one escape is already outside.
     game.tick(5);
 }
 
@@ -8496,11 +8626,10 @@ GAME_TEST(Mm6, HermitHouse) {
     clickHouseNpcPortrait(game, hermit);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_TRUE(current_npc_text.contains("watch the world turn"));
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+
+    // The hermit is the house's only occupant, so there is no portrait strip to unwind through -
+    // escaping his dialogue walks straight back out of the hut.
+    leaveHouse(game);
     game.tick(5);
 }
 
@@ -8558,30 +8687,28 @@ GAME_TEST(Mm6, OracleCrystalsAndCube) {
     ASSERT_EQ(oracle->name, "Oracle");
     ASSERT_EQ(oracle->dialogue_1_evt_id, 73u);
 
-    // Topic 73 hands out the Memory Crystal hunt.
+    // Topic 73 hands out the Memory Crystal hunt. The Oracle is the chamber's only occupant, so her
+    // topic list opens with the house and stays up behind each reply - escaping it leaves entirely.
     clickHouseNpcPortrait(game, oracle);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     for (int bit : {162, 163, 164, 165})
         EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(bit)]);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    escapeSubDialogue(game);
 
     // Placing all four crystals rewires topic slot 1 to event 76 (oracle.blv events 5/15/16/17);
-    // install it directly and run both of its stages.
+    // install it directly and run both of its stages. The topic button carries the slot, not the
+    // event id, so the rewire takes effect on the next click without rebuilding the list.
     oracle->dialogue_1_evt_id = 76;
-    clickHouseNpcPortrait(game, oracle);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_TRUE(current_npc_text.contains("Melian"));
     EXPECT_TRUE(pParty->_questBits[static_cast<QuestBit>(166)]);
     for (const Character &character : pParty->pCharacters)
         EXPECT_TRUE(character._achievedAwardsBits[static_cast<AwardId>(33)]);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    escapeSubDialogue(game);
 
     // Returning with the Control Cube: 500k exp a head, award 34, topics retire to 77/78.
     ASSERT_TRUE(pParty->pCharacters[0].inventory.add(Item(ItemId(456))));
     uint64_t expBefore = pParty->pCharacters[0].experience;
-    clickHouseNpcPortrait(game, oracle);
     selectScriptedTopic(game, DIALOGUE_SCRIPTED_LINE_1);
     EXPECT_TRUE(current_npc_text.contains("transported"));
     EXPECT_FALSE(pParty->pCharacters[0].inventory.find(ItemId(456)));
@@ -8591,11 +8718,7 @@ GAME_TEST(Mm6, OracleCrystalsAndCube) {
     EXPECT_FALSE(pParty->_questBits[static_cast<QuestBit>(166)]);
     EXPECT_EQ(oracle->dialogue_1_evt_id, 77u);
     EXPECT_EQ(oracle->dialogue_2_evt_id, 78u);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
-    EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    leaveHouse(game);
     game.tick(5);
 }
 
@@ -8978,8 +9101,7 @@ static void visitQuestGiver(EngineController &game, const NPCData *npc) {
 static void runNpcTopic(EngineController &game, NPCData *npc, DialogueId topicLine = DIALOGUE_SCRIPTED_LINE_1) {
     clickHouseNpcPortrait(game, npc);
     selectScriptedTopic(game, topicLine);
-    game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
-    game.tick(2);
+    escapeSubDialogue(game);
 }
 
 static bool everyoneHasAward(int awardId) {
