@@ -1183,6 +1183,29 @@ GAME_TEST(Mm6, EnterWeaponShop) {
             labels.push_back(button->sLabel);
     EXPECT_EQ(labels, (std::vector<std::string>{"Buy", "Sell", "Identify", "Repair", "Special"}));
 
+    // MM6.EXE lays the option rows out at 0x4977d8..0x4979d8: spacing = (174 - allTextHeight) / n
+    // clamped to 32, the block centred at +138, then every row is exactly `textHeight` tall and the
+    // next one starts `spacing + textHeight - 1` lower - no padding anywhere. MM7.EXE's own loop is
+    // identical, so this is shared layout, not an MM6 special.
+    ASSERT_NE(pBtn_ExitCancel, nullptr);
+    std::vector<Recti> optionRows;
+    for (const GUIButton *button : pDialogueWindow->vButtons)
+        if (button->msg == UIMSG_SelectProprietorDialogueOption)
+            optionRows.push_back(button->rect);
+    ASSERT_EQ(optionRows.size(), 5);
+
+    int rowHeight = assets->pFontArrus->CalcTextHeight("Buy", SIDE_TEXT_BOX_WIDTH, 0);
+    int rowPitch = (SIDE_TEXT_BOX_BODY_TEXT_HEIGHT - 5 * rowHeight) / 5 + rowHeight - 1;
+    for (size_t i = 0; i < optionRows.size(); ++i) {
+        EXPECT_EQ(optionRows[i].h, rowHeight);
+        if (i > 0)
+            EXPECT_EQ(optionRows[i].y - optionRows[i - 1].y, rowPitch);
+    }
+
+    // Which keeps the whole menu clear of the exit button on the panel's bottom row - 6px of extra
+    // padding per row used to walk the five-option MM6 shop menu onto it.
+    EXPECT_LE(optionRows.back().y + optionRows.back().h, pBtn_ExitCancel->rect.y);
+
     // Escape leaves the shop and the game is live again.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);

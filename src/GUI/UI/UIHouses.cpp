@@ -418,6 +418,18 @@ static Sizei houseExitButtonSize() {
     return engine->gameVersion() == GAME_VERSION_MM6 ? MM6_DIALOGUE_BUTTON_SIZE : Sizei(169, 35);
 }
 
+// Per-option-row padding in drawOptions(). Both originals use none - a row is exactly as tall as its
+// text and the next one starts `textHeight - 1` lower (MM6.EXE 0x4979c5, MM7.EXE's identical loop;
+// every option loop in the initial decompilation assigns a bare `uHeight = pTextHeight`) - but OE has
+// padded both by 6px since 56c445ec9 (2018), and the padding accumulates down the panel. MM7 absorbs
+// it: its exit button is far below the 138..312 option band, at y=445. MM6's cannot - buttesc sits on
+// the dialogue panel's bottom row at y=313, so a five-option shop menu (The Knife Shoppe: Buy / Sell /
+// Identify / Repair / Special) ended up 30px past the band and drew over the button. Kept for MM7,
+// where recorded traces click the padded hitboxes.
+static int houseOptionRowPadding() {
+    return engine->gameVersion() == GAME_VERSION_MM6 ? 0 : 6;
+}
+
 const IndexedArray<int, HOUSE_TYPE_WEAPON_SHOP, HOUSE_TYPE_DARK_GUILD> itemAmountInShop = {{
     {HOUSE_TYPE_WEAPON_SHOP,   6},
     {HOUSE_TYPE_ARMOR_SHOP,    8},
@@ -1170,13 +1182,14 @@ void GUIWindow_House::drawOptions(std::vector<std::string> &optionsText, Color s
         if (!optionsText[i].empty()) {
             Color textColor = (pDialogueWindow->pCurrentPosActiveItem == buttonIndex) ? selectColor : colorTable.White;
             int textHeight = assets->pFontArrus->CalcTextHeight(optionsText[i], window.w, 0);
+            int rowPadding = houseOptionRowPadding();
             button->rect.y = spacing + offset;
-            button->rect.h = textHeight + 6;
+            button->rect.h = textHeight + rowPadding;
             button->sLabel = optionsText[i];
             if (denseSpacing) {
                 offset += assets->pFontArrus->GetHeight() - 3 + textHeight;
             } else {
-                offset = button->rect.y + textHeight - 1 + 6;
+                offset = button->rect.y + textHeight - 1 + rowPadding;
             }
             DrawTitleText(assets->pFontArrus.get(), 0, button->rect.y, textColor, optionsText[i], 3, window);
         } else if (button) {
